@@ -154,6 +154,9 @@ struct input_keymap_entry {
 
 #define EVIOCGRAB		_IOW('E', 0x90, int)			/* Grab/Release device */
 
+#define EVIOCGSUSPENDBLOCK	_IOR('E', 0x91, int)			/* get suspend block enable */
+#define EVIOCSSUSPENDBLOCK	_IOW('E', 0x91, int)			/* set suspend block enable */
+
 #define EVIOCSCLOCKID		_IOW('E', 0xa0, int)			/* Set clockid to be used for timestamps */
 
 /*
@@ -466,6 +469,7 @@ struct input_keymap_entry {
 #define KEY_RFKILL		247	/* Key that controls all radios */
 
 #define KEY_MICMUTE		248	/* Mute / unmute the microphone */
+#define KEY_NETWORK		249 /* Card select */
 
 /* Code 255 is reserved for special needs of AT keyboard driver */
 
@@ -688,7 +692,7 @@ struct input_keymap_entry {
 #define KEY_NUMERIC_9		0x209
 #define KEY_NUMERIC_STAR	0x20a
 #define KEY_NUMERIC_POUND	0x20b
-
+#define KEY_CAMERA_SNAPSHOT	0x2fe
 #define KEY_CAMERA_FOCUS	0x210
 #define KEY_WPS_BUTTON		0x211	/* WiFi Protected Setup key */
 
@@ -702,6 +706,11 @@ struct input_keymap_entry {
 #define KEY_CAMERA_DOWN		0x218
 #define KEY_CAMERA_LEFT		0x219
 #define KEY_CAMERA_RIGHT	0x21a
+
+/* ROY LTN DTV uses ANTENNA Detection, LATIN MM team*/
+#define KEY_DMB_ANT_DET_UP		0x21b
+#define KEY_DMB_ANT_DET_DOWN	0x21c
+
 
 #define BTN_TRIGGER_HAPPY		0x2c0
 #define BTN_TRIGGER_HAPPY1		0x2c0
@@ -813,6 +822,8 @@ struct input_keymap_entry {
 #define ABS_MT_TRACKING_ID	0x39	/* Unique ID of initiated contact */
 #define ABS_MT_PRESSURE		0x3a	/* Pressure on contact area */
 #define ABS_MT_DISTANCE		0x3b	/* Contact hover distance */
+#define ABS_MT_PALM             0x3d
+#define ABS_MT_ANGLE           0x3c
 
 #ifdef __KERNEL__
 /* Implementation details, userspace should not care about these */
@@ -843,7 +854,10 @@ struct input_keymap_entry {
 #define SW_FRONT_PROXIMITY	0x0b  /* set = front proximity sensor active */
 #define SW_ROTATE_LOCK		0x0c  /* set = rotate locked/disabled */
 #define SW_LINEIN_INSERT	0x0d  /* set = inserted */
-#define SW_MAX			0x0f
+#define SW_HPHL_OVERCURRENT    0x0e  /* set = over current on left hph */
+#define SW_HPHR_OVERCURRENT    0x0f  /* set = over current on right hph */
+#define SW_UNSUPPORT_INSERT	0x10  /* set = unsupported device inserted */
+#define SW_MAX			0x20
 #define SW_CNT			(SW_MAX+1)
 
 /*

@@ -121,7 +121,7 @@ static void ath_pci_aspm_init(struct ath_common *common)
 	if (!parent)
 		return;
 
-	if (ath9k_hw_get_btcoex_scheme(ah) != ATH_BTCOEX_CFG_NONE) {
+	if (ah->btcoex_hw.scheme != ATH_BTCOEX_CFG_NONE) {
 		/* Bluetooth coexistance requires disabling ASPM. */
 		pci_read_config_byte(pdev, pos + PCI_EXP_LNKCTL, &aspm);
 		aspm &= ~(PCIE_LINK_STATE_L0S | PCIE_LINK_STATE_L1);
@@ -307,11 +307,12 @@ static int ath_pci_suspend(struct device *device)
 	struct ieee80211_hw *hw = pci_get_drvdata(pdev);
 	struct ath_softc *sc = hw->priv;
 
+	ath9k_hw_set_gpio(sc->sc_ah, sc->sc_ah->led_pin, 1);
+
 	/* The device has to be moved to FULLSLEEP forcibly.
 	 * Otherwise the chip never moved to full sleep,
 	 * when no interface is up.
 	 */
-	ath9k_hw_disable(sc->sc_ah);
 	ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_FULL_SLEEP);
 
 	return 0;
@@ -320,6 +321,8 @@ static int ath_pci_suspend(struct device *device)
 static int ath_pci_resume(struct device *device)
 {
 	struct pci_dev *pdev = to_pci_dev(device);
+	struct ieee80211_hw *hw = pci_get_drvdata(pdev);
+	struct ath_softc *sc = hw->priv;
 	u32 val;
 
 	/*
@@ -331,17 +334,29 @@ static int ath_pci_resume(struct device *device)
 	if ((val & 0x0000ff00) != 0)
 		pci_write_config_dword(pdev, 0x40, val & 0xffff00ff);
 
+	ath9k_ps_wakeup(sc);
+	/* Enable LED */
+	ath9k_hw_cfg_output(sc->sc_ah, sc->sc_ah->led_pin,
+			    AR_GPIO_OUTPUT_MUX_AS_OUTPUT);
+	ath9k_hw_set_gpio(sc->sc_ah, sc->sc_ah->led_pin, 0);
+
+	  /*
+	   * Reset key cache to sane defaults (all entries cleared) instead of
+	   * semi-random values after suspend/resume.
+	   */
+	ath9k_cmn_init_crypto(sc->sc_ah);
+	ath9k_ps_restore(sc);
+
+	sc->ps_idle = true;
+	ath_radio_disable(sc, hw);
+
 	return 0;
 }
 
-static const struct dev_pm_ops ath9k_pm_ops = {
-	.suspend = ath_pci_suspend,
-	.resume = ath_pci_resume,
-	.freeze = ath_pci_suspend,
-	.thaw = ath_pci_resume,
-	.poweroff = ath_pci_suspend,
-	.restore = ath_pci_resume,
-};
+compat_pci_suspend(ath_pci_suspend)
+compat_pci_resume(ath_pci_resume)
+
+static SIMPLE_DEV_PM_OPS(ath9k_pm_ops, ath_pci_suspend, ath_pci_resume);
 
 #define ATH9K_PM_OPS	(&ath9k_pm_ops)
 
@@ -359,7 +374,12 @@ static struct pci_driver ath_pci_driver = {
 	.id_table   = ath_pci_id_table,
 	.probe      = ath_pci_probe,
 	.remove     = ath_pci_remove,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29))
 	.driver.pm  = ATH9K_PM_OPS,
+#elif defined(CONFIG_PM)
+	.suspend    = ath_pci_suspend_compat,
+	.resume     = ath_pci_resume_compat,
+#endif
 };
 
 int ath_pci_init(void)

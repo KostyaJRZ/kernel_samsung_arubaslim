@@ -359,6 +359,7 @@ static __initdata DECLARE_COMPLETION(kthreadd_done);
 static noinline void __init_refok rest_init(void)
 {
 	int pid;
+	const struct sched_param param = { .sched_priority = 1 };
 
 	rcu_scheduler_starting();
 	/*
@@ -372,6 +373,7 @@ static noinline void __init_refok rest_init(void)
 	rcu_read_lock();
 	kthreadd_task = find_task_by_pid_ns(pid, &init_pid_ns);
 	rcu_read_unlock();
+	sched_setscheduler_nocheck(kthreadd_task, SCHED_FIFO, &param);
 	complete(&kthreadd_done);
 
 	/*
@@ -383,6 +385,17 @@ static noinline void __init_refok rest_init(void)
 	/* Call into cpu_idle with preempt disabled */
 	cpu_idle();
 }
+#if defined(CONFIG_UES_APO_UART)
+unsigned int kernel_console_diable = 0;
+EXPORT_SYMBOL(kernel_console_diable);
+#endif
+unsigned int kernel_uart_flag = 0;
+unsigned int board_hw_revision;
+EXPORT_SYMBOL(board_hw_revision);
+unsigned int in_recovery_mode = 0;
+EXPORT_SYMBOL(in_recovery_mode);
+unsigned int uart_mode = 0;
+EXPORT_SYMBOL(uart_mode);
 
 /* Check for early params. */
 static int __init do_early_param(char *param, char *val)
@@ -400,6 +413,74 @@ static int __init do_early_param(char *param, char *val)
 		}
 	}
 	/* We accept everything at this stage. */
+    if ((strcmp(param, "console") == 0 ) && (( strcmp(val, "NULL") == 0 ) || (strcmp(val, "null") == 0)))
+		kernel_uart_flag = 1;
+#if defined(CONFIG_UES_APO_UART)	
+	else if((strcmp(param, "console") == 0) && (strcmp(val, "ram") == 0) ){
+		kernel_console_diable = 1;
+		printk("console disable : 0x0%d\n", kernel_console_diable);
+	}
+#endif
+	// add board_hw_revision
+	if ( (strcmp(param, "hw") == 0 ) )
+	{
+		if (strcmp(val, "1") == 0)
+			board_hw_revision = 1;
+		else if (strcmp(val, "2") == 0)
+			board_hw_revision = 2;
+		else if (strcmp(val, "3") == 0)
+			board_hw_revision = 3;
+		else if (strcmp(val, "4") == 0)
+			board_hw_revision = 4;
+		else if (strcmp(val, "5") == 0)
+			board_hw_revision = 5;
+		else if (strcmp(val, "6") == 0)
+			board_hw_revision = 6;
+		else if (strcmp(val, "7") == 0)
+			board_hw_revision = 7;
+		else if (strcmp(val, "8") == 0)
+			board_hw_revision = 8;
+		else if (strcmp(val, "9") == 0)
+			board_hw_revision = 9;
+		else if (strcmp(val, "10") == 0)
+			board_hw_revision = 10;
+		else if (strcmp(val, "11") == 0)
+			board_hw_revision = 11;
+		else if (strcmp(val, "12") == 0)
+			board_hw_revision = 12;
+		else if (strcmp(val, "13") == 0)
+			board_hw_revision = 13;
+		else if (strcmp(val, "14") == 0)
+			board_hw_revision = 14;
+		else	
+			board_hw_revision = 0;
+
+#if defined(CONFIG_MACH_ARUBA_CTC)
+		printk("ARUBA DUOS H/W revision : 0x0%d\n", board_hw_revision);
+#elif defined(CONFIG_MACH_KYLEPLUS_CTC)
+		printk("KYLE PLUS H/W revision : 0x0%d\n", board_hw_revision);
+#elif defined(CONFIG_MACH_ROY)
+		printk("Roy H/W revision : 0x0%d\n", board_hw_revision);		
+#elif defined(CONFIG_MACH_ARUBASLIM_OPEN)
+		printk("ARUBA-SLIM OPEN H/W revision : 0x0%d\n", board_hw_revision);
+#elif defined(CONFIG_MACH_KYLEPLUS_OPEN)
+		printk("KYLE PLUS OPEN H/W revision : 0x0%d\n", board_hw_revision);
+#elif defined(CONFIG_MACH_ARUBA_OPEN)
+		printk("ARUBA OPEN H/W revision : 0x0%d\n", board_hw_revision);
+#endif		
+	}
+
+	if ( (strcmp(param, "recovery") == 0 ) )
+	{
+		if (strcmp(val, "1") == 0)
+			in_recovery_mode = 1;
+	}
+
+	if ( (strcmp(param, "uartmode") == 0 ) )
+	{
+		if (strcmp(val, "1") == 0)
+			uart_mode = 1;
+	}
 	return 0;
 }
 

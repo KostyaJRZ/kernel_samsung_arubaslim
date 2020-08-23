@@ -141,6 +141,28 @@ fw-shipped-$(CONFIG_USB_VICAM) += vicam/firmware.fw
 fw-shipped-$(CONFIG_VIDEO_CPIA2) += cpia2/stv0672_vp4.bin
 fw-shipped-$(CONFIG_YAM) += yam/1200.bin yam/9600.bin
 
+
+
+#TSPFIRMWARE_DIRECTORY_MEL_ARUBADUOS = firmware/tsp_melfas/aruba_duos
+#ifeq ($(shell test -d $(TSPFIRMWARE_DIRECTORY_MEL_ARUBADUOS) && echo yes),yes)
+
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_KYLE) += tsp_melfas/aruba_g1m/BOOT.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_KYLE) += tsp_melfas/aruba_g1m/CORE.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_KYLE) += tsp_melfas/aruba_g1m/CONF.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_KYLE) += tsp_melfas/aruba_g1f/CONF.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_KYLE) += tsp_melfas/delos_g1f/CONF.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_KYLE) += tsp_melfas/arubaslim_g1f/BOOT.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_KYLE) += tsp_melfas/arubaslim_g1f/CORE.fw
+fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_KYLE) += tsp_melfas/arubaslim_g1f/CONF.fw
+#fw-shipped-$(CONFIG_TOUCHSCREEN_MELFAS_KYLE) += tsp_melfas/arubaslim_g1f/ARUBA_SLIM_R03_VA05.fw
+
+#else
+#$(warning '$(TSPFIRMWARE_DIRECTORY)' directory dose not exist)
+#endif
+
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_FW_UPDATE) += tsp_synaptics/w789/Hennesy_MAIN-E001-PR1296149-DS4.3.5.1.img
+fw-shipped-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_FW_UPDATE) += tsp_synaptics/w789/Hennesy_SUB-E001-PR1296149-DS4.3.5.1.img
+
 fw-shipped-all := $(fw-shipped-y) $(fw-shipped-m) $(fw-shipped-)
 
 # Directories which we _might_ need to create, so we have a rule for them.
