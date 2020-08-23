@@ -5,7 +5,7 @@ KERNEL_DIR=$PWD
 KERN_IMG=$KERNEL_DIR/out/arch/arm/boot/zImage
 ZIP_DIR=$KERNEL_DIR/AnyKernel3
 CONFIG=arubaslim_defconfig
-CROSS_COMPILE="${PWD}/arm-eabi-4.4.3/bin/arm-eabi-"
+CROSS_COMPILE="${PWD}/arm-eabi-4.7/bin/arm-eabi-"
 
 # Export
 export ARCH=arm
