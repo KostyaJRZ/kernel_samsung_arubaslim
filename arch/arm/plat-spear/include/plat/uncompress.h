@@ -4,7 +4,7 @@
  * Serial port stubs for kernel decompress status messages
  *
  * Copyright (C) 2009 ST Microelectronics
- * Viresh Kumar <viresh.linux@gmail.com>
+ * Viresh Kumar<viresh.kumar@st.com>
  *
  * This file is licensed under the terms of the GNU General Public
  * License version 2. This program is licensed "as is" without any
@@ -13,7 +13,7 @@
 
 #include <linux/io.h>
 #include <linux/amba/serial.h>
-#include <mach/spear.h>
+#include <mach/hardware.h>
 
 #ifndef __PLAT_UNCOMPRESS_H
 #define __PLAT_UNCOMPRESS_H

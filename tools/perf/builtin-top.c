@@ -787,7 +787,7 @@ static void perf_event__process_sample(struct perf_tool *tool,
 		}
 
 		if (symbol_conf.use_callchain) {
-			err = callchain_append(he->callchain, &callchain_cursor,
+			err = callchain_append(he->callchain, &evsel->hists.callchain_cursor,
 					       sample->period);
 			if (err)
 				return;
@@ -900,9 +900,6 @@ static void perf_top__start_counters(struct perf_top *top)
 			attr->read_format |= PERF_FORMAT_ID;
 		}
 
-		if (perf_target__has_cpu(&top->target))
-			attr->sample_type |= PERF_SAMPLE_CPU;
-
 		if (symbol_conf.use_callchain)
 			attr->sample_type |= PERF_SAMPLE_CALLCHAIN;
 
@@ -953,22 +950,22 @@ try_again:
 				attr->config = PERF_COUNT_SW_CPU_CLOCK;
 				if (counter->name) {
 					free(counter->name);
-					counter->name = NULL;
+					counter->name = strdup(event_name(counter));
 				}
 				goto try_again;
 			}
 
 			if (err == ENOENT) {
-				ui__error("The %s event is not supported.\n",
+				ui__warning("The %s event is not supported.\n",
 					    event_name(counter));
 				goto out_err;
 			} else if (err == EMFILE) {
-				ui__error("Too many events are opened.\n"
+				ui__warning("Too many events are opened.\n"
 					    "Try again after reducing the number of events\n");
 				goto out_err;
 			}
 
-			ui__error("The sys_perf_event_open() syscall "
+			ui__warning("The sys_perf_event_open() syscall "
 				    "returned with %d (%s).  /bin/dmesg "
 				    "may provide additional information.\n"
 				    "No CONFIG_PERF_EVENTS=y kernel support "
@@ -978,7 +975,7 @@ try_again:
 	}
 
 	if (perf_evlist__mmap(evlist, top->mmap_pages, false) < 0) {
-		ui__error("Failed to mmap with %d (%s)\n",
+		ui__warning("Failed to mmap with %d (%s)\n",
 			    errno, strerror(errno));
 		goto out_err;
 	}
@@ -994,12 +991,12 @@ static int perf_top__setup_sample_type(struct perf_top *top)
 {
 	if (!top->sort_has_symbols) {
 		if (symbol_conf.use_callchain) {
-			ui__error("Selected -g but \"sym\" not present in --sort/-s.");
+			ui__warning("Selected -g but \"sym\" not present in --sort/-s.");
 			return -EINVAL;
 		}
 	} else if (!top->dont_use_callchains && callchain_param.mode != CHAIN_NONE) {
 		if (callchain_register_param(&callchain_param) < 0) {
-			ui__error("Can't register callchain params.\n");
+			ui__warning("Can't register callchain params.\n");
 			return -EINVAL;
 		}
 	}
@@ -1041,7 +1038,7 @@ static int __cmd_top(struct perf_top *top)
 
 	if (pthread_create(&thread, NULL, (use_browser > 0 ? display_thread_tui :
 							    display_thread), top)) {
-		ui__error("Could not create display thread.\n");
+		printf("Could not create display thread.\n");
 		exit(-1);
 	}
 
@@ -1050,7 +1047,7 @@ static int __cmd_top(struct perf_top *top)
 
 		param.sched_priority = top->realtime_prio;
 		if (sched_setscheduler(0, SCHED_FIFO, &param)) {
-			ui__error("Could not set realtime priority.\n");
+			printf("Could not set realtime priority.\n");
 			exit(-1);
 		}
 	}
@@ -1162,7 +1159,7 @@ int cmd_top(int argc, const char **argv, const char *prefix __used)
 	struct perf_top top = {
 		.count_filter	     = 5,
 		.delay_secs	     = 2,
-		.freq		     = 4000, /* 4 KHz */
+		.freq		     = 1000, /* 1 KHz */
 		.mmap_pages	     = 128,
 		.sym_pcnt_filter     = 5,
 		.target		     = {
@@ -1274,7 +1271,7 @@ int cmd_top(int argc, const char **argv, const char *prefix __used)
 		int saved_errno = errno;
 
 		perf_target__strerror(&top.target, status, errbuf, BUFSIZ);
-		ui__error("%s", errbuf);
+		ui__warning("%s", errbuf);
 
 		status = -saved_errno;
 		goto out_delete_evlist;
@@ -1288,7 +1285,7 @@ int cmd_top(int argc, const char **argv, const char *prefix __used)
 
 	if (!top.evlist->nr_entries &&
 	    perf_evlist__add_default(top.evlist) < 0) {
-		ui__error("Not enough memory for event selector list\n");
+		pr_err("Not enough memory for event selector list\n");
 		return -ENOMEM;
 	}
 
@@ -1305,7 +1302,7 @@ int cmd_top(int argc, const char **argv, const char *prefix __used)
 	else if (top.freq) {
 		top.default_interval = top.freq;
 	} else {
-		ui__error("frequency and count are zero, aborting\n");
+		fprintf(stderr, "frequency and count are zero, aborting\n");
 		exit(EXIT_FAILURE);
 	}
 

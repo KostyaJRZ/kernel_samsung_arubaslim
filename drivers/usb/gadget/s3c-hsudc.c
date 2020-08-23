@@ -110,6 +110,7 @@ struct s3c_hsudc_ep {
 	struct usb_ep ep;
 	char name[20];
 	struct s3c_hsudc *dev;
+	const struct usb_endpoint_descriptor *desc;
 	struct list_head queue;
 	u8 stopped;
 	u8 wedge;
@@ -760,7 +761,7 @@ static int s3c_hsudc_ep_enable(struct usb_ep *_ep,
 	u32 ecr = 0;
 
 	hsep = our_ep(_ep);
-	if (!_ep || !desc || _ep->name == ep0name
+	if (!_ep || !desc || hsep->desc || _ep->name == ep0name
 		|| desc->bDescriptorType != USB_DT_ENDPOINT
 		|| hsep->bEndpointAddress != desc->bEndpointAddress
 		|| ep_maxpacket(hsep) < usb_endpoint_maxp(desc))
@@ -782,7 +783,7 @@ static int s3c_hsudc_ep_enable(struct usb_ep *_ep,
 	writel(ecr, hsudc->regs + S3C_ECR);
 
 	hsep->stopped = hsep->wedge = 0;
-	hsep->ep.desc = desc;
+	hsep->desc = desc;
 	hsep->ep.maxpacket = usb_endpoint_maxp(desc);
 
 	s3c_hsudc_set_halt(_ep, 0);
@@ -805,7 +806,7 @@ static int s3c_hsudc_ep_disable(struct usb_ep *_ep)
 	struct s3c_hsudc *hsudc = hsep->dev;
 	unsigned long flags;
 
-	if (!_ep || !hsep->ep.desc)
+	if (!_ep || !hsep->desc)
 		return -EINVAL;
 
 	spin_lock_irqsave(&hsudc->lock, flags);
@@ -815,6 +816,7 @@ static int s3c_hsudc_ep_disable(struct usb_ep *_ep)
 
 	s3c_hsudc_nuke_ep(hsep, -ESHUTDOWN);
 
+	hsep->desc = 0;
 	hsep->ep.desc = NULL;
 	hsep->stopped = 1;
 
@@ -1004,6 +1006,7 @@ static void s3c_hsudc_initep(struct s3c_hsudc *hsudc,
 	hsep->ep.maxpacket = epnum ? 512 : 64;
 	hsep->ep.ops = &s3c_hsudc_ep_ops;
 	hsep->fifo = hsudc->regs + S3C_BR(epnum);
+	hsep->desc = 0;
 	hsep->ep.desc = NULL;
 	hsep->stopped = 0;
 	hsep->wedge = 0;

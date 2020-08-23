@@ -539,11 +539,14 @@ exit:
  * nand_read_oob_syndrome assumes we can send column address - we can't
  */
 static int r852_read_oob(struct mtd_info *mtd, struct nand_chip *chip,
-			     int page)
+			     int page, int sndcmd)
 {
-	chip->cmdfunc(mtd, NAND_CMD_READOOB, 0, page);
+	if (sndcmd) {
+		chip->cmdfunc(mtd, NAND_CMD_READOOB, 0, page);
+		sndcmd = 0;
+	}
 	chip->read_buf(mtd, chip->oob_poi, mtd->oobsize);
-	return 0;
+	return sndcmd;
 }
 
 /*
@@ -1101,7 +1104,18 @@ static struct pci_driver r852_pci_driver = {
 	.driver.pm	= &r852_pm_ops,
 };
 
-module_pci_driver(r852_pci_driver);
+static __init int r852_module_init(void)
+{
+	return pci_register_driver(&r852_pci_driver);
+}
+
+static void __exit r852_module_exit(void)
+{
+	pci_unregister_driver(&r852_pci_driver);
+}
+
+module_init(r852_module_init);
+module_exit(r852_module_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Maxim Levitsky <maximlevitsky@gmail.com>");

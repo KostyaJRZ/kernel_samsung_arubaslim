@@ -254,7 +254,7 @@ int port_wait(void *data)
 		 * connection.  Then we loop here throwing out failed
 		 * connections until a good one is found.
 		 */
-		um_free_irq(TELNETD_IRQ, conn);
+		free_irq(TELNETD_IRQ, conn);
 
 		if (conn->fd >= 0)
 			break;

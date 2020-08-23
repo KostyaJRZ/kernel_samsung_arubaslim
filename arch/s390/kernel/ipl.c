@@ -1528,15 +1528,12 @@ static struct shutdown_action __refdata dump_action = {
 
 static void dump_reipl_run(struct shutdown_trigger *trigger)
 {
-	struct {
-		void	*addr;
-		__u32	csum;
-	} __packed ipib;
+	u32 csum;
 
-	ipib.csum = csum_partial(reipl_block_actual,
-				 reipl_block_actual->hdr.len, 0);
-	ipib.addr = reipl_block_actual;
-	memcpy_absolute(&S390_lowcore.ipib, &ipib, sizeof(ipib));
+	csum = csum_partial(reipl_block_actual, reipl_block_actual->hdr.len, 0);
+	copy_to_absolute_zero(&S390_lowcore.ipib_checksum, &csum, sizeof(csum));
+	copy_to_absolute_zero(&S390_lowcore.ipib, &reipl_block_actual,
+			      sizeof(reipl_block_actual));
 	dump_run(trigger);
 }
 
@@ -1753,7 +1750,6 @@ static struct kobj_attribute on_restart_attr =
 
 static void __do_restart(void *ignore)
 {
-	__arch_local_irq_stosm(0x04); /* enable DAT */
 	smp_send_stop();
 #ifdef CONFIG_CRASH_DUMP
 	crash_kexec(NULL);

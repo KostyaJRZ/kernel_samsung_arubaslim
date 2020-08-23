@@ -48,7 +48,7 @@ static struct sclp_buffer *sclp_ttybuf;
 /* Timer for delayed output of console messages. */
 static struct timer_list sclp_tty_timer;
 
-static struct tty_port sclp_port;
+static struct tty_struct *sclp_tty;
 static unsigned char sclp_tty_chars[SCLP_TTY_BUF_SIZE];
 static unsigned short int sclp_tty_chars_count;
 
@@ -64,7 +64,7 @@ static int sclp_tty_columns = 80;
 static int
 sclp_tty_open(struct tty_struct *tty, struct file *filp)
 {
-	tty_port_tty_set(&sclp_port, tty);
+	sclp_tty = tty;
 	tty->driver_data = NULL;
 	tty->low_latency = 0;
 	return 0;
@@ -76,7 +76,7 @@ sclp_tty_close(struct tty_struct *tty, struct file *filp)
 {
 	if (tty->count > 1)
 		return;
-	tty_port_tty_set(&sclp_port, NULL);
+	sclp_tty = NULL;
 }
 
 /*
@@ -108,7 +108,6 @@ sclp_tty_write_room (struct tty_struct *tty)
 static void
 sclp_ttybuf_callback(struct sclp_buffer *buffer, int rc)
 {
-	struct tty_struct *tty;
 	unsigned long flags;
 	void *page;
 
@@ -127,10 +126,8 @@ sclp_ttybuf_callback(struct sclp_buffer *buffer, int rc)
 		spin_unlock_irqrestore(&sclp_tty_lock, flags);
 	} while (buffer && sclp_emit_buffer(buffer, sclp_ttybuf_callback));
 	/* check if the tty needs a wake up call */
-	tty = tty_port_tty_get(&sclp_port);
-	if (tty != NULL) {
-		tty_wakeup(tty);
-		tty_kref_put(tty);
+	if (sclp_tty != NULL) {
+		tty_wakeup(sclp_tty);
 	}
 }
 
@@ -329,22 +326,21 @@ sclp_tty_flush_buffer(struct tty_struct *tty)
 static void
 sclp_tty_input(unsigned char* buf, unsigned int count)
 {
-	struct tty_struct *tty = tty_port_tty_get(&sclp_port);
 	unsigned int cchar;
 
 	/*
 	 * If this tty driver is currently closed
 	 * then throw the received input away.
 	 */
-	if (tty == NULL)
+	if (sclp_tty == NULL)
 		return;
-	cchar = ctrlchar_handle(buf, count, tty);
+	cchar = ctrlchar_handle(buf, count, sclp_tty);
 	switch (cchar & CTRLCHAR_MASK) {
 	case CTRLCHAR_SYSRQ:
 		break;
 	case CTRLCHAR_CTRL:
-		tty_insert_flip_char(tty, cchar, TTY_NORMAL);
-		tty_flip_buffer_push(tty);
+		tty_insert_flip_char(sclp_tty, cchar, TTY_NORMAL);
+		tty_flip_buffer_push(sclp_tty);
 		break;
 	case CTRLCHAR_NONE:
 		/* send (normal) input to line discipline */
@@ -352,14 +348,13 @@ sclp_tty_input(unsigned char* buf, unsigned int count)
 		    (strncmp((const char *) buf + count - 2, "^n", 2) &&
 		     strncmp((const char *) buf + count - 2, "\252n", 2))) {
 			/* add the auto \n */
-			tty_insert_flip_string(tty, buf, count);
-			tty_insert_flip_char(tty, '\n', TTY_NORMAL);
+			tty_insert_flip_string(sclp_tty, buf, count);
+			tty_insert_flip_char(sclp_tty, '\n', TTY_NORMAL);
 		} else
-			tty_insert_flip_string(tty, buf, count - 2);
-		tty_flip_buffer_push(tty);
+			tty_insert_flip_string(sclp_tty, buf, count - 2);
+		tty_flip_buffer_push(sclp_tty);
 		break;
 	}
-	tty_kref_put(tty);
 }
 
 /*
@@ -548,7 +543,7 @@ sclp_tty_init(void)
 		sclp_tty_tolower = 1;
 	}
 	sclp_tty_chars_count = 0;
-	tty_port_init(&sclp_port);
+	sclp_tty = NULL;
 
 	rc = sclp_register(&sclp_input_event);
 	if (rc) {

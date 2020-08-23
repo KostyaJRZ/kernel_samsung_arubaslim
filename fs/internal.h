@@ -50,8 +50,6 @@ extern int copy_mount_string(const void __user *, char **);
 extern struct vfsmount *lookup_mnt(struct path *);
 extern int finish_automount(struct vfsmount *, struct path *);
 
-extern void mnt_make_longterm(struct vfsmount *);
-extern void mnt_make_shortterm(struct vfsmount *);
 extern int sb_prepare_remount_readonly(struct super_block *);
 
 extern void __init mnt_init(void);
@@ -67,9 +65,6 @@ extern void chroot_fs_refs(struct path *, struct path *);
 /*
  * file_table.c
  */
-extern void file_sb_list_add(struct file *f, struct super_block *sb);
-extern void file_sb_list_del(struct file *f);
-extern void mark_files_ro(struct super_block *);
 extern struct file *get_empty_filp(void);
 
 /*
@@ -100,7 +95,6 @@ extern struct file *do_file_open_root(struct dentry *, struct vfsmount *,
 
 extern long do_handle_open(int mountdirfd,
 			   struct file_handle __user *ufh, int open_flag);
-extern int open_check_o_direct(struct file *f);
 
 /*
  * inode.c

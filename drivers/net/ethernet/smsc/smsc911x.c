@@ -44,6 +44,7 @@
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/platform_device.h>
+#include <linux/gpio.h>
 #include <linux/regulator/consumer.h>
 #include <linux/sched.h>
 #include <linux/timer.h>
@@ -954,7 +955,7 @@ static void smsc911x_phy_adjust_link(struct net_device *dev)
 			    (!pdata->using_extphy)) {
 				/* Restore original GPIO configuration */
 				pdata->gpio_setting = pdata->gpio_orig_setting;
-				smsc911x_reg_write(pdata, GPIO_CFG,
+				smsc911x_reg_write(pdata, SMSC_GPIO_CFG,
 					pdata->gpio_setting);
 			}
 		} else {
@@ -962,7 +963,7 @@ static void smsc911x_phy_adjust_link(struct net_device *dev)
 			/* Check global setting that LED1
 			 * usage is 10/100 indicator */
 			pdata->gpio_setting = smsc911x_reg_read(pdata,
-				GPIO_CFG);
+				SMSC_GPIO_CFG);
 			if ((pdata->gpio_setting & GPIO_CFG_LED1_EN_) &&
 			    (!pdata->using_extphy)) {
 				/* Force 10/100 LED off, after saving
@@ -973,7 +974,7 @@ static void smsc911x_phy_adjust_link(struct net_device *dev)
 				pdata->gpio_setting |= (GPIO_CFG_GPIOBUF0_
 							| GPIO_CFG_GPIODIR0_
 							| GPIO_CFG_GPIOD0_);
-				smsc911x_reg_write(pdata, GPIO_CFG,
+				smsc911x_reg_write(pdata, SMSC_GPIO_CFG,
 					pdata->gpio_setting);
 			}
 		}
@@ -1485,7 +1486,7 @@ static int smsc911x_open(struct net_device *dev)
 		SMSC_WARN(pdata, ifup,
 			  "Timed out waiting for EEPROM busy bit to clear");
 
-	smsc911x_reg_write(pdata, GPIO_CFG, 0x70070000);
+	smsc911x_reg_write(pdata, SMSC_GPIO_CFG, 0x70070000);
 
 	/* The soft reset above cleared the device's MAC address,
 	 * restore it from local copy (set in probe) */
@@ -1931,9 +1932,9 @@ smsc911x_ethtool_getregs(struct net_device *dev, struct ethtool_regs *regs,
 
 static void smsc911x_eeprom_enable_access(struct smsc911x_data *pdata)
 {
-	unsigned int temp = smsc911x_reg_read(pdata, GPIO_CFG);
+	unsigned int temp = smsc911x_reg_read(pdata, SMSC_GPIO_CFG);
 	temp &= ~GPIO_CFG_EEPR_EN_;
-	smsc911x_reg_write(pdata, GPIO_CFG, temp);
+	smsc911x_reg_write(pdata, SMSC_GPIO_CFG, temp);
 	msleep(1);
 }
 
@@ -2066,7 +2067,6 @@ static const struct ethtool_ops smsc911x_ethtool_ops = {
 	.get_eeprom_len = smsc911x_ethtool_get_eeprom_len,
 	.get_eeprom = smsc911x_ethtool_get_eeprom,
 	.set_eeprom = smsc911x_ethtool_set_eeprom,
-	.get_ts_info = ethtool_op_get_ts_info,
 };
 
 static const struct net_device_ops smsc911x_netdev_ops = {
@@ -2242,6 +2242,12 @@ static int __devexit smsc911x_drv_remove(struct platform_device *pdev)
 
 	SMSC_TRACE(pdata, ifdown, "Stopping driver");
 
+	if (pdata->config.has_reset_gpio) {
+		gpio_set_value_cansleep(pdata->config.reset_gpio, 0);
+		gpio_free(pdata->config.reset_gpio);
+	}
+
+
 	phy_disconnect(pdata->phy_dev);
 	pdata->phy_dev = NULL;
 	mdiobus_unregister(pdata->mii_bus);
@@ -2390,11 +2396,11 @@ static int __devinit smsc911x_drv_probe(struct platform_device *pdev)
 
 	retval = smsc911x_request_resources(pdev);
 	if (retval)
-		goto out_request_resources_fail;
+		goto out_return_resources;
 
 	retval = smsc911x_enable_resources(pdev);
 	if (retval)
-		goto out_enable_resources_fail;
+		goto out_disable_resources;
 
 	if (pdata->ioaddr == NULL) {
 		SMSC_WARN(pdata, probe, "Error smsc911x base address invalid");
@@ -2437,9 +2443,10 @@ static int __devinit smsc911x_drv_probe(struct platform_device *pdev)
 	smsc911x_reg_write(pdata, INT_EN, 0);
 	smsc911x_reg_write(pdata, INT_STS, 0xFFFFFFFF);
 
-	retval = request_irq(dev->irq, smsc911x_irqhandler,
-			     irq_flags | IRQF_SHARED, dev->name, dev);
-	if (retval) {
+	retval = request_any_context_irq(dev->irq, smsc911x_irqhandler,
+					 irq_flags | IRQF_SHARED, dev->name,
+					 dev);
+	if (retval < 0) {
 		SMSC_WARN(pdata, probe,
 			  "Unable to claim requested irq: %d", dev->irq);
 		goto out_disable_resources;
@@ -2501,9 +2508,8 @@ out_free_irq:
 	free_irq(dev->irq, dev);
 out_disable_resources:
 	(void)smsc911x_disable_resources(pdev);
-out_enable_resources_fail:
+out_return_resources:
 	smsc911x_free_resources(pdev);
-out_request_resources_fail:
 	platform_set_drvdata(pdev, NULL);
 	iounmap(pdata->ioaddr);
 	free_netdev(dev);
@@ -2530,6 +2536,10 @@ static int smsc911x_suspend(struct device *dev)
 		PMT_CTRL_PM_MODE_D1_ | PMT_CTRL_WOL_EN_ |
 		PMT_CTRL_ED_EN_ | PMT_CTRL_PME_EN_);
 
+	/* Drive the GPIO Ethernet_Reset Line low to Suspend */
+	if (pdata->config.has_reset_gpio)
+		gpio_set_value_cansleep(pdata->config.reset_gpio, 0);
+
 	return 0;
 }
 
@@ -2538,6 +2548,10 @@ static int smsc911x_resume(struct device *dev)
 	struct net_device *ndev = dev_get_drvdata(dev);
 	struct smsc911x_data *pdata = netdev_priv(ndev);
 	unsigned int to = 100;
+
+	if (pdata->config.has_reset_gpio)
+		gpio_set_value_cansleep(pdata->config.reset_gpio, 1);
+
 
 	/* Note 3.11 from the datasheet:
 	 * 	"When the LAN9220 is in a power saving state, a write of any

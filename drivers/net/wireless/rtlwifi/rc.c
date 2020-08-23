@@ -225,7 +225,8 @@ static void rtl_rate_init(void *ppriv,
 static void rtl_rate_update(void *ppriv,
 			    struct ieee80211_supported_band *sband,
 			    struct ieee80211_sta *sta, void *priv_sta,
-			    u32 changed)
+			    u32 changed,
+			    enum nl80211_channel_type oper_chan_type)
 {
 }
 

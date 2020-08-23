@@ -63,9 +63,22 @@ config USB_EHCI_HCD
 	  To compile this driver as a module, choose M here: the
 	  module will be called ehci-hcd.
 
+config USB_EHCI_EHSET
+	bool "Embedded High-speed Host Electrical Test Support"
+	depends on USB_EHCI_HCD
+	---help---
+	  This option is required for EHSET Host Compliance Tests support on an
+	  embedded Hi-speed USB Host or OTG port.
+
+	  This enables the software support for the "Single Step Set Featue" test.
+	  Apart from this test, other EHSET tests TEST_SE0/J/K/PACKET are part
+	  of EHCI specification and their support already exists in the EHCI driver.
+
+	  If unsure, say N.
+
 config USB_EHCI_ROOT_HUB_TT
 	bool "Root Hub Transaction Translators"
-	depends on USB_EHCI_HCD || USB_CHIPIDEA_HOST
+	depends on USB_EHCI_HCD
 	---help---
 	  Some EHCI chips have vendor-specific extensions to integrate
 	  transaction translators, so that no OHCI or UHCI companion
@@ -77,7 +90,7 @@ config USB_EHCI_ROOT_HUB_TT
 
 config USB_EHCI_TT_NEWSCHED
 	bool "Improved Transaction Translator scheduling"
-	depends on USB_EHCI_HCD || USB_CHIPIDEA_HOST
+	depends on USB_EHCI_HCD
 	default y
 	---help---
 	  This changes the periodic scheduling code to fill more of the low
@@ -110,14 +123,13 @@ config USB_EHCI_BIG_ENDIAN_MMIO
 	depends on USB_EHCI_HCD && (PPC_CELLEB || PPC_PS3 || 440EPX || \
 				    ARCH_IXP4XX || XPS_USB_HCD_XILINX || \
 				    PPC_MPC512x || CPU_CAVIUM_OCTEON || \
-				    PMC_MSP || SPARC_LEON || MIPS_SEAD3)
+				    PMC_MSP || SPARC_LEON)
 	default y
 
 config USB_EHCI_BIG_ENDIAN_DESC
 	bool
 	depends on USB_EHCI_HCD && (440EPX || ARCH_IXP4XX || XPS_USB_HCD_XILINX || \
-				    PPC_MPC512x || PMC_MSP || SPARC_LEON || \
-				    MIPS_SEAD3)
+				    PPC_MPC512x || PMC_MSP || SPARC_LEON)
 	default y
 
 config XPS_USB_HCD_XILINX
@@ -169,6 +181,24 @@ config USB_EHCI_MSM
 	  clock management, powering up VBUS, and power management.
 	  This driver is not supported on boards like trout which
 	  has an external PHY.
+
+config USB_EHCI_MSM_HSIC
+	bool "Support for HSIC based MSM on-chip EHCI USB controller"
+	depends on USB_EHCI_HCD && ARCH_MSM
+	---help---
+	  Enables support for the HSIC (High Speed Inter-Chip) based
+	  USB Host controller present on the Qualcomm chipsets.
+
+	  HSIC is a supplement to USB 2.0 specification and is preferred
+	  for chip-to-chip interconnect (having maximum circuit length of
+	  10cm) as it removes the analog transceivers.
+
+config USB_EHCI_MSM_HOST4
+	bool "Support for MSM on-chip EHCI USB controller# 4"
+	depends on USB_EHCI_HCD && ARCH_MSM && ARCH_APQ8064
+	---help---
+	  Enables support for the EHCI Compliant USB Host controller# 4
+	  present on the Qualcomm chipsets.
 
 config USB_EHCI_TEGRA
        boolean "NVIDIA Tegra HCD support"
@@ -248,6 +278,21 @@ config USB_OXU210HP_HCD
 	  To compile this driver as a module, choose M here: the
 	  module will be called oxu210hp-hcd.
 
+config USB_EHCI_MSM_72K
+	bool "Support for Legacy Qualcomm on-chip EHCI USB controller"
+	depends on USB_EHCI_HCD && USB_MSM_OTG_72K && ARCH_MSM
+	---help---
+	  This driver enables support for USB host controller
+	  in pre 8660 qualcomm chipsets(8660, 7X30, 8X50 and 7X27).
+
+config USB_FS_HOST
+	bool "Support for Full Speed Host Mode"
+	depends on USB_EHCI_MSM_72K && ARCH_QSD8X50
+	default n
+	---help---
+	  Enables support for the full speed USB controller core present
+	  on the Qualcomm chipsets
+
 config USB_ISP116X_HCD
 	tristate "ISP116X HCD support"
 	depends on USB
@@ -292,7 +337,6 @@ config USB_OHCI_HCD
 	depends on USB && USB_ARCH_HAS_OHCI
 	select ISP1301_OMAP if MACH_OMAP_H2 || MACH_OMAP_H3
 	select USB_OTG_UTILS if ARCH_OMAP
-	select USB_ISP1301 if ARCH_LPC32XX || ARCH_PNX4008
 	---help---
 	  The Open Host Controller Interface (OHCI) is a standard for accessing
 	  USB 1.1 host controller hardware.  It does more in hardware than Intel's
@@ -375,15 +419,10 @@ config USB_OHCI_HCD_PCI
 	  If unsure, say Y.
 
 config USB_OHCI_HCD_SSB
-	bool "OHCI support for Broadcom SSB OHCI core (DEPRECATED)"
+	bool "OHCI support for Broadcom SSB OHCI core"
 	depends on USB_OHCI_HCD && (SSB = y || SSB = USB_OHCI_HCD) && EXPERIMENTAL
-	select USB_HCD_SSB
-	select USB_OHCI_HCD_PLATFORM
 	default n
 	---help---
-	  This option is deprecated now and the driver was removed, use
-	  USB_HCD_SSB and USB_OHCI_HCD_PLATFORM instead.
-
 	  Support for the Sonics Silicon Backplane (SSB) attached
 	  Broadcom USB OHCI core.
 
@@ -595,6 +634,15 @@ config USB_WHCI_HCD
 	  To compile this driver a module, choose M here: the module
 	  will be called "whci-hcd".
 
+config USB_PEHCI_HCD
+	tristate "ST-E ISP1763A Host Controller"
+	depends on USB
+	help
+	  Driver for ST-E isp1763A USB Host 2.0 Controllers.
+
+	  To compile this driver a module, choose M here: the module
+	  will be called "pehci".
+
 config USB_HWA_HCD
 	tristate "Host Wire Adapter (HWA) driver (EXPERIMENTAL)"
 	depends on EXPERIMENTAL
@@ -645,27 +693,3 @@ config USB_OCTEON_OHCI
 config USB_OCTEON2_COMMON
 	bool
 	default y if USB_OCTEON_EHCI || USB_OCTEON_OHCI
-
-config USB_HCD_BCMA
-	tristate "BCMA usb host driver"
-	depends on BCMA && EXPERIMENTAL
-	select USB_OHCI_HCD_PLATFORM if USB_OHCI_HCD
-	select USB_EHCI_HCD_PLATFORM if USB_EHCI_HCD
-	help
-	  Enbale support for the EHCI and OCHI host controller on an bcma bus.
-	  It converts the bcma driver into two platform device drivers
-	  for ehci and ohci.
-
-	  If unsure, say N.
-
-config USB_HCD_SSB
-	tristate "SSB usb host driver"
-	depends on SSB && EXPERIMENTAL
-	select USB_OHCI_HCD_PLATFORM if USB_OHCI_HCD
-	select USB_EHCI_HCD_PLATFORM if USB_EHCI_HCD
-	help
-	  Enbale support for the EHCI and OCHI host controller on an bcma bus.
-	  It converts the bcma driver into two platform device drivers
-	  for ehci and ohci.
-
-	  If unsure, say N.

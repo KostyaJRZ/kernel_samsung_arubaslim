@@ -34,6 +34,8 @@
 #include <linux/random.h>
 #include "ubifs.h"
 
+#ifdef CONFIG_UBIFS_FS_DEBUG
+
 static DEFINE_SPINLOCK(dbg_lock);
 
 static const char *get_key_fmt(int fmt)
@@ -230,7 +232,7 @@ static void dump_ch(const struct ubifs_ch *ch)
 	printk(KERN_ERR "\tlen            %u\n", le32_to_cpu(ch->len));
 }
 
-void ubifs_dump_inode(struct ubifs_info *c, const struct inode *inode)
+void dbg_dump_inode(struct ubifs_info *c, const struct inode *inode)
 {
 	const struct ubifs_inode *ui = ubifs_inode(inode);
 	struct qstr nm = { .name = NULL };
@@ -298,7 +300,7 @@ void ubifs_dump_inode(struct ubifs_info *c, const struct inode *inode)
 	kfree(pdent);
 }
 
-void ubifs_dump_node(const struct ubifs_info *c, const void *node)
+void dbg_dump_node(const struct ubifs_info *c, const void *node)
 {
 	int i, n;
 	union ubifs_key key;
@@ -601,7 +603,7 @@ void ubifs_dump_node(const struct ubifs_info *c, const void *node)
 	spin_unlock(&dbg_lock);
 }
 
-void ubifs_dump_budget_req(const struct ubifs_budget_req *req)
+void dbg_dump_budget_req(const struct ubifs_budget_req *req)
 {
 	spin_lock(&dbg_lock);
 	printk(KERN_ERR "Budgeting request: new_ino %d, dirtied_ino %d\n",
@@ -618,7 +620,7 @@ void ubifs_dump_budget_req(const struct ubifs_budget_req *req)
 	spin_unlock(&dbg_lock);
 }
 
-void ubifs_dump_lstats(const struct ubifs_lp_stats *lst)
+void dbg_dump_lstats(const struct ubifs_lp_stats *lst)
 {
 	spin_lock(&dbg_lock);
 	printk(KERN_ERR "(pid %d) Lprops statistics: empty_lebs %d, "
@@ -632,7 +634,7 @@ void ubifs_dump_lstats(const struct ubifs_lp_stats *lst)
 	spin_unlock(&dbg_lock);
 }
 
-void ubifs_dump_budg(struct ubifs_info *c, const struct ubifs_budg_info *bi)
+void dbg_dump_budg(struct ubifs_info *c, const struct ubifs_budg_info *bi)
 {
 	int i;
 	struct rb_node *rb;
@@ -705,7 +707,7 @@ out_unlock:
 	spin_unlock(&c->space_lock);
 }
 
-void ubifs_dump_lprop(const struct ubifs_info *c, const struct ubifs_lprops *lp)
+void dbg_dump_lprop(const struct ubifs_info *c, const struct ubifs_lprops *lp)
 {
 	int i, spc, dark = 0, dead = 0;
 	struct rb_node *rb;
@@ -799,7 +801,7 @@ void ubifs_dump_lprop(const struct ubifs_info *c, const struct ubifs_lprops *lp)
 	printk(KERN_CONT ")\n");
 }
 
-void ubifs_dump_lprops(struct ubifs_info *c)
+void dbg_dump_lprops(struct ubifs_info *c)
 {
 	int lnum, err;
 	struct ubifs_lprops lp;
@@ -808,20 +810,20 @@ void ubifs_dump_lprops(struct ubifs_info *c)
 	printk(KERN_ERR "(pid %d) start dumping LEB properties\n",
 	       current->pid);
 	ubifs_get_lp_stats(c, &lst);
-	ubifs_dump_lstats(&lst);
+	dbg_dump_lstats(&lst);
 
 	for (lnum = c->main_first; lnum < c->leb_cnt; lnum++) {
 		err = ubifs_read_one_lp(c, lnum, &lp);
 		if (err)
 			ubifs_err("cannot read lprops for LEB %d", lnum);
 
-		ubifs_dump_lprop(c, &lp);
+		dbg_dump_lprop(c, &lp);
 	}
 	printk(KERN_ERR "(pid %d) finish dumping LEB properties\n",
 	       current->pid);
 }
 
-void ubifs_dump_lpt_info(struct ubifs_info *c)
+void dbg_dump_lpt_info(struct ubifs_info *c)
 {
 	int i;
 
@@ -860,8 +862,8 @@ void ubifs_dump_lpt_info(struct ubifs_info *c)
 	spin_unlock(&dbg_lock);
 }
 
-void ubifs_dump_sleb(const struct ubifs_info *c,
-		     const struct ubifs_scan_leb *sleb, int offs)
+void dbg_dump_sleb(const struct ubifs_info *c,
+		   const struct ubifs_scan_leb *sleb, int offs)
 {
 	struct ubifs_scan_node *snod;
 
@@ -872,11 +874,11 @@ void ubifs_dump_sleb(const struct ubifs_info *c,
 		cond_resched();
 		printk(KERN_ERR "Dumping node at LEB %d:%d len %d\n", sleb->lnum,
 		       snod->offs, snod->len);
-		ubifs_dump_node(c, snod->node);
+		dbg_dump_node(c, snod->node);
 	}
 }
 
-void ubifs_dump_leb(const struct ubifs_info *c, int lnum)
+void dbg_dump_leb(const struct ubifs_info *c, int lnum)
 {
 	struct ubifs_scan_leb *sleb;
 	struct ubifs_scan_node *snod;
@@ -907,7 +909,7 @@ void ubifs_dump_leb(const struct ubifs_info *c, int lnum)
 		cond_resched();
 		printk(KERN_ERR "Dumping node at LEB %d:%d len %d\n", lnum,
 		       snod->offs, snod->len);
-		ubifs_dump_node(c, snod->node);
+		dbg_dump_node(c, snod->node);
 	}
 
 	printk(KERN_ERR "(pid %d) finish dumping LEB %d\n",
@@ -919,8 +921,8 @@ out:
 	return;
 }
 
-void ubifs_dump_znode(const struct ubifs_info *c,
-		      const struct ubifs_znode *znode)
+void dbg_dump_znode(const struct ubifs_info *c,
+		    const struct ubifs_znode *znode)
 {
 	int n;
 	const struct ubifs_zbranch *zbr;
@@ -963,7 +965,7 @@ void ubifs_dump_znode(const struct ubifs_info *c,
 	spin_unlock(&dbg_lock);
 }
 
-void ubifs_dump_heap(struct ubifs_info *c, struct ubifs_lpt_heap *heap, int cat)
+void dbg_dump_heap(struct ubifs_info *c, struct ubifs_lpt_heap *heap, int cat)
 {
 	int i;
 
@@ -979,8 +981,8 @@ void ubifs_dump_heap(struct ubifs_info *c, struct ubifs_lpt_heap *heap, int cat)
 	printk(KERN_ERR "(pid %d) finish dumping heap\n", current->pid);
 }
 
-void ubifs_dump_pnode(struct ubifs_info *c, struct ubifs_pnode *pnode,
-		      struct ubifs_nnode *parent, int iip)
+void dbg_dump_pnode(struct ubifs_info *c, struct ubifs_pnode *pnode,
+		    struct ubifs_nnode *parent, int iip)
 {
 	int i;
 
@@ -997,7 +999,7 @@ void ubifs_dump_pnode(struct ubifs_info *c, struct ubifs_pnode *pnode,
 	}
 }
 
-void ubifs_dump_tnc(struct ubifs_info *c)
+void dbg_dump_tnc(struct ubifs_info *c)
 {
 	struct ubifs_znode *znode;
 	int level;
@@ -1012,7 +1014,7 @@ void ubifs_dump_tnc(struct ubifs_info *c)
 			level = znode->level;
 			printk(KERN_ERR "== Level %d ==\n", level);
 		}
-		ubifs_dump_znode(c, znode);
+		dbg_dump_znode(c, znode);
 		znode = ubifs_tnc_levelorder_next(c->zroot.znode, znode);
 	}
 	printk(KERN_ERR "(pid %d) finish dumping TNC tree\n", current->pid);
@@ -1021,18 +1023,18 @@ void ubifs_dump_tnc(struct ubifs_info *c)
 static int dump_znode(struct ubifs_info *c, struct ubifs_znode *znode,
 		      void *priv)
 {
-	ubifs_dump_znode(c, znode);
+	dbg_dump_znode(c, znode);
 	return 0;
 }
 
 /**
- * ubifs_dump_index - dump the on-flash index.
+ * dbg_dump_index - dump the on-flash index.
  * @c: UBIFS file-system description object
  *
- * This function dumps whole UBIFS indexing B-tree, unlike 'ubifs_dump_tnc()'
+ * This function dumps whole UBIFS indexing B-tree, unlike 'dbg_dump_tnc()'
  * which dumps only in-memory znodes and does not read znodes which from flash.
  */
-void ubifs_dump_index(struct ubifs_info *c)
+void dbg_dump_index(struct ubifs_info *c)
 {
 	dbg_walk_index(c, NULL, dump_znode, NULL);
 }
@@ -1118,15 +1120,15 @@ int dbg_check_space_info(struct ubifs_info *c)
 
 out:
 	ubifs_msg("saved lprops statistics dump");
-	ubifs_dump_lstats(&d->saved_lst);
+	dbg_dump_lstats(&d->saved_lst);
 	ubifs_msg("saved budgeting info dump");
-	ubifs_dump_budg(c, &d->saved_bi);
+	dbg_dump_budg(c, &d->saved_bi);
 	ubifs_msg("saved idx_gc_cnt %d", d->saved_idx_gc_cnt);
 	ubifs_msg("current lprops statistics dump");
 	ubifs_get_lp_stats(c, &lst);
-	ubifs_dump_lstats(&lst);
+	dbg_dump_lstats(&lst);
 	ubifs_msg("current budgeting info dump");
-	ubifs_dump_budg(c, &c->bi);
+	dbg_dump_budg(c, &c->bi);
 	dump_stack();
 	return -EINVAL;
 }
@@ -1158,7 +1160,7 @@ int dbg_check_synced_i_size(const struct ubifs_info *c, struct inode *inode)
 			  "is clean", ui->ui_size, ui->synced_i_size);
 		ubifs_err("i_ino %lu, i_mode %#x, i_size %lld", inode->i_ino,
 			  inode->i_mode, i_size_read(inode));
-		dump_stack();
+		dbg_dump_stack();
 		err = -EINVAL;
 	}
 	spin_unlock(&ui->ui_lock);
@@ -1221,14 +1223,14 @@ int dbg_check_dir(struct ubifs_info *c, const struct inode *dir)
 			  "but calculated size is %llu", dir->i_ino,
 			  (unsigned long long)i_size_read(dir),
 			  (unsigned long long)size);
-		ubifs_dump_inode(c, dir);
+		dbg_dump_inode(c, dir);
 		dump_stack();
 		return -EINVAL;
 	}
 	if (dir->i_nlink != nlink) {
 		ubifs_err("directory inode %lu has nlink %u, but calculated "
 			  "nlink is %u", dir->i_ino, dir->i_nlink, nlink);
-		ubifs_dump_inode(c, dir);
+		dbg_dump_inode(c, dir);
 		dump_stack();
 		return -EINVAL;
 	}
@@ -1285,25 +1287,25 @@ static int dbg_check_key_order(struct ubifs_info *c, struct ubifs_zbranch *zbr1,
 	err = 1;
 	key_read(c, &dent1->key, &key);
 	if (keys_cmp(c, &zbr1->key, &key)) {
-		ubifs_err("1st entry at %d:%d has key %s", zbr1->lnum,
-			  zbr1->offs, dbg_snprintf_key(c, &key, key_buf,
-						       DBG_KEY_BUF_LEN));
-		ubifs_err("but it should have key %s according to tnc",
-			  dbg_snprintf_key(c, &zbr1->key, key_buf,
-					   DBG_KEY_BUF_LEN));
-		ubifs_dump_node(c, dent1);
+		dbg_err("1st entry at %d:%d has key %s", zbr1->lnum,
+			zbr1->offs, dbg_snprintf_key(c, &key, key_buf,
+						     DBG_KEY_BUF_LEN));
+		dbg_err("but it should have key %s according to tnc",
+			dbg_snprintf_key(c, &zbr1->key, key_buf,
+					 DBG_KEY_BUF_LEN));
+		dbg_dump_node(c, dent1);
 		goto out_free;
 	}
 
 	key_read(c, &dent2->key, &key);
 	if (keys_cmp(c, &zbr2->key, &key)) {
-		ubifs_err("2nd entry at %d:%d has key %s", zbr1->lnum,
-			  zbr1->offs, dbg_snprintf_key(c, &key, key_buf,
-						       DBG_KEY_BUF_LEN));
-		ubifs_err("but it should have key %s according to tnc",
-			  dbg_snprintf_key(c, &zbr2->key, key_buf,
-					   DBG_KEY_BUF_LEN));
-		ubifs_dump_node(c, dent2);
+		dbg_err("2nd entry at %d:%d has key %s", zbr1->lnum,
+			zbr1->offs, dbg_snprintf_key(c, &key, key_buf,
+						     DBG_KEY_BUF_LEN));
+		dbg_err("but it should have key %s according to tnc",
+			dbg_snprintf_key(c, &zbr2->key, key_buf,
+					 DBG_KEY_BUF_LEN));
+		dbg_dump_node(c, dent2);
 		goto out_free;
 	}
 
@@ -1316,15 +1318,15 @@ static int dbg_check_key_order(struct ubifs_info *c, struct ubifs_zbranch *zbr1,
 		goto out_free;
 	}
 	if (cmp == 0 && nlen1 == nlen2)
-		ubifs_err("2 xent/dent nodes with the same name");
+		dbg_err("2 xent/dent nodes with the same name");
 	else
-		ubifs_err("bad order of colliding key %s",
-			  dbg_snprintf_key(c, &key, key_buf, DBG_KEY_BUF_LEN));
+		dbg_err("bad order of colliding key %s",
+			dbg_snprintf_key(c, &key, key_buf, DBG_KEY_BUF_LEN));
 
 	ubifs_msg("first node at %d:%d\n", zbr1->lnum, zbr1->offs);
-	ubifs_dump_node(c, dent1);
+	dbg_dump_node(c, dent1);
 	ubifs_msg("second node at %d:%d\n", zbr2->lnum, zbr2->offs);
-	ubifs_dump_node(c, dent2);
+	dbg_dump_node(c, dent2);
 
 out_free:
 	kfree(dent2);
@@ -1527,10 +1529,10 @@ static int dbg_check_znode(struct ubifs_info *c, struct ubifs_zbranch *zbr)
 out:
 	ubifs_err("failed, error %d", err);
 	ubifs_msg("dump of the znode");
-	ubifs_dump_znode(c, znode);
+	dbg_dump_znode(c, znode);
 	if (zp) {
 		ubifs_msg("dump of the parent znode");
-		ubifs_dump_znode(c, zp);
+		dbg_dump_znode(c, zp);
 	}
 	dump_stack();
 	return -EINVAL;
@@ -1597,9 +1599,9 @@ int dbg_check_tnc(struct ubifs_info *c, int extra)
 				return err;
 			if (err) {
 				ubifs_msg("first znode");
-				ubifs_dump_znode(c, prev);
+				dbg_dump_znode(c, prev);
 				ubifs_msg("second znode");
-				ubifs_dump_znode(c, znode);
+				dbg_dump_znode(c, znode);
 				return -EINVAL;
 			}
 		}
@@ -1688,7 +1690,7 @@ int dbg_walk_index(struct ubifs_info *c, dbg_leaf_callback leaf_cb,
 			if (err) {
 				ubifs_err("znode checking function returned "
 					  "error %d", err);
-				ubifs_dump_znode(c, znode);
+				dbg_dump_znode(c, znode);
 				goto out_dump;
 			}
 		}
@@ -1756,7 +1758,7 @@ out_dump:
 	else
 		zbr = &c->zroot;
 	ubifs_msg("dump of znode at LEB %d:%d", zbr->lnum, zbr->offs);
-	ubifs_dump_znode(c, znode);
+	dbg_dump_znode(c, znode);
 out_unlock:
 	mutex_unlock(&c->tnc_mutex);
 	return err;
@@ -2192,7 +2194,7 @@ out:
 
 out_dump:
 	ubifs_msg("dump of node at LEB %d:%d", zbr->lnum, zbr->offs);
-	ubifs_dump_node(c, node);
+	dbg_dump_node(c, node);
 out_free:
 	kfree(node);
 	return err;
@@ -2350,7 +2352,7 @@ out_dump:
 
 	ubifs_msg("dump of the inode %lu sitting in LEB %d:%d",
 		  (unsigned long)fscki->inum, zbr->lnum, zbr->offs);
-	ubifs_dump_node(c, ino);
+	dbg_dump_node(c, ino);
 	kfree(ino);
 	return -EINVAL;
 }
@@ -2421,12 +2423,12 @@ int dbg_check_data_nodes_order(struct ubifs_info *c, struct list_head *head)
 
 		if (sa->type != UBIFS_DATA_NODE) {
 			ubifs_err("bad node type %d", sa->type);
-			ubifs_dump_node(c, sa->node);
+			dbg_dump_node(c, sa->node);
 			return -EINVAL;
 		}
 		if (sb->type != UBIFS_DATA_NODE) {
 			ubifs_err("bad node type %d", sb->type);
-			ubifs_dump_node(c, sb->node);
+			dbg_dump_node(c, sb->node);
 			return -EINVAL;
 		}
 
@@ -2457,8 +2459,8 @@ int dbg_check_data_nodes_order(struct ubifs_info *c, struct list_head *head)
 	return 0;
 
 error_dump:
-	ubifs_dump_node(c, sa->node);
-	ubifs_dump_node(c, sb->node);
+	dbg_dump_node(c, sa->node);
+	dbg_dump_node(c, sb->node);
 	return -EINVAL;
 }
 
@@ -2489,13 +2491,13 @@ int dbg_check_nondata_nodes_order(struct ubifs_info *c, struct list_head *head)
 		if (sa->type != UBIFS_INO_NODE && sa->type != UBIFS_DENT_NODE &&
 		    sa->type != UBIFS_XENT_NODE) {
 			ubifs_err("bad node type %d", sa->type);
-			ubifs_dump_node(c, sa->node);
+			dbg_dump_node(c, sa->node);
 			return -EINVAL;
 		}
 		if (sa->type != UBIFS_INO_NODE && sa->type != UBIFS_DENT_NODE &&
 		    sa->type != UBIFS_XENT_NODE) {
 			ubifs_err("bad node type %d", sb->type);
-			ubifs_dump_node(c, sb->node);
+			dbg_dump_node(c, sb->node);
 			return -EINVAL;
 		}
 
@@ -2545,9 +2547,9 @@ int dbg_check_nondata_nodes_order(struct ubifs_info *c, struct list_head *head)
 
 error_dump:
 	ubifs_msg("dumping first node");
-	ubifs_dump_node(c, sa->node);
+	dbg_dump_node(c, sa->node);
 	ubifs_msg("dumping second node");
-	ubifs_dump_node(c, sb->node);
+	dbg_dump_node(c, sb->node);
 	return -EINVAL;
 	return 0;
 }
@@ -2676,7 +2678,7 @@ static void cut_data(const void *buf, unsigned int len)
 }
 
 int dbg_leb_write(struct ubifs_info *c, int lnum, const void *buf,
-		  int offs, int len)
+		  int offs, int len, int dtype)
 {
 	int err, failing;
 
@@ -2686,7 +2688,7 @@ int dbg_leb_write(struct ubifs_info *c, int lnum, const void *buf,
 	failing = power_cut_emulated(c, lnum, 1);
 	if (failing)
 		cut_data(buf, len);
-	err = ubi_leb_write(c->ubi, lnum, buf, offs, len);
+	err = ubi_leb_write(c->ubi, lnum, buf, offs, len, dtype);
 	if (err)
 		return err;
 	if (failing)
@@ -2695,7 +2697,7 @@ int dbg_leb_write(struct ubifs_info *c, int lnum, const void *buf,
 }
 
 int dbg_leb_change(struct ubifs_info *c, int lnum, const void *buf,
-		   int len)
+		   int len, int dtype)
 {
 	int err;
 
@@ -2703,7 +2705,7 @@ int dbg_leb_change(struct ubifs_info *c, int lnum, const void *buf,
 		return -EROFS;
 	if (power_cut_emulated(c, lnum, 1))
 		return -EROFS;
-	err = ubi_leb_change(c->ubi, lnum, buf, len);
+	err = ubi_leb_change(c->ubi, lnum, buf, len, dtype);
 	if (err)
 		return err;
 	if (power_cut_emulated(c, lnum, 1))
@@ -2727,7 +2729,7 @@ int dbg_leb_unmap(struct ubifs_info *c, int lnum)
 	return 0;
 }
 
-int dbg_leb_map(struct ubifs_info *c, int lnum)
+int dbg_leb_map(struct ubifs_info *c, int lnum, int dtype)
 {
 	int err;
 
@@ -2735,7 +2737,7 @@ int dbg_leb_map(struct ubifs_info *c, int lnum)
 		return -EROFS;
 	if (power_cut_emulated(c, lnum, 0))
 		return -EROFS;
-	err = ubi_leb_map(c->ubi, lnum);
+	err = ubi_leb_map(c->ubi, lnum, dtype);
 	if (err)
 		return err;
 	if (power_cut_emulated(c, lnum, 0))
@@ -2855,16 +2857,16 @@ static ssize_t dfs_file_write(struct file *file, const char __user *u,
 	 * 'ubifs-debug' file-system instead.
 	 */
 	if (file->f_path.dentry == d->dfs_dump_lprops) {
-		ubifs_dump_lprops(c);
+		dbg_dump_lprops(c);
 		return count;
 	}
 	if (file->f_path.dentry == d->dfs_dump_budg) {
-		ubifs_dump_budg(c, &c->bi);
+		dbg_dump_budg(c, &c->bi);
 		return count;
 	}
 	if (file->f_path.dentry == d->dfs_dump_tnc) {
 		mutex_lock(&c->tnc_mutex);
-		ubifs_dump_tnc(c);
+		dbg_dump_tnc(c);
 		mutex_unlock(&c->tnc_mutex);
 		return count;
 	}
@@ -2917,9 +2919,6 @@ int dbg_debugfs_init_fs(struct ubifs_info *c)
 	const char *fname;
 	struct dentry *dent;
 	struct ubifs_debug_info *d = c->dbg;
-
-	if (!IS_ENABLED(CONFIG_DEBUG_FS))
-		return 0;
 
 	n = snprintf(d->dfs_dir_name, UBIFS_DFS_DIR_LEN + 1, UBIFS_DFS_DIR_NAME,
 		     c->vi.ubi_num, c->vi.vol_id);
@@ -3013,8 +3012,7 @@ out:
  */
 void dbg_debugfs_exit_fs(struct ubifs_info *c)
 {
-	if (IS_ENABLED(CONFIG_DEBUG_FS))
-		debugfs_remove_recursive(c->dbg->dfs_dir);
+	debugfs_remove_recursive(c->dbg->dfs_dir);
 }
 
 struct ubifs_global_debug_info ubifs_dbg;
@@ -3099,9 +3097,6 @@ int dbg_debugfs_init(void)
 	const char *fname;
 	struct dentry *dent;
 
-	if (!IS_ENABLED(CONFIG_DEBUG_FS))
-		return 0;
-
 	fname = "ubifs";
 	dent = debugfs_create_dir(fname, NULL);
 	if (IS_ERR_OR_NULL(dent))
@@ -3166,8 +3161,7 @@ out:
  */
 void dbg_debugfs_exit(void)
 {
-	if (IS_ENABLED(CONFIG_DEBUG_FS))
-		debugfs_remove_recursive(dfs_rootdir);
+	debugfs_remove_recursive(dfs_rootdir);
 }
 
 /**
@@ -3195,3 +3189,5 @@ void ubifs_debugging_exit(struct ubifs_info *c)
 {
 	kfree(c->dbg);
 }
+
+#endif /* CONFIG_UBIFS_FS_DEBUG */

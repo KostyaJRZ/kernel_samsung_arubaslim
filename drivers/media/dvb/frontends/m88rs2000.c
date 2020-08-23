@@ -416,25 +416,9 @@ static int m88rs2000_tab_set(struct m88rs2000_state *state,
 
 static int m88rs2000_set_voltage(struct dvb_frontend *fe, fe_sec_voltage_t volt)
 {
-	struct m88rs2000_state *state = fe->demodulator_priv;
-	u8 data;
-
-	data = m88rs2000_demod_read(state, 0xb2);
-	data |= 0x03; /* bit0 V/H, bit1 off/on */
-
-	switch (volt) {
-	case SEC_VOLTAGE_18:
-		data &= ~0x03;
-		break;
-	case SEC_VOLTAGE_13:
-		data &= ~0x03;
-		data |= 0x01;
-		break;
-	case SEC_VOLTAGE_OFF:
-		break;
-	}
-
-	m88rs2000_demod_write(state, 0xb2, data);
+	deb_info("%s: %s\n", __func__,
+		volt == SEC_VOLTAGE_13 ? "SEC_VOLTAGE_13" :
+		volt == SEC_VOLTAGE_18 ? "SEC_VOLTAGE_18" : "??");
 
 	return 0;
 }
@@ -670,6 +654,7 @@ static int m88rs2000_set_tuner(struct dvb_frontend *fe, u16 *offset)
 static int m88rs2000_set_fec(struct m88rs2000_state *state,
 		fe_code_rate_t fec)
 {
+	int ret;
 	u16 fec_set;
 	switch (fec) {
 	/* This is not confirmed kept for reference */
@@ -692,7 +677,7 @@ static int m88rs2000_set_fec(struct m88rs2000_state *state,
 	default:
 		fec_set = 0x08;
 	}
-	m88rs2000_demod_write(state, 0x76, fec_set);
+	ret = m88rs2000_demod_write(state, 0x76, fec_set);
 
 	return 0;
 }
@@ -787,13 +772,13 @@ static int m88rs2000_set_frontend(struct dvb_frontend *fe)
 		return -ENODEV;
 
 	for (i = 0; i < 25; i++) {
-		reg = m88rs2000_demod_read(state, 0x8c);
+		u8 reg = m88rs2000_demod_read(state, 0x8c);
 		if ((reg & 0x7) == 0x7) {
 			status = FE_HAS_LOCK;
 			break;
 		}
 		state->no_lock_count++;
-		if (state->no_lock_count == 15) {
+		if (state->no_lock_count > 15) {
 			reg = m88rs2000_demod_read(state, 0x70);
 			reg ^= 0x4;
 			m88rs2000_demod_write(state, 0x70, reg);

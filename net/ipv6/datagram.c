@@ -22,7 +22,6 @@
 #include <linux/ipv6.h>
 #include <linux/route.h>
 #include <linux/slab.h>
-#include <linux/export.h>
 
 #include <net/ipv6.h>
 #include <net/ndisc.h>
@@ -34,9 +33,9 @@
 #include <linux/errqueue.h>
 #include <asm/uaccess.h>
 
-static bool ipv6_mapped_addr_any(const struct in6_addr *a)
+static inline int ipv6_mapped_addr_any(const struct in6_addr *a)
 {
-	return ipv6_addr_v4mapped(a) && (a->s6_addr32[3] == 0);
+	return (ipv6_addr_v4mapped(a) && (a->s6_addr32[3] == 0));
 }
 
 int ip6_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
@@ -99,7 +98,7 @@ int ip6_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 		sin.sin_port = usin->sin6_port;
 
 		err = ip4_datagram_connect(sk,
-					   (struct sockaddr *) &sin,
+					   (struct sockaddr*) &sin,
 					   sizeof(sin));
 
 ipv4_connected:
@@ -161,6 +160,7 @@ ipv4_connected:
 	fl6.flowi6_mark = sk->sk_mark;
 	fl6.fl6_dport = inet->inet_dport;
 	fl6.fl6_sport = inet->inet_sport;
+	fl6.flowi6_uid = sock_i_uid(sk);
 
 	if (!fl6.flowi6_oif && (addr_type&IPV6_ADDR_MULTICAST))
 		fl6.flowi6_oif = np->mcast_oif;
@@ -203,7 +203,6 @@ out:
 	fl6_sock_release(flowlabel);
 	return err;
 }
-EXPORT_SYMBOL_GPL(ip6_datagram_connect);
 
 void ipv6_icmp_error(struct sock *sk, struct sk_buff *skb, int err,
 		     __be16 port, u32 info, u8 *payload)
@@ -376,6 +375,7 @@ int ipv6_recv_error(struct sock *sk, struct msghdr *msg, int len)
 	if (serr->ee.ee_origin != SO_EE_ORIGIN_LOCAL) {
 		sin->sin6_family = AF_INET6;
 		sin->sin6_flowinfo = 0;
+		sin->sin6_port = 0;
 		sin->sin6_scope_id = 0;
 		if (skb->protocol == htons(ETH_P_IPV6)) {
 			sin->sin6_addr = ipv6_hdr(skb)->saddr;
@@ -416,7 +416,6 @@ out_free_skb:
 out:
 	return err;
 }
-EXPORT_SYMBOL_GPL(ipv6_recv_error);
 
 /*
  *	Handle IPV6_RECVPATHMTU
@@ -518,10 +517,10 @@ int datagram_recv_ctl(struct sock *sk, struct msghdr *msg, struct sk_buff *skb)
 		u8 nexthdr = ipv6_hdr(skb)->nexthdr;
 
 		while (off <= opt->lastopt) {
-			unsigned int len;
+			unsigned len;
 			u8 *ptr = nh + off;
 
-			switch (nexthdr) {
+			switch(nexthdr) {
 			case IPPROTO_DSTOPTS:
 				nexthdr = ptr[0];
 				len = (ptr[1] + 1) << 3;
@@ -830,8 +829,9 @@ int datagram_send_ctl(struct net *net, struct sock *sk,
 			int tc;
 
 			err = -EINVAL;
-			if (cmsg->cmsg_len != CMSG_LEN(sizeof(int)))
+			if (cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
 				goto exit_f;
+			}
 
 			tc = *(int *)CMSG_DATA(cmsg);
 			if (tc < -1 || tc > 0xff)
@@ -848,8 +848,9 @@ int datagram_send_ctl(struct net *net, struct sock *sk,
 			int df;
 
 			err = -EINVAL;
-			if (cmsg->cmsg_len != CMSG_LEN(sizeof(int)))
+			if (cmsg->cmsg_len != CMSG_LEN(sizeof(int))) {
 				goto exit_f;
+			}
 
 			df = *(int *)CMSG_DATA(cmsg);
 			if (df < 0 || df > 1)
@@ -871,4 +872,3 @@ int datagram_send_ctl(struct net *net, struct sock *sk,
 exit_f:
 	return err;
 }
-EXPORT_SYMBOL_GPL(datagram_send_ctl);

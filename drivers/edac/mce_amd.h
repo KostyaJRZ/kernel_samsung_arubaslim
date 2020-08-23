@@ -5,6 +5,8 @@
 
 #include <asm/mce.h>
 
+#define BIT_64(n)			(U64_C(1) << (n))
+
 #define EC(x)				((x) & 0xffff)
 #define XEC(x, mask)			(((x) >> 16) & mask)
 

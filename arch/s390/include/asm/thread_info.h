@@ -9,13 +9,15 @@
 #ifndef _ASM_THREAD_INFO_H
 #define _ASM_THREAD_INFO_H
 
+#ifdef __KERNEL__
+
 /*
  * Size of kernel stack for each process
  */
-#ifndef CONFIG_64BIT
+#ifndef __s390x__
 #define THREAD_ORDER 1
 #define ASYNC_ORDER  1
-#else /* CONFIG_64BIT */
+#else /* __s390x__ */
 #ifndef __SMALL_STACK
 #define THREAD_ORDER 2
 #define ASYNC_ORDER  2
@@ -23,7 +25,7 @@
 #define THREAD_ORDER 1
 #define ASYNC_ORDER  1
 #endif
-#endif /* CONFIG_64BIT */
+#endif /* __s390x__ */
 
 #define THREAD_SIZE (PAGE_SIZE << THREAD_ORDER)
 #define ASYNC_SIZE  (PAGE_SIZE << ASYNC_ORDER)
@@ -93,6 +95,7 @@ static inline struct thread_info *current_thread_info(void)
 #define TIF_SYSCALL_AUDIT	9	/* syscall auditing active */
 #define TIF_SECCOMP		10	/* secure computing */
 #define TIF_SYSCALL_TRACEPOINT	11	/* syscall tracepoint instrumentation */
+#define TIF_SIE			12	/* guest execution active */
 #define TIF_POLLING_NRFLAG	16	/* true if poll_idle() is polling
 					   TIF_NEED_RESCHED */
 #define TIF_31BIT		17	/* 32bit process */
@@ -111,6 +114,7 @@ static inline struct thread_info *current_thread_info(void)
 #define _TIF_SYSCALL_AUDIT	(1<<TIF_SYSCALL_AUDIT)
 #define _TIF_SECCOMP		(1<<TIF_SECCOMP)
 #define _TIF_SYSCALL_TRACEPOINT	(1<<TIF_SYSCALL_TRACEPOINT)
+#define _TIF_SIE		(1<<TIF_SIE)
 #define _TIF_POLLING_NRFLAG	(1<<TIF_POLLING_NRFLAG)
 #define _TIF_31BIT		(1<<TIF_31BIT)
 #define _TIF_SINGLE_STEP	(1<<TIF_SINGLE_STEP)
@@ -120,6 +124,8 @@ static inline struct thread_info *current_thread_info(void)
 #else
 #define is_32bit_task()		(1)
 #endif
+
+#endif /* __KERNEL__ */
 
 #define PREEMPT_ACTIVE		0x4000000
 

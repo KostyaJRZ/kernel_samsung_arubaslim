@@ -28,7 +28,6 @@
 
 #include "main.h"
 
-#define SD8786_DEFAULT_FW_NAME "mrvl/sd8786_uapsta.bin"
 #define SD8787_DEFAULT_FW_NAME "mrvl/sd8787_uapsta.bin"
 #define SD8797_DEFAULT_FW_NAME "mrvl/sd8797_uapsta.bin"
 
@@ -194,7 +193,7 @@
 		a->mpa_tx.ports |= (1<<(a->mpa_tx.pkt_cnt+1+(MAX_PORT -	\
 						a->mp_end_port)));	\
 	a->mpa_tx.pkt_cnt++;						\
-} while (0)
+} while (0);
 
 /* SDIO Tx aggregation limit ? */
 #define MP_TX_AGGR_PKT_LIMIT_REACHED(a)					\
@@ -212,7 +211,7 @@
 	a->mpa_tx.buf_len = 0;						\
 	a->mpa_tx.ports = 0;						\
 	a->mpa_tx.start_port = 0;					\
-} while (0)
+} while (0);
 
 /* SDIO Rx aggregation limit ? */
 #define MP_RX_AGGR_PKT_LIMIT_REACHED(a)					\
@@ -243,7 +242,7 @@
 	a->mpa_rx.skb_arr[a->mpa_rx.pkt_cnt] = skb;			\
 	a->mpa_rx.len_arr[a->mpa_rx.pkt_cnt] = skb->len;		\
 	a->mpa_rx.pkt_cnt++;						\
-} while (0)
+} while (0);
 
 /* Reset SDIO Rx aggregation buffer parameters */
 #define MP_RX_AGGR_BUF_RESET(a) do {					\
@@ -251,7 +250,7 @@
 	a->mpa_rx.buf_len = 0;						\
 	a->mpa_rx.ports = 0;						\
 	a->mpa_rx.start_port = 0;					\
-} while (0)
+} while (0);
 
 
 /* data structure for SDIO MPA TX */

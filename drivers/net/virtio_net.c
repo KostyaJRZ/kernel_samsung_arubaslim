@@ -42,8 +42,7 @@ module_param(gso, bool, 0444);
 #define VIRTNET_DRIVER_VERSION "1.0.0"
 
 struct virtnet_stats {
-	struct u64_stats_sync tx_syncp;
-	struct u64_stats_sync rx_syncp;
+	struct u64_stats_sync syncp;
 	u64 tx_bytes;
 	u64 tx_packets;
 
@@ -67,20 +66,11 @@ struct virtnet_info {
 	/* Host will merge rx buffers for big packets (shake it! shake it!) */
 	bool mergeable_rx_bufs;
 
-	/* enable config space updates */
-	bool config_enable;
-
 	/* Active statistics */
 	struct virtnet_stats __percpu *stats;
 
 	/* Work struct for refilling if we run low on memory. */
 	struct delayed_work refill;
-
-	/* Work struct for config space updates */
-	struct work_struct config_work;
-
-	/* Lock for config space updates */
-	struct mutex config_lock;
 
 	/* Chain pages by the private ptr. */
 	struct page *pages;
@@ -301,10 +291,10 @@ static void receive_buf(struct net_device *dev, void *buf, unsigned int len)
 
 	hdr = skb_vnet_hdr(skb);
 
-	u64_stats_update_begin(&stats->rx_syncp);
+	u64_stats_update_begin(&stats->syncp);
 	stats->rx_bytes += skb->len;
 	stats->rx_packets++;
-	u64_stats_update_end(&stats->rx_syncp);
+	u64_stats_update_end(&stats->syncp);
 
 	if (hdr->hdr.flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) {
 		pr_debug("Needs csum!\n");
@@ -566,10 +556,10 @@ static unsigned int free_old_xmit_skbs(struct virtnet_info *vi)
 	while ((skb = virtqueue_get_buf(vi->svq, &len)) != NULL) {
 		pr_debug("Sent skb %p\n", skb);
 
-		u64_stats_update_begin(&stats->tx_syncp);
+		u64_stats_update_begin(&stats->syncp);
 		stats->tx_bytes += skb->len;
 		stats->tx_packets++;
-		u64_stats_update_end(&stats->tx_syncp);
+		u64_stats_update_end(&stats->syncp);
 
 		tot_sgs += skb_vnet_hdr(skb)->num_sg;
 		dev_kfree_skb_any(skb);
@@ -704,16 +694,12 @@ static struct rtnl_link_stats64 *virtnet_stats(struct net_device *dev,
 		u64 tpackets, tbytes, rpackets, rbytes;
 
 		do {
-			start = u64_stats_fetch_begin(&stats->tx_syncp);
+			start = u64_stats_fetch_begin(&stats->syncp);
 			tpackets = stats->tx_packets;
 			tbytes   = stats->tx_bytes;
-		} while (u64_stats_fetch_retry(&stats->tx_syncp, start));
-
-		do {
-			start = u64_stats_fetch_begin(&stats->rx_syncp);
 			rpackets = stats->rx_packets;
 			rbytes   = stats->rx_bytes;
-		} while (u64_stats_fetch_retry(&stats->rx_syncp, start));
+		} while (u64_stats_fetch_retry(&stats->syncp, start));
 
 		tot->rx_packets += rpackets;
 		tot->tx_packets += tpackets;
@@ -794,16 +780,6 @@ static bool virtnet_send_command(struct virtnet_info *vi, u8 class, u8 cmd,
 		cpu_relax();
 
 	return status == VIRTIO_NET_OK;
-}
-
-static void virtnet_ack_link_announce(struct virtnet_info *vi)
-{
-	rtnl_lock();
-	if (!virtnet_send_command(vi, VIRTIO_NET_CTRL_ANNOUNCE,
-				  VIRTIO_NET_CTRL_ANNOUNCE_ACK, NULL,
-				  0, 0))
-		dev_warn(&vi->dev->dev, "Failed to ack link announce.\n");
-	rtnl_unlock();
 }
 
 static int virtnet_close(struct net_device *dev)
@@ -977,31 +953,20 @@ static const struct net_device_ops virtnet_netdev = {
 #endif
 };
 
-static void virtnet_config_changed_work(struct work_struct *work)
+static void virtnet_update_status(struct virtnet_info *vi)
 {
-	struct virtnet_info *vi =
-		container_of(work, struct virtnet_info, config_work);
 	u16 v;
-
-	mutex_lock(&vi->config_lock);
-	if (!vi->config_enable)
-		goto done;
 
 	if (virtio_config_val(vi->vdev, VIRTIO_NET_F_STATUS,
 			      offsetof(struct virtio_net_config, status),
 			      &v) < 0)
-		goto done;
-
-	if (v & VIRTIO_NET_S_ANNOUNCE) {
-		netif_notify_peers(vi->dev);
-		virtnet_ack_link_announce(vi);
-	}
+		return;
 
 	/* Ignore unknown (future) status bits */
 	v &= VIRTIO_NET_S_LINK_UP;
 
 	if (vi->status == v)
-		goto done;
+		return;
 
 	vi->status = v;
 
@@ -1012,15 +977,13 @@ static void virtnet_config_changed_work(struct work_struct *work)
 		netif_carrier_off(vi->dev);
 		netif_stop_queue(vi->dev);
 	}
-done:
-	mutex_unlock(&vi->config_lock);
 }
 
 static void virtnet_config_changed(struct virtio_device *vdev)
 {
 	struct virtnet_info *vi = vdev->priv;
 
-	queue_work(system_nrt_wq, &vi->config_work);
+	virtnet_update_status(vi);
 }
 
 static int init_vqs(struct virtnet_info *vi)
@@ -1072,9 +1035,9 @@ static int virtnet_probe(struct virtio_device *vdev)
 	/* Do we support "hardware" checksums? */
 	if (virtio_has_feature(vdev, VIRTIO_NET_F_CSUM)) {
 		/* This opens up the world of extra features. */
-		dev->hw_features |= NETIF_F_HW_CSUM|NETIF_F_SG|NETIF_F_FRAGLIST;
+		dev->hw_features |= NETIF_F_HW_CSUM | NETIF_F_SG;
 		if (csum)
-			dev->features |= NETIF_F_HW_CSUM|NETIF_F_SG|NETIF_F_FRAGLIST;
+			dev->features |= NETIF_F_HW_CSUM | NETIF_F_SG;
 
 		if (virtio_has_feature(vdev, VIRTIO_NET_F_GSO)) {
 			dev->hw_features |= NETIF_F_TSO | NETIF_F_UFO
@@ -1114,16 +1077,14 @@ static int virtnet_probe(struct virtio_device *vdev)
 		goto free;
 
 	INIT_DELAYED_WORK(&vi->refill, refill_work);
-	mutex_init(&vi->config_lock);
-	vi->config_enable = true;
-	INIT_WORK(&vi->config_work, virtnet_config_changed_work);
 	sg_init_table(vi->rx_sg, ARRAY_SIZE(vi->rx_sg));
 	sg_init_table(vi->tx_sg, ARRAY_SIZE(vi->tx_sg));
 
 	/* If we can receive ANY GSO packets, we must allocate large ones. */
 	if (virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_TSO4) ||
 	    virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_TSO6) ||
-	    virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_ECN))
+	    virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_ECN) ||
+	    virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_UFO))
 		vi->big_packets = true;
 
 	if (virtio_has_feature(vdev, VIRTIO_NET_F_MRG_RXBUF))
@@ -1152,7 +1113,7 @@ static int virtnet_probe(struct virtio_device *vdev)
 	   otherwise get link status from config. */
 	if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_STATUS)) {
 		netif_carrier_off(dev);
-		queue_work(system_nrt_wq, &vi->config_work);
+		virtnet_update_status(vi);
 	} else {
 		vi->status = VIRTIO_NET_S_LINK_UP;
 		netif_carrier_on(dev);
@@ -1211,16 +1172,9 @@ static void __devexit virtnet_remove(struct virtio_device *vdev)
 {
 	struct virtnet_info *vi = vdev->priv;
 
-	/* Prevent config work handler from accessing the device. */
-	mutex_lock(&vi->config_lock);
-	vi->config_enable = false;
-	mutex_unlock(&vi->config_lock);
-
 	unregister_netdev(vi->dev);
 
 	remove_vq_common(vi);
-
-	flush_work(&vi->config_work);
 
 	free_percpu(vi->stats);
 	free_netdev(vi->dev);
@@ -1231,10 +1185,10 @@ static int virtnet_freeze(struct virtio_device *vdev)
 {
 	struct virtnet_info *vi = vdev->priv;
 
-	/* Prevent config work handler from accessing the device */
-	mutex_lock(&vi->config_lock);
-	vi->config_enable = false;
-	mutex_unlock(&vi->config_lock);
+	virtqueue_disable_cb(vi->rvq);
+	virtqueue_disable_cb(vi->svq);
+	if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_CTRL_VQ))
+		virtqueue_disable_cb(vi->cvq);
 
 	netif_device_detach(vi->dev);
 	cancel_delayed_work_sync(&vi->refill);
@@ -1243,8 +1197,6 @@ static int virtnet_freeze(struct virtio_device *vdev)
 		napi_disable(&vi->napi);
 
 	remove_vq_common(vi);
-
-	flush_work(&vi->config_work);
 
 	return 0;
 }
@@ -1266,10 +1218,6 @@ static int virtnet_restore(struct virtio_device *vdev)
 	if (!try_fill_recv(vi, GFP_KERNEL))
 		queue_delayed_work(system_nrt_wq, &vi->refill, 0);
 
-	mutex_lock(&vi->config_lock);
-	vi->config_enable = true;
-	mutex_unlock(&vi->config_lock);
-
 	return 0;
 }
 #endif
@@ -1287,7 +1235,6 @@ static unsigned int features[] = {
 	VIRTIO_NET_F_GUEST_ECN, VIRTIO_NET_F_GUEST_UFO,
 	VIRTIO_NET_F_MRG_RXBUF, VIRTIO_NET_F_STATUS, VIRTIO_NET_F_CTRL_VQ,
 	VIRTIO_NET_F_CTRL_RX, VIRTIO_NET_F_CTRL_VLAN,
-	VIRTIO_NET_F_GUEST_ANNOUNCE,
 };
 
 static struct virtio_driver virtio_net_driver = {

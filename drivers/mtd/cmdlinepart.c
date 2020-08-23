@@ -70,7 +70,7 @@ struct cmdline_mtd_partition {
 /* mtdpart_setup() parses into here */
 static struct cmdline_mtd_partition *partitions;
 
-/* the command line passed to mtdpart_setup() */
+/* the command line passed to mtdpart_setupd() */
 static char *cmdline;
 static int cmdline_parsed = 0;
 

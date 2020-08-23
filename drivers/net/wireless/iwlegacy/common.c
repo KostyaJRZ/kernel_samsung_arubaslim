@@ -1896,8 +1896,8 @@ il_prep_station(struct il_priv *il, const u8 *addr, bool is_ap,
 		sta_id = il->hw_params.bcast_id;
 	else
 		for (i = IL_STA_ID; i < il->hw_params.max_stations; i++) {
-			if (ether_addr_equal(il->stations[i].sta.sta.addr,
-					     addr)) {
+			if (!compare_ether_addr
+			    (il->stations[i].sta.sta.addr, addr)) {
 				sta_id = i;
 				break;
 			}
@@ -1926,7 +1926,7 @@ il_prep_station(struct il_priv *il, const u8 *addr, bool is_ap,
 
 	if ((il->stations[sta_id].used & IL_STA_DRIVER_ACTIVE) &&
 	    (il->stations[sta_id].used & IL_STA_UCODE_ACTIVE) &&
-	    ether_addr_equal(il->stations[sta_id].sta.sta.addr, addr)) {
+	    !compare_ether_addr(il->stations[sta_id].sta.sta.addr, addr)) {
 		D_ASSOC("STA %d (%pM) already added, not adding again.\n",
 			sta_id, addr);
 		return sta_id;
@@ -3744,10 +3744,10 @@ il_full_rxon_required(struct il_priv *il)
 
 	/* These items are only settable from the full RXON command */
 	CHK(!il_is_associated(il));
-	CHK(!ether_addr_equal(staging->bssid_addr, active->bssid_addr));
-	CHK(!ether_addr_equal(staging->node_addr, active->node_addr));
-	CHK(!ether_addr_equal(staging->wlap_bssid_addr,
-			      active->wlap_bssid_addr));
+	CHK(compare_ether_addr(staging->bssid_addr, active->bssid_addr));
+	CHK(compare_ether_addr(staging->node_addr, active->node_addr));
+	CHK(compare_ether_addr
+	    (staging->wlap_bssid_addr, active->wlap_bssid_addr));
 	CHK_NEQ(staging->dev_type, active->dev_type);
 	CHK_NEQ(staging->channel, active->channel);
 	CHK_NEQ(staging->air_propagation, active->air_propagation);
@@ -3957,17 +3957,21 @@ il_connection_init_rx_config(struct il_priv *il)
 
 	memset(&il->staging, 0, sizeof(il->staging));
 
-	if (!il->vif) {
+	switch (il->iw_mode) {
+	case NL80211_IFTYPE_UNSPECIFIED:
 		il->staging.dev_type = RXON_DEV_TYPE_ESS;
-	} else if (il->vif->type == NL80211_IFTYPE_STATION) {
+		break;
+	case NL80211_IFTYPE_STATION:
 		il->staging.dev_type = RXON_DEV_TYPE_ESS;
 		il->staging.filter_flags = RXON_FILTER_ACCEPT_GRP_MSK;
-	} else if (il->vif->type == NL80211_IFTYPE_ADHOC) {
+		break;
+	case NL80211_IFTYPE_ADHOC:
 		il->staging.dev_type = RXON_DEV_TYPE_IBSS;
 		il->staging.flags = RXON_FLG_SHORT_PREAMBLE_MSK;
 		il->staging.filter_flags =
 		    RXON_FILTER_BCON_AWARE_MSK | RXON_FILTER_ACCEPT_GRP_MSK;
-	} else {
+		break;
+	default:
 		IL_ERR("Unsupported interface type %d\n", il->vif->type);
 		return;
 	}
@@ -4550,8 +4554,7 @@ out:
 EXPORT_SYMBOL(il_mac_add_interface);
 
 static void
-il_teardown_interface(struct il_priv *il, struct ieee80211_vif *vif,
-		      bool mode_change)
+il_teardown_interface(struct il_priv *il, struct ieee80211_vif *vif)
 {
 	lockdep_assert_held(&il->mutex);
 
@@ -4560,9 +4563,7 @@ il_teardown_interface(struct il_priv *il, struct ieee80211_vif *vif,
 		il_force_scan_end(il);
 	}
 
-	if (!mode_change)
-		il_set_mode(il);
-
+	il_set_mode(il);
 }
 
 void
@@ -4575,8 +4576,8 @@ il_mac_remove_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 
 	WARN_ON(il->vif != vif);
 	il->vif = NULL;
-
-	il_teardown_interface(il, vif, false);
+	il->iw_mode = NL80211_IFTYPE_UNSPECIFIED;
+	il_teardown_interface(il, vif);
 	memset(il->bssid, 0, ETH_ALEN);
 
 	D_MAC80211("leave\n");
@@ -4658,6 +4659,7 @@ il_force_reset(struct il_priv *il, bool external)
 
 	return 0;
 }
+EXPORT_SYMBOL(il_force_reset);
 
 int
 il_mac_change_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
@@ -4685,18 +4687,10 @@ il_mac_change_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	}
 
 	/* success */
-	il_teardown_interface(il, vif, true);
 	vif->type = newtype;
 	vif->p2p = false;
-	err = il_set_mode(il);
-	WARN_ON(err);
-	/*
-	 * We've switched internally, but submitting to the
-	 * device may have failed for some reason. Mask this
-	 * error, because otherwise mac80211 will not switch
-	 * (and set the interface type back) and we'll be
-	 * out of sync with it.
-	 */
+	il->iw_mode = newtype;
+	il_teardown_interface(il, vif);
 	err = 0;
 
 out:

@@ -39,7 +39,9 @@
 #define SC92031_NAME "sc92031"
 
 /* BAR 0 is MMIO, BAR 1 is PIO */
-#define SC92031_USE_PIO	0
+#ifndef SC92031_USE_BAR
+#define SC92031_USE_BAR 0
+#endif
 
 /* Maximum number of multicast addresses to filter (vs. Rx-all-multicast). */
 static int multicast_filter_limit = 64;
@@ -364,7 +366,7 @@ static void sc92031_disable_interrupts(struct net_device *dev)
 	mmiowb();
 
 	/* wait for any concurrent interrupt/tasklet to finish */
-	synchronize_irq(priv->pdev->irq);
+	synchronize_irq(dev->irq);
 	tasklet_disable(&priv->tasklet);
 }
 
@@ -1112,13 +1114,10 @@ static void sc92031_tx_timeout(struct net_device *dev)
 #ifdef CONFIG_NET_POLL_CONTROLLER
 static void sc92031_poll_controller(struct net_device *dev)
 {
-	struct sc92031_priv *priv = netdev_priv(dev);
-	const int irq = priv->pdev->irq;
-
-	disable_irq(irq);
-	if (sc92031_interrupt(irq, dev) != IRQ_NONE)
+	disable_irq(dev->irq);
+	if (sc92031_interrupt(dev->irq, dev) != IRQ_NONE)
 		sc92031_tasklet((unsigned long)dev);
-	enable_irq(irq);
+	enable_irq(dev->irq);
 }
 #endif
 
@@ -1403,6 +1402,7 @@ static int __devinit sc92031_probe(struct pci_dev *pdev,
 	struct net_device *dev;
 	struct sc92031_priv *priv;
 	u32 mac0, mac1;
+	unsigned long base_addr;
 
 	err = pci_enable_device(pdev);
 	if (unlikely(err < 0))
@@ -1422,7 +1422,7 @@ static int __devinit sc92031_probe(struct pci_dev *pdev,
 	if (unlikely(err < 0))
 		goto out_request_regions;
 
-	port_base = pci_iomap(pdev, SC92031_USE_PIO, 0);
+	port_base = pci_iomap(pdev, SC92031_USE_BAR, 0);
 	if (unlikely(!port_base)) {
 		err = -EIO;
 		goto out_iomap;
@@ -1436,6 +1436,14 @@ static int __devinit sc92031_probe(struct pci_dev *pdev,
 
 	pci_set_drvdata(pdev, dev);
 	SET_NETDEV_DEV(dev, &pdev->dev);
+
+#if SC92031_USE_BAR == 0
+	dev->mem_start = pci_resource_start(pdev, SC92031_USE_BAR);
+	dev->mem_end = pci_resource_end(pdev, SC92031_USE_BAR);
+#elif SC92031_USE_BAR == 1
+	dev->base_addr = pci_resource_start(pdev, SC92031_USE_BAR);
+#endif
+	dev->irq = pdev->irq;
 
 	/* faked with skb_copy_and_csum_dev */
 	dev->features = NETIF_F_SG | NETIF_F_HIGHDMA |
@@ -1470,9 +1478,13 @@ static int __devinit sc92031_probe(struct pci_dev *pdev,
 	if (err < 0)
 		goto out_register_netdev;
 
+#if SC92031_USE_BAR == 0
+	base_addr = dev->mem_start;
+#elif SC92031_USE_BAR == 1
+	base_addr = dev->base_addr;
+#endif
 	printk(KERN_INFO "%s: SC92031 at 0x%lx, %pM, IRQ %d\n", dev->name,
-	       (long)pci_resource_start(pdev, SC92031_USE_PIO), dev->dev_addr,
-	       pdev->irq);
+			base_addr, dev->dev_addr, dev->irq);
 
 	return 0;
 

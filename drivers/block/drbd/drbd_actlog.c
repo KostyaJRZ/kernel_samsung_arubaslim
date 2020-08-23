@@ -65,80 +65,39 @@ struct drbd_atodb_wait {
 
 int w_al_write_transaction(struct drbd_conf *, struct drbd_work *, int);
 
-void *drbd_md_get_buffer(struct drbd_conf *mdev)
-{
-	int r;
-
-	wait_event(mdev->misc_wait,
-		   (r = atomic_cmpxchg(&mdev->md_io_in_use, 0, 1)) == 0 ||
-		   mdev->state.disk <= D_FAILED);
-
-	return r ? NULL : page_address(mdev->md_io_page);
-}
-
-void drbd_md_put_buffer(struct drbd_conf *mdev)
-{
-	if (atomic_dec_and_test(&mdev->md_io_in_use))
-		wake_up(&mdev->misc_wait);
-}
-
-static bool md_io_allowed(struct drbd_conf *mdev)
-{
-	enum drbd_disk_state ds = mdev->state.disk;
-	return ds >= D_NEGOTIATING || ds == D_ATTACHING;
-}
-
-void wait_until_done_or_disk_failure(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
-				     unsigned int *done)
-{
-	long dt = bdev->dc.disk_timeout * HZ / 10;
-	if (dt == 0)
-		dt = MAX_SCHEDULE_TIMEOUT;
-
-	dt = wait_event_timeout(mdev->misc_wait, *done || !md_io_allowed(mdev), dt);
-	if (dt == 0)
-		dev_err(DEV, "meta-data IO operation timed out\n");
-}
-
 static int _drbd_md_sync_page_io(struct drbd_conf *mdev,
 				 struct drbd_backing_dev *bdev,
 				 struct page *page, sector_t sector,
 				 int rw, int size)
 {
 	struct bio *bio;
+	struct drbd_md_io md_io;
 	int ok;
 
-	mdev->md_io.done = 0;
-	mdev->md_io.error = -ENODEV;
+	md_io.mdev = mdev;
+	init_completion(&md_io.event);
+	md_io.error = 0;
 
 	if ((rw & WRITE) && !test_bit(MD_NO_FUA, &mdev->flags))
 		rw |= REQ_FUA | REQ_FLUSH;
 	rw |= REQ_SYNC;
 
-	bio = bio_alloc_drbd(GFP_NOIO);
+	bio = bio_alloc(GFP_NOIO, 1);
 	bio->bi_bdev = bdev->md_bdev;
 	bio->bi_sector = sector;
 	ok = (bio_add_page(bio, page, size, 0) == size);
 	if (!ok)
 		goto out;
-	bio->bi_private = &mdev->md_io;
+	bio->bi_private = &md_io;
 	bio->bi_end_io = drbd_md_io_complete;
 	bio->bi_rw = rw;
 
-	if (!get_ldev_if_state(mdev, D_ATTACHING)) {  /* Corresponding put_ldev in drbd_md_io_complete() */
-		dev_err(DEV, "ASSERT FAILED: get_ldev_if_state() == 1 in _drbd_md_sync_page_io()\n");
-		ok = 0;
-		goto out;
-	}
-
-	bio_get(bio); /* one bio_put() is in the completion handler */
-	atomic_inc(&mdev->md_io_in_use); /* drbd_md_put_buffer() is in the completion handler */
 	if (drbd_insert_fault(mdev, (rw & WRITE) ? DRBD_FAULT_MD_WR : DRBD_FAULT_MD_RD))
 		bio_endio(bio, -EIO);
 	else
 		submit_bio(rw, bio);
-	wait_until_done_or_disk_failure(mdev, bdev, &mdev->md_io.done);
-	ok = bio_flagged(bio, BIO_UPTODATE) && mdev->md_io.error == 0;
+	wait_for_completion(&md_io.event);
+	ok = bio_flagged(bio, BIO_UPTODATE) && md_io.error == 0;
 
  out:
 	bio_put(bio);
@@ -152,7 +111,7 @@ int drbd_md_sync_page_io(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
 	int offset = 0;
 	struct page *iop = mdev->md_io_page;
 
-	D_ASSERT(atomic_read(&mdev->md_io_in_use) == 1);
+	D_ASSERT(mutex_is_locked(&mdev->md_io_mutex));
 
 	BUG_ON(!bdev->md_bdev);
 
@@ -369,13 +328,8 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 		return 1;
 	}
 
-	buffer = drbd_md_get_buffer(mdev); /* protects md_io_buffer, al_tr_cycle, ... */
-	if (!buffer) {
-		dev_err(DEV, "disk failed while waiting for md_io buffer\n");
-		complete(&((struct update_al_work *)w)->event);
-		put_ldev(mdev);
-		return 1;
-	}
+	mutex_lock(&mdev->md_io_mutex); /* protects md_io_buffer, al_tr_cycle, ... */
+	buffer = (struct al_transaction *)page_address(mdev->md_io_page);
 
 	buffer->magic = __constant_cpu_to_be32(DRBD_MAGIC);
 	buffer->tr_number = cpu_to_be32(mdev->al_tr_number);
@@ -420,7 +374,7 @@ w_al_write_transaction(struct drbd_conf *mdev, struct drbd_work *w, int unused)
 	D_ASSERT(mdev->al_tr_pos < MD_AL_MAX_SIZE);
 	mdev->al_tr_number++;
 
-	drbd_md_put_buffer(mdev);
+	mutex_unlock(&mdev->md_io_mutex);
 
 	complete(&((struct update_al_work *)w)->event);
 	put_ldev(mdev);
@@ -489,9 +443,8 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 	/* lock out all other meta data io for now,
 	 * and make sure the page is mapped.
 	 */
-	buffer = drbd_md_get_buffer(mdev);
-	if (!buffer)
-		return 0;
+	mutex_lock(&mdev->md_io_mutex);
+	buffer = page_address(mdev->md_io_page);
 
 	/* Find the valid transaction in the log */
 	for (i = 0; i <= mx; i++) {
@@ -499,7 +452,7 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 		if (rv == 0)
 			continue;
 		if (rv == -1) {
-			drbd_md_put_buffer(mdev);
+			mutex_unlock(&mdev->md_io_mutex);
 			return 0;
 		}
 		cnr = be32_to_cpu(buffer->tr_number);
@@ -525,7 +478,7 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 
 	if (!found_valid) {
 		dev_warn(DEV, "No usable activity log found.\n");
-		drbd_md_put_buffer(mdev);
+		mutex_unlock(&mdev->md_io_mutex);
 		return 1;
 	}
 
@@ -540,7 +493,7 @@ int drbd_al_read_log(struct drbd_conf *mdev, struct drbd_backing_dev *bdev)
 		rv = drbd_al_read_tr(mdev, bdev, buffer, i);
 		ERR_IF(rv == 0) goto cancel;
 		if (rv == -1) {
-			drbd_md_put_buffer(mdev);
+			mutex_unlock(&mdev->md_io_mutex);
 			return 0;
 		}
 
@@ -581,7 +534,7 @@ cancel:
 		mdev->al_tr_pos = 0;
 
 	/* ok, we are done with it */
-	drbd_md_put_buffer(mdev);
+	mutex_unlock(&mdev->md_io_mutex);
 
 	dev_info(DEV, "Found %d transactions (%d active extents) in activity log.\n",
 	     transactions, active_extents);
@@ -718,20 +671,16 @@ static void drbd_try_clear_on_disk_bm(struct drbd_conf *mdev, sector_t sector,
 			else
 				ext->rs_failed += count;
 			if (ext->rs_left < ext->rs_failed) {
-				dev_warn(DEV, "BAD! sector=%llus enr=%u rs_left=%d "
-				    "rs_failed=%d count=%d cstate=%s\n",
+				dev_err(DEV, "BAD! sector=%llus enr=%u rs_left=%d "
+				    "rs_failed=%d count=%d\n",
 				     (unsigned long long)sector,
 				     ext->lce.lc_number, ext->rs_left,
-				     ext->rs_failed, count,
-				     drbd_conn_str(mdev->state.conn));
+				     ext->rs_failed, count);
+				dump_stack();
 
-				/* We don't expect to be able to clear more bits
-				 * than have been set when we originally counted
-				 * the set bits to cache that value in ext->rs_left.
-				 * Whatever the reason (disconnect during resync,
-				 * delayed local completion of an application write),
-				 * try to fix it up by recounting here. */
-				ext->rs_left = drbd_bm_e_weight(mdev, enr);
+				lc_put(mdev->resync, &ext->lce);
+				drbd_force_state(mdev, NS(conn, C_DISCONNECTING));
+				return;
 			}
 		} else {
 			/* Normally this element should be in the cache,
@@ -1243,7 +1192,6 @@ int drbd_rs_del_all(struct drbd_conf *mdev)
 		put_ldev(mdev);
 	}
 	spin_unlock_irq(&mdev->al_lock);
-	wake_up(&mdev->al_wait);
 
 	return 0;
 }

@@ -4,7 +4,7 @@
  * Copyright (C) 2004 Sten Wang <sten.wang@rdc.com.tw>
  * Copyright (C) 2007
  *	Daniel Gimpelevich <daniel@gimpelevich.san-francisco.ca.us>
- * Copyright (C) 2007-2012 Florian Fainelli <florian@openwrt.org>
+ *	Florian Fainelli <florian@openwrt.org>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -74,13 +74,9 @@
 #define MT_ICR		0x0C	/* TX interrupt control */
 #define MR_ICR		0x10	/* RX interrupt control */
 #define MTPR		0x14	/* TX poll command register */
-#define  TM2TX		0x0001	/* Trigger MAC to transmit */
 #define MR_BSR		0x18	/* RX buffer size */
 #define MR_DCR		0x1A	/* RX descriptor control */
 #define MLSR		0x1C	/* Last status */
-#define  TX_FIFO_UNDR	0x0200	/* TX FIFO under-run */
-#define	 TX_EXCEEDC	0x2000	/* Transmit exceed collision */
-#define  TX_LATEC	0x4000	/* Transmit late collision */
 #define MMDIO		0x20	/* MDIO control register */
 #define  MDIO_WRITE	0x4000	/* MDIO write */
 #define  MDIO_READ	0x2000	/* MDIO read */
@@ -128,9 +124,6 @@
 #define MID_3M		0x82	/* MID3 Medium */
 #define MID_3H		0x84	/* MID3 High */
 #define PHY_CC		0x88	/* PHY status change configuration register */
-#define  SCEN		0x8000	/* PHY status change enable */
-#define  PHYAD_SHIFT	8	/* PHY address shift */
-#define  TMRDIV_SHIFT	0	/* Timer divider shift */
 #define PHY_ST		0x8A	/* PHY status register */
 #define MAC_SM		0xAC	/* MAC status machine */
 #define  MAC_SM_RST	0x0002	/* MAC status machine reset */
@@ -143,8 +136,6 @@
 #define TX_DESC_SIZE	(TX_DCNT * sizeof(struct r6040_descriptor))
 #define MBCR_DEFAULT	0x012A	/* MAC Bus Control Register */
 #define MCAST_MAX	3	/* Max number multicast addresses to filter */
-
-#define MAC_DEF_TIMEOUT	2048	/* Default MAC read/write operation timeout */
 
 /* Descriptor status */
 #define DSC_OWNER_MAC	0x8000	/* MAC is the owner of this descriptor */
@@ -196,7 +187,7 @@ struct r6040_private {
 	dma_addr_t rx_ring_dma;
 	dma_addr_t tx_ring_dma;
 	u16	tx_free_desc;
-	u16	mcr0;
+	u16	mcr0, mcr1;
 	struct net_device *dev;
 	struct mii_bus *mii_bus;
 	struct napi_struct napi;
@@ -213,7 +204,7 @@ static char version[] __devinitdata = DRV_NAME
 /* Read a word data from PHY Chip */
 static int r6040_phy_read(void __iomem *ioaddr, int phy_addr, int reg)
 {
-	int limit = MAC_DEF_TIMEOUT;
+	int limit = 2048;
 	u16 cmd;
 
 	iowrite16(MDIO_READ + reg + (phy_addr << 8), ioaddr + MMDIO);
@@ -231,7 +222,7 @@ static int r6040_phy_read(void __iomem *ioaddr, int phy_addr, int reg)
 static void r6040_phy_write(void __iomem *ioaddr,
 					int phy_addr, int reg, u16 val)
 {
-	int limit = MAC_DEF_TIMEOUT;
+	int limit = 2048;
 	u16 cmd;
 
 	iowrite16(val, ioaddr + MMWD);
@@ -367,35 +358,27 @@ err_exit:
 	return rc;
 }
 
-static void r6040_reset_mac(struct r6040_private *lp)
+static void r6040_init_mac_regs(struct net_device *dev)
 {
+	struct r6040_private *lp = netdev_priv(dev);
 	void __iomem *ioaddr = lp->base;
-	int limit = MAC_DEF_TIMEOUT;
+	int limit = 2048;
 	u16 cmd;
 
+	/* Mask Off Interrupt */
+	iowrite16(MSK_INT, ioaddr + MIER);
+
+	/* Reset RDC MAC */
 	iowrite16(MAC_RST, ioaddr + MCR1);
 	while (limit--) {
 		cmd = ioread16(ioaddr + MCR1);
 		if (cmd & MAC_RST)
 			break;
 	}
-
 	/* Reset internal state machine */
 	iowrite16(MAC_SM_RST, ioaddr + MAC_SM);
 	iowrite16(0, ioaddr + MAC_SM);
 	mdelay(5);
-}
-
-static void r6040_init_mac_regs(struct net_device *dev)
-{
-	struct r6040_private *lp = netdev_priv(dev);
-	void __iomem *ioaddr = lp->base;
-
-	/* Mask Off Interrupt */
-	iowrite16(MSK_INT, ioaddr + MIER);
-
-	/* Reset RDC MAC */
-	r6040_reset_mac(lp);
 
 	/* MAC Bus Control Register */
 	iowrite16(MBCR_DEFAULT, ioaddr + MBCR);
@@ -424,7 +407,7 @@ static void r6040_init_mac_regs(struct net_device *dev)
 	/* Let TX poll the descriptors
 	 * we may got called by r6040_tx_timeout which has left
 	 * some unsent tx buffers */
-	iowrite16(TM2TX, ioaddr + MTPR);
+	iowrite16(0x01, ioaddr + MTPR);
 }
 
 static void r6040_tx_timeout(struct net_device *dev)
@@ -462,13 +445,18 @@ static void r6040_down(struct net_device *dev)
 {
 	struct r6040_private *lp = netdev_priv(dev);
 	void __iomem *ioaddr = lp->base;
+	int limit = 2048;
 	u16 *adrp;
+	u16 cmd;
 
 	/* Stop MAC */
 	iowrite16(MSK_INT, ioaddr + MIER);	/* Mask Off Interrupt */
-
-	/* Reset RDC MAC */
-	r6040_reset_mac(lp);
+	iowrite16(MAC_RST, ioaddr + MCR1);	/* Reset RDC MAC */
+	while (limit--) {
+		cmd = ioread16(ioaddr + MCR1);
+		if (cmd & MAC_RST)
+			break;
+	}
 
 	/* Restore MAC Address to MIDx */
 	adrp = (u16 *) dev->dev_addr;
@@ -611,9 +599,9 @@ static void r6040_tx(struct net_device *dev)
 		/* Check for errors */
 		err = ioread16(ioaddr + MLSR);
 
-		if (err & TX_FIFO_UNDR)
-			dev->stats.tx_fifo_errors++;
-		if (err & (TX_EXCEEDC | TX_LATEC))
+		if (err & 0x0200)
+			dev->stats.rx_fifo_errors++;
+		if (err & (0x2000 | 0x4000))
 			dev->stats.tx_carrier_errors++;
 
 		if (descptr->status & DSC_OWNER_MAC)
@@ -748,7 +736,11 @@ static void r6040_mac_address(struct net_device *dev)
 	u16 *adrp;
 
 	/* Reset MAC */
-	r6040_reset_mac(lp);
+	iowrite16(MAC_RST, ioaddr + MCR1);
+	/* Reset internal state machine */
+	iowrite16(MAC_SM_RST, ioaddr + MAC_SM);
+	iowrite16(0, ioaddr + MAC_SM);
+	mdelay(5);
 
 	/* Restore MAC Address */
 	adrp = (u16 *) dev->dev_addr;
@@ -848,7 +840,7 @@ static netdev_tx_t r6040_start_xmit(struct sk_buff *skb,
 	skb_tx_timestamp(skb);
 
 	/* Trigger the MAC to check the TX descriptor */
-	iowrite16(TM2TX, ioaddr + MTPR);
+	iowrite16(0x01, ioaddr + MTPR);
 	lp->tx_insert_ptr = descptr->vndescp;
 
 	/* If no tx resource, stop */
@@ -981,7 +973,6 @@ static const struct ethtool_ops netdev_ethtool_ops = {
 	.get_settings		= netdev_get_settings,
 	.set_settings		= netdev_set_settings,
 	.get_link		= ethtool_op_get_link,
-	.get_ts_info		= ethtool_op_get_ts_info,
 };
 
 static const struct net_device_ops r6040_netdev_ops = {
@@ -1096,20 +1087,20 @@ static int __devinit r6040_init_one(struct pci_dev *pdev,
 	if (err) {
 		dev_err(&pdev->dev, "32-bit PCI DMA addresses"
 				"not supported by the card\n");
-		goto err_out_disable_dev;
+		goto err_out;
 	}
 	err = pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32));
 	if (err) {
 		dev_err(&pdev->dev, "32-bit PCI DMA addresses"
 				"not supported by the card\n");
-		goto err_out_disable_dev;
+		goto err_out;
 	}
 
 	/* IO Size check */
 	if (pci_resource_len(pdev, bar) < io_size) {
 		dev_err(&pdev->dev, "Insufficient PCI resources, aborting\n");
 		err = -EIO;
-		goto err_out_disable_dev;
+		goto err_out;
 	}
 
 	pci_set_master(pdev);
@@ -1117,7 +1108,7 @@ static int __devinit r6040_init_one(struct pci_dev *pdev,
 	dev = alloc_etherdev(sizeof(struct r6040_private));
 	if (!dev) {
 		err = -ENOMEM;
-		goto err_out_disable_dev;
+		goto err_out;
 	}
 	SET_NETDEV_DEV(dev, &pdev->dev);
 	lp = netdev_priv(dev);
@@ -1135,15 +1126,10 @@ static int __devinit r6040_init_one(struct pci_dev *pdev,
 		err = -EIO;
 		goto err_out_free_res;
 	}
-
 	/* If PHY status change register is still set to zero it means the
-	 * bootloader didn't initialize it, so we set it to:
-	 * - enable phy status change
-	 * - enable all phy addresses
-	 * - set to lowest timer divider */
+	 * bootloader didn't initialize it */
 	if (ioread16(ioaddr + PHY_CC) == 0)
-		iowrite16(SCEN | PHY_MAX_ADDR << PHYAD_SHIFT |
-				7 << TMRDIV_SHIFT, ioaddr + PHY_CC);
+		iowrite16(0x9f07, ioaddr + PHY_CC);
 
 	/* Init system & device */
 	lp->base = ioaddr;
@@ -1233,15 +1219,11 @@ err_out_mdio_irq:
 err_out_mdio:
 	mdiobus_free(lp->mii_bus);
 err_out_unmap:
-	netif_napi_del(&lp->napi);
-	pci_set_drvdata(pdev, NULL);
 	pci_iounmap(pdev, ioaddr);
 err_out_free_res:
 	pci_release_regions(pdev);
 err_out_free_dev:
 	free_netdev(dev);
-err_out_disable_dev:
-	pci_disable_device(pdev);
 err_out:
 	return err;
 }
@@ -1255,9 +1237,6 @@ static void __devexit r6040_remove_one(struct pci_dev *pdev)
 	mdiobus_unregister(lp->mii_bus);
 	kfree(lp->mii_bus->irq);
 	mdiobus_free(lp->mii_bus);
-	netif_napi_del(&lp->napi);
-	pci_set_drvdata(pdev, NULL);
-	pci_iounmap(pdev, lp->base);
 	pci_release_regions(pdev);
 	free_netdev(dev);
 	pci_disable_device(pdev);

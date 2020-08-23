@@ -298,15 +298,15 @@ retry:
 	if (exclude_guest_missing)
 		evsel->attr.exclude_guest = evsel->attr.exclude_host = 0;
 
-	if (perf_target__has_cpu(&target)) {
+	if (system_wide) {
 		ret = perf_evsel__open_per_cpu(evsel, evsel_list->cpus,
-					       group, group_fd);
+						group, group_fd);
 		if (ret)
 			goto check_ret;
 		return 0;
 	}
 
-	if (!perf_target__has_task(&target) && (!group || evsel == first)) {
+	if (!target_pid && !target_tid && (!group || evsel == first)) {
 		attr->disabled = 1;
 		attr->enable_on_exec = 1;
 	}
@@ -1129,7 +1129,7 @@ static int add_default_attributes(void)
 		return 0;
 
 	if (!evsel_list->nr_entries) {
-		if (perf_evlist__add_default_attrs(evsel_list, default_attrs) < 0)
+		if (perf_evlist__add_attrs_array(evsel_list, default_attrs) < 0)
 			return -1;
 	}
 
@@ -1139,21 +1139,21 @@ static int add_default_attributes(void)
 		return 0;
 
 	/* Append detailed run extra attributes: */
-	if (perf_evlist__add_default_attrs(evsel_list, detailed_attrs) < 0)
+	if (perf_evlist__add_attrs_array(evsel_list, detailed_attrs) < 0)
 		return -1;
 
 	if (detailed_run < 2)
 		return 0;
 
 	/* Append very detailed run extra attributes: */
-	if (perf_evlist__add_default_attrs(evsel_list, very_detailed_attrs) < 0)
+	if (perf_evlist__add_attrs_array(evsel_list, very_detailed_attrs) < 0)
 		return -1;
 
 	if (detailed_run < 3)
 		return 0;
 
 	/* Append very, very detailed run extra attributes: */
-	return perf_evlist__add_default_attrs(evsel_list, very_very_detailed_attrs);
+	return perf_evlist__add_attrs_array(evsel_list, very_very_detailed_attrs);
 }
 
 int cmd_stat(int argc, const char **argv, const char *prefix __used)
@@ -1179,12 +1179,6 @@ int cmd_stat(int argc, const char **argv, const char *prefix __used)
 		fprintf(stderr, "cannot use both --output and --log-fd\n");
 		usage_with_options(stat_usage, options);
 	}
-
-	if (output_fd < 0) {
-		fprintf(stderr, "argument to --log-fd must be a > 0\n");
-		usage_with_options(stat_usage, options);
-	}
-
 	if (!output) {
 		struct timespec tm;
 		mode = append_file ? "a" : "w";
@@ -1196,7 +1190,7 @@ int cmd_stat(int argc, const char **argv, const char *prefix __used)
 		}
 		clock_gettime(CLOCK_REALTIME, &tm);
 		fprintf(output, "# started on %s\n", ctime(&tm.tv_sec));
-	} else if (output_fd > 0) {
+	} else if (output_fd != 2) {
 		mode = append_file ? "a" : "w";
 		output = fdopen(output_fd, mode);
 		if (!output) {

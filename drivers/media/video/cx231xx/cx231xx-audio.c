@@ -523,24 +523,21 @@ static int snd_cx231xx_pcm_close(struct snd_pcm_substream *substream)
 static int snd_cx231xx_hw_capture_params(struct snd_pcm_substream *substream,
 					 struct snd_pcm_hw_params *hw_params)
 {
+	unsigned int channels, rate, format;
 	int ret;
 
 	dprintk("Setting capture parameters\n");
 
 	ret = snd_pcm_alloc_vmalloc_buffer(substream,
 					   params_buffer_bytes(hw_params));
-#if 0
-	/* TODO: set up cx231xx audio chip to deliver the correct audio format,
-	   current default is 48000hz multiplexed => 96000hz mono
-	   which shouldn't matter since analogue TV only supports mono */
-	unsigned int channels, rate, format;
-
 	format = params_format(hw_params);
 	rate = params_rate(hw_params);
 	channels = params_channels(hw_params);
-#endif
 
-	return ret;
+	/* TODO: set up cx231xx audio chip to deliver the correct audio format,
+	   current default is 48000hz multiplexed => 96000hz mono
+	   which shouldn't matter since analogue TV only supports mono */
+	return 0;
 }
 
 static int snd_cx231xx_hw_capture_free(struct snd_pcm_substream *substream)
@@ -589,7 +586,7 @@ static int snd_cx231xx_capture_trigger(struct snd_pcm_substream *substream,
 				       int cmd)
 {
 	struct cx231xx *dev = snd_pcm_substream_chip(substream);
-	int retval = 0;
+	int retval;
 
 	if (dev->state & DEV_DISCONNECTED)
 		return -ENODEV;
@@ -604,13 +601,12 @@ static int snd_cx231xx_capture_trigger(struct snd_pcm_substream *substream,
 		break;
 	default:
 		retval = -EINVAL;
-		break;
 	}
 	spin_unlock(&dev->adev.slock);
 
 	schedule_work(&dev->wq_trigger);
 
-	return retval;
+	return 0;
 }
 
 static snd_pcm_uframes_t snd_cx231xx_capture_pointer(struct snd_pcm_substream

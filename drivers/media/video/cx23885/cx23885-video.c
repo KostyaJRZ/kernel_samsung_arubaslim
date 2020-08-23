@@ -505,9 +505,6 @@ static int cx23885_video_mux(struct cx23885_dev *dev, unsigned int input)
 
 	if ((dev->board == CX23885_BOARD_HAUPPAUGE_HVR1800) ||
 		(dev->board == CX23885_BOARD_MPX885) ||
-		(dev->board == CX23885_BOARD_HAUPPAUGE_HVR1250) ||
-		(dev->board == CX23885_BOARD_HAUPPAUGE_HVR1255) ||
-		(dev->board == CX23885_BOARD_HAUPPAUGE_HVR1255_22111) ||
 		(dev->board == CX23885_BOARD_HAUPPAUGE_HVR1850)) {
 		/* Configure audio routing */
 		v4l2_subdev_call(dev->sd_cx25840, audio, s_routing,
@@ -1581,9 +1578,7 @@ static int cx23885_set_freq_via_ops(struct cx23885_dev *dev,
 
 	fe = vfe->dvb.frontend;
 
-	if ((dev->board == CX23885_BOARD_HAUPPAUGE_HVR1850) ||
-	    (dev->board == CX23885_BOARD_HAUPPAUGE_HVR1255) ||
-	    (dev->board == CX23885_BOARD_HAUPPAUGE_HVR1255_22111))
+	if (dev->board == CX23885_BOARD_HAUPPAUGE_HVR1850)
 		fe = &dev->ts1.analog_fe;
 
 	if (fe && fe->ops.tuner_ops.set_analog_params) {
@@ -1613,8 +1608,6 @@ int cx23885_set_frequency(struct file *file, void *priv,
 	int ret;
 
 	switch (dev->board) {
-	case CX23885_BOARD_HAUPPAUGE_HVR1255:
-	case CX23885_BOARD_HAUPPAUGE_HVR1255_22111:
 	case CX23885_BOARD_HAUPPAUGE_HVR1850:
 		ret = cx23885_set_freq_via_ops(dev, f);
 		break;

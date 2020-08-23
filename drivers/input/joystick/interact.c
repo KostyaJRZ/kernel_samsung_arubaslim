@@ -311,4 +311,15 @@ static struct gameport_driver interact_drv = {
 	.disconnect	= interact_disconnect,
 };
 
-module_gameport_driver(interact_drv);
+static int __init interact_init(void)
+{
+	return gameport_register_driver(&interact_drv);
+}
+
+static void __exit interact_exit(void)
+{
+	gameport_unregister_driver(&interact_drv);
+}
+
+module_init(interact_init);
+module_exit(interact_exit);

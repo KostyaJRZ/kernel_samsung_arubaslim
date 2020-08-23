@@ -29,10 +29,6 @@
 #include "originator.h"
 #include "vis.h"
 #include "unicast.h"
-#include "bridge_loop_avoidance.h"
-
-static int route_unicast_packet(struct sk_buff *skb,
-				struct hard_iface *recv_if);
 
 void slide_own_bcast_window(struct hard_iface *hard_iface)
 {
@@ -56,7 +52,7 @@ void slide_own_bcast_window(struct hard_iface *hard_iface)
 
 			bit_get_packet(bat_priv, word, 1, 0);
 			orig_node->bcast_own_sum[hard_iface->if_num] =
-				bitmap_weight(word, TQ_LOCAL_WINDOW_SIZE);
+				bit_packet_count(word);
 			spin_unlock_bh(&orig_node->ogm_cnt_lock);
 		}
 		rcu_read_unlock();
@@ -234,46 +230,51 @@ int window_protected(struct bat_priv *bat_priv, int32_t seq_num_diff,
 {
 	if ((seq_num_diff <= -TQ_LOCAL_WINDOW_SIZE) ||
 	    (seq_num_diff >= EXPECTED_SEQNO_RANGE)) {
-		if (!has_timed_out(*last_reset, RESET_PROTECTION_MS))
+		if (has_timed_out(*last_reset, RESET_PROTECTION_MS)) {
+
+			*last_reset = jiffies;
+			bat_dbg(DBG_BATMAN, bat_priv,
+				"old packet received, start protection\n");
+
+			return 0;
+		} else {
 			return 1;
-
-		*last_reset = jiffies;
-		bat_dbg(DBG_BATMAN, bat_priv,
-			"old packet received, start protection\n");
+		}
 	}
-
 	return 0;
 }
 
-bool check_management_packet(struct sk_buff *skb,
-			     struct hard_iface *hard_iface,
-			     int header_len)
+int recv_bat_ogm_packet(struct sk_buff *skb, struct hard_iface *hard_iface)
 {
+	struct bat_priv *bat_priv = netdev_priv(hard_iface->soft_iface);
 	struct ethhdr *ethhdr;
 
 	/* drop packet if it has not necessary minimum size */
-	if (unlikely(!pskb_may_pull(skb, header_len)))
-		return false;
+	if (unlikely(!pskb_may_pull(skb, BATMAN_OGM_LEN)))
+		return NET_RX_DROP;
 
 	ethhdr = (struct ethhdr *)skb_mac_header(skb);
 
 	/* packet with broadcast indication but unicast recipient */
 	if (!is_broadcast_ether_addr(ethhdr->h_dest))
-		return false;
+		return NET_RX_DROP;
 
 	/* packet with broadcast sender address */
 	if (is_broadcast_ether_addr(ethhdr->h_source))
-		return false;
+		return NET_RX_DROP;
 
 	/* create a copy of the skb, if needed, to modify it. */
 	if (skb_cow(skb, 0) < 0)
-		return false;
+		return NET_RX_DROP;
 
 	/* keep skb linear */
 	if (skb_linearize(skb) < 0)
-		return false;
+		return NET_RX_DROP;
 
-	return true;
+	bat_priv->bat_algo_ops->bat_ogm_receive(hard_iface, skb);
+
+	kfree_skb(skb);
+	return NET_RX_SUCCESS;
 }
 
 static int recv_my_icmp_packet(struct bat_priv *bat_priv,
@@ -308,7 +309,7 @@ static int recv_my_icmp_packet(struct bat_priv *bat_priv,
 		goto out;
 
 	/* create a copy of the skb, if needed, to modify it. */
-	if (skb_cow(skb, ETH_HLEN) < 0)
+	if (skb_cow(skb, sizeof(struct ethhdr)) < 0)
 		goto out;
 
 	icmp_packet = (struct icmp_packet_rr *)skb->data;
@@ -363,7 +364,7 @@ static int recv_icmp_ttl_exceeded(struct bat_priv *bat_priv,
 		goto out;
 
 	/* create a copy of the skb, if needed, to modify it. */
-	if (skb_cow(skb, ETH_HLEN) < 0)
+	if (skb_cow(skb, sizeof(struct ethhdr)) < 0)
 		goto out;
 
 	icmp_packet = (struct icmp_packet *)skb->data;
@@ -449,7 +450,7 @@ int recv_icmp_packet(struct sk_buff *skb, struct hard_iface *recv_if)
 		goto out;
 
 	/* create a copy of the skb, if needed, to modify it. */
-	if (skb_cow(skb, ETH_HLEN) < 0)
+	if (skb_cow(skb, sizeof(struct ethhdr)) < 0)
 		goto out;
 
 	icmp_packet = (struct icmp_packet_rr *)skb->data;
@@ -670,13 +671,6 @@ int recv_roam_adv(struct sk_buff *skb, struct hard_iface *recv_if)
 	if (!is_my_mac(roam_adv_packet->dst))
 		return route_unicast_packet(skb, recv_if);
 
-	/* check if it is a backbone gateway. we don't accept
-	 * roaming advertisement from it, as it has the same
-	 * entries as we have.
-	 */
-	if (bla_is_backbone_gw_orig(bat_priv, roam_adv_packet->src))
-		goto out;
-
 	orig_node = orig_hash_find(bat_priv, roam_adv_packet->src);
 	if (!orig_node)
 		goto out;
@@ -806,7 +800,7 @@ static int check_unicast_packet(struct sk_buff *skb, int hdr_size)
 	return 0;
 }
 
-static int route_unicast_packet(struct sk_buff *skb, struct hard_iface *recv_if)
+int route_unicast_packet(struct sk_buff *skb, struct hard_iface *recv_if)
 {
 	struct bat_priv *bat_priv = netdev_priv(recv_if->soft_iface);
 	struct orig_node *orig_node = NULL;
@@ -838,7 +832,7 @@ static int route_unicast_packet(struct sk_buff *skb, struct hard_iface *recv_if)
 		goto out;
 
 	/* create a copy of the skb, if needed, to modify it. */
-	if (skb_cow(skb, ETH_HLEN) < 0)
+	if (skb_cow(skb, sizeof(struct ethhdr)) < 0)
 		goto out;
 
 	unicast_packet = (struct unicast_packet *)skb->data;
@@ -915,20 +909,12 @@ static int check_unicast_ttvn(struct bat_priv *bat_priv,
 
 	/* Check whether I have to reroute the packet */
 	if (seq_before(unicast_packet->ttvn, curr_ttvn) || tt_poss_change) {
-		/* check if there is enough data before accessing it */
-		if (pskb_may_pull(skb, sizeof(struct unicast_packet) +
-				  ETH_HLEN) < 0)
+		/* Linearize the skb before accessing it */
+		if (skb_linearize(skb) < 0)
 			return 0;
 
 		ethhdr = (struct ethhdr *)(skb->data +
 			sizeof(struct unicast_packet));
-
-		/* we don't have an updated route for this client, so we should
-		 * not try to reroute the packet!!
-		 */
-		if (tt_global_client_is_roaming(bat_priv, ethhdr->h_dest))
-			return 1;
-
 		orig_node = transtable_search(bat_priv, NULL, ethhdr->h_dest);
 
 		if (!orig_node) {
@@ -1063,8 +1049,8 @@ int recv_bcast_packet(struct sk_buff *skb, struct hard_iface *recv_if)
 	spin_lock_bh(&orig_node->bcast_seqno_lock);
 
 	/* check whether the packet is a duplicate */
-	if (bat_test_bit(orig_node->bcast_bits, orig_node->last_bcast_seqno,
-			 ntohl(bcast_packet->seqno)))
+	if (get_bit_status(orig_node->bcast_bits, orig_node->last_bcast_seqno,
+			   ntohl(bcast_packet->seqno)))
 		goto spin_unlock;
 
 	seq_diff = ntohl(bcast_packet->seqno) - orig_node->last_bcast_seqno;
@@ -1081,18 +1067,8 @@ int recv_bcast_packet(struct sk_buff *skb, struct hard_iface *recv_if)
 
 	spin_unlock_bh(&orig_node->bcast_seqno_lock);
 
-	/* check whether this has been sent by another originator before */
-	if (bla_check_bcast_duplist(bat_priv, bcast_packet, hdr_size))
-		goto out;
-
 	/* rebroadcast packet */
 	add_bcast_packet_to_list(bat_priv, skb, 1);
-
-	/* don't hand the broadcast up if it is from an originator
-	 * from the same backbone.
-	 */
-	if (bla_is_backbone_gw(skb, orig_node, hdr_size))
-		goto out;
 
 	/* broadcast for me */
 	interface_rx(recv_if->soft_iface, skb, recv_if, hdr_size);

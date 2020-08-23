@@ -4,7 +4,6 @@
  * Copyright (C) 1996 David S. Miller (davem@caip.rutgers.edu)
  */
 
-#include <linux/linkage.h>
 #include <asm/page.h>
 
 	/* Zero out 64 bytes of memory at (buf + offset).
@@ -45,7 +44,10 @@
 	 */
 
 	.text
-ENTRY(bzero_1page)
+	.align	4
+	.globl	bzero_1page, __copy_1page
+
+bzero_1page:
 /* NOTE: If you change the number of insns of this routine, please check
  * arch/sparc/mm/hypersparc.S */
 	/* %o0 = buf */
@@ -63,9 +65,8 @@ ENTRY(bzero_1page)
 
 	retl
 	 nop
-ENDPROC(bzero_1page)
 
-ENTRY(__copy_1page)
+__copy_1page:
 /* NOTE: If you change the number of insns of this routine, please check
  * arch/sparc/mm/hypersparc.S */
 	/* %o0 = dst, %o1 = src */
@@ -86,4 +87,3 @@ ENTRY(__copy_1page)
 
 	retl
 	 nop
-ENDPROC(__copy_1page)

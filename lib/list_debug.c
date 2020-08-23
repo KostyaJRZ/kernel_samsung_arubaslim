@@ -10,7 +10,7 @@
 #include <linux/list.h>
 #include <linux/bug.h>
 #include <linux/kernel.h>
-#include <linux/rculist.h>
+#include <linux/bug.h>
 
 /*
  * Insert a new entry between two known consecutive entries.
@@ -31,9 +31,10 @@ void __list_add(struct list_head *new,
 		"list_add corruption. prev->next should be "
 		"next (%p), but was %p. (prev=%p).\n",
 		next, prev->next, prev);
-	WARN(new == prev || new == next,
-	     "list_add double add: new=%p, prev=%p, next=%p.\n",
-	     new, prev, next);
+
+	BUG_ON(((prev->next != next) || (next->prev != prev)) &&
+		PANIC_CORRUPTION);
+
 	next->prev = new;
 	new->next = next;
 	new->prev = prev;
@@ -59,8 +60,10 @@ void __list_del_entry(struct list_head *entry)
 		"but was %p\n", entry, prev->next) ||
 	    WARN(next->prev != entry,
 		"list_del corruption. next->prev should be %p, "
-		"but was %p\n", entry, next->prev))
+		"but was %p\n", entry, next->prev)) {
+		BUG_ON(PANIC_CORRUPTION);
 		return;
+	}
 
 	__list_del(prev, next);
 }
@@ -79,24 +82,3 @@ void list_del(struct list_head *entry)
 	entry->prev = LIST_POISON2;
 }
 EXPORT_SYMBOL(list_del);
-
-/*
- * RCU variants.
- */
-void __list_add_rcu(struct list_head *new,
-		    struct list_head *prev, struct list_head *next)
-{
-	WARN(next->prev != prev,
-		"list_add_rcu corruption. next->prev should be "
-		"prev (%p), but was %p. (next=%p).\n",
-		prev, next->prev, next);
-	WARN(prev->next != next,
-		"list_add_rcu corruption. prev->next should be "
-		"next (%p), but was %p. (prev=%p).\n",
-		next, prev->next, prev);
-	new->next = next;
-	new->prev = prev;
-	rcu_assign_pointer(list_next_rcu(prev), new);
-	next->prev = new;
-}
-EXPORT_SYMBOL(__list_add_rcu);

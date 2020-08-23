@@ -333,8 +333,8 @@ static int usb_alphatrack_open(struct inode *inode, struct file *file)
 	interface = usb_find_interface(&usb_alphatrack_driver, subminor);
 
 	if (!interface) {
-		printk(KERN_ERR "%s - error, can't find device for minor %d\n",
-		       __func__, subminor);
+		err("%s - error, can't find device for minor %d\n",
+		    __func__, subminor);
 		retval = -ENODEV;
 		goto unlock_disconnect_exit;
 	}
@@ -494,8 +494,7 @@ static ssize_t usb_alphatrack_read(struct file *file, char __user *buffer,
 	/* verify that the device wasn't unplugged */
 	if (dev->intf == NULL) {
 		retval = -ENODEV;
-		printk(KERN_ERR "%s: No device or device unplugged %d\n",
-		       __func__, retval);
+		err("No device or device unplugged %d\n", retval);
 		goto unlock_exit;
 	}
 
@@ -565,8 +564,7 @@ static ssize_t usb_alphatrack_write(struct file *file,
 	/* verify that the device wasn't unplugged */
 	if (dev->intf == NULL) {
 		retval = -ENODEV;
-		printk(KERN_ERR "%s: No device or device unplugged %d\n",
-		       __func__, retval);
+		err("No device or device unplugged %d\n", retval);
 		goto unlock_exit;
 	}
 
@@ -601,7 +599,7 @@ static ssize_t usb_alphatrack_write(struct file *file,
 	}
 
 	if (dev->interrupt_out_endpoint == NULL) {
-		dev_err(&dev->intf->dev, "Endpoint should not be be null!\n");
+		err("Endpoint should not be be null!\n");
 		goto unlock_exit;
 	}
 
@@ -621,8 +619,7 @@ static ssize_t usb_alphatrack_write(struct file *file,
 	retval = usb_submit_urb(dev->interrupt_out_urb, GFP_KERNEL);
 	if (retval) {
 		dev->interrupt_out_busy = 0;
-		dev_err(&dev->intf->dev,
-			"Couldn't submit interrupt_out_urb %d\n", retval);
+		err("Couldn't submit interrupt_out_urb %d\n", retval);
 		atomic_dec(&dev->writes_pending);
 		goto unlock_exit;
 	}

@@ -49,7 +49,7 @@ enum {
  * @us:			actual spi_device
  * @buf_lock:		mutex to protect tx and rx
  * @tx:			transmit buffer
- * @rx:			receive buffer
+ * @rx:			recieve buffer
  **/
 struct adxrs450_state {
 	struct spi_device	*us;

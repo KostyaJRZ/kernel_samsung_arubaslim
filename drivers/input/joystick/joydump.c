@@ -159,4 +159,15 @@ static struct gameport_driver joydump_drv = {
 	.disconnect	= joydump_disconnect,
 };
 
-module_gameport_driver(joydump_drv);
+static int __init joydump_init(void)
+{
+	return gameport_register_driver(&joydump_drv);
+}
+
+static void __exit joydump_exit(void)
+{
+	gameport_unregister_driver(&joydump_drv);
+}
+
+module_init(joydump_init);
+module_exit(joydump_exit);

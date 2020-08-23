@@ -579,8 +579,12 @@ static struct platform_device power_supply = {
  */
 
 static struct regulator_consumer_supply bq24022_consumers[] = {
-	REGULATOR_SUPPLY("vbus_draw", NULL),
-	REGULATOR_SUPPLY("ac_draw", NULL),
+	{
+		.supply = "vbus_draw",
+	},
+	{
+		.supply = "ac_draw",
+	},
 };
 
 static struct regulator_init_data bq24022_init_data = {

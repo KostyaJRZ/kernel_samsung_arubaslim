@@ -4,11 +4,7 @@
  * This file may be distributed under the terms of the
  * GNU General Public License.
  *
- * Implement support for the e7520, E7525, e7320 and i3100 memory controllers.
- *
- * Datasheets:
- *	http://www.intel.in/content/www/in/en/chipsets/e7525-memory-controller-hub-datasheet.html
- *	ftp://download.intel.com/design/intarch/datashts/31345803.pdf
+ * See "enum e752x_chips" below for supported chipsets
  *
  * Written by Tom Zimmerman
  *
@@ -16,6 +12,8 @@
  * 	Thayne Harbaugh at realmsys.com (?)
  * 	Wang Zhenyu at intel.com
  * 	Dave Jiang at mvista.com
+ *
+ * $Id: edac_e752x.c,v 1.5.2.11 2005/10/05 00:43:44 dsp_llnl Exp $
  *
  */
 
@@ -189,25 +187,6 @@ enum e752x_chips {
 	I3100 = 3
 };
 
-/*
- * Those chips Support single-rank and dual-rank memories only.
- *
- * On e752x chips, the odd rows are present only on dual-rank memories.
- * Dividing the rank by two will provide the dimm#
- *
- * i3100 MC has a different mapping: it supports only 4 ranks.
- *
- * The mapping is (from 1 to n):
- *	slot	   single-ranked	double-ranked
- *	dimm #1 -> rank #4		NA
- *	dimm #2 -> rank #3		NA
- *	dimm #3 -> rank #2		Ranks 2 and 3
- *	dimm #4 -> rank $1		Ranks 1 and 4
- *
- * FIXME: The current mapping for i3100 considers that it supports up to 8
- *	  ranks/chanel, but datasheet says that the MC supports only 4 ranks.
- */
-
 struct e752x_pvt {
 	struct pci_dev *bridge_ck;
 	struct pci_dev *dev_d0f0;
@@ -371,10 +350,8 @@ static void do_process_ce(struct mem_ctl_info *mci, u16 error_one,
 	channel = !(error_one & 1);
 
 	/* e752x mc reads 34:6 of the DRAM linear address */
-	edac_mc_handle_error(HW_EVENT_ERR_CORRECTED, mci,
-			     page, offset_in_page(sec1_add << 4), sec1_syndrome,
-			     row, channel, -1,
-			     "e752x CE", "", NULL);
+	edac_mc_handle_ce(mci, page, offset_in_page(sec1_add << 4),
+			sec1_syndrome, row, channel, "e752x CE");
 }
 
 static inline void process_ce(struct mem_ctl_info *mci, u16 error_one,
@@ -408,12 +385,9 @@ static void do_process_ue(struct mem_ctl_info *mci, u16 error_one,
 			edac_mc_find_csrow_by_page(mci, block_page);
 
 		/* e752x mc reads 34:6 of the DRAM linear address */
-		edac_mc_handle_error(HW_EVENT_ERR_UNCORRECTED, mci,
-					block_page,
-					offset_in_page(error_2b << 4), 0,
-					 row, -1, -1,
-					"e752x UE from Read", "", NULL);
-
+		edac_mc_handle_ue(mci, block_page,
+				offset_in_page(error_2b << 4),
+				row, "e752x UE from Read");
 	}
 	if (error_one & 0x0404) {
 		error_2b = scrb_add;
@@ -427,11 +401,9 @@ static void do_process_ue(struct mem_ctl_info *mci, u16 error_one,
 			edac_mc_find_csrow_by_page(mci, block_page);
 
 		/* e752x mc reads 34:6 of the DRAM linear address */
-		edac_mc_handle_error(HW_EVENT_ERR_UNCORRECTED, mci,
-					block_page,
-					offset_in_page(error_2b << 4), 0,
-					row, -1, -1,
-					"e752x UE from Scruber", "", NULL);
+		edac_mc_handle_ue(mci, block_page,
+				offset_in_page(error_2b << 4),
+				row, "e752x UE from Scruber");
 	}
 }
 
@@ -454,9 +426,7 @@ static inline void process_ue_no_info_wr(struct mem_ctl_info *mci,
 		return;
 
 	debugf3("%s()\n", __func__);
-	edac_mc_handle_error(HW_EVENT_ERR_UNCORRECTED, mci, 0, 0, 0,
-			     -1, -1, -1,
-			     "e752x UE log memory write", "", NULL);
+	edac_mc_handle_ue_no_info(mci, "e752x UE log memory write");
 }
 
 static void do_process_ded_retry(struct mem_ctl_info *mci, u16 error,
@@ -1074,7 +1044,7 @@ static void e752x_init_csrows(struct mem_ctl_info *mci, struct pci_dev *pdev,
 	int drc_drbg;		/* DRB granularity 0=64mb, 1=128mb */
 	int drc_ddim;		/* DRAM Data Integrity Mode 0=none, 2=edac */
 	u8 value;
-	u32 dra, drc, cumul_size, i, nr_pages;
+	u32 dra, drc, cumul_size;
 
 	dra = 0;
 	for (index = 0; index < 4; index++) {
@@ -1083,7 +1053,7 @@ static void e752x_init_csrows(struct mem_ctl_info *mci, struct pci_dev *pdev,
 		dra |= dra_reg << (index * 8);
 	}
 	pci_read_config_dword(pdev, E752X_DRC, &drc);
-	drc_chan = dual_channel_active(ddrcsr) ? 1 : 0;
+	drc_chan = dual_channel_active(ddrcsr);
 	drc_drbg = drc_chan + 1;	/* 128 in dual mode, 64 in single */
 	drc_ddim = (drc >> 20) & 0x3;
 
@@ -1108,33 +1078,26 @@ static void e752x_init_csrows(struct mem_ctl_info *mci, struct pci_dev *pdev,
 
 		csrow->first_page = last_cumul_size;
 		csrow->last_page = cumul_size - 1;
-		nr_pages = cumul_size - last_cumul_size;
+		csrow->nr_pages = cumul_size - last_cumul_size;
 		last_cumul_size = cumul_size;
+		csrow->grain = 1 << 12;	/* 4KiB - resolution of CELOG */
+		csrow->mtype = MEM_RDDR;	/* only one type supported */
+		csrow->dtype = mem_dev ? DEV_X4 : DEV_X8;
 
-		for (i = 0; i < csrow->nr_channels; i++) {
-			struct dimm_info *dimm = csrow->channels[i].dimm;
-
-			debugf3("Initializing rank at (%i,%i)\n", index, i);
-			dimm->nr_pages = nr_pages / csrow->nr_channels;
-			dimm->grain = 1 << 12;	/* 4KiB - resolution of CELOG */
-			dimm->mtype = MEM_RDDR;	/* only one type supported */
-			dimm->dtype = mem_dev ? DEV_X4 : DEV_X8;
-
-			/*
-			* if single channel or x8 devices then SECDED
-			* if dual channel and x4 then S4ECD4ED
-			*/
-			if (drc_ddim) {
-				if (drc_chan && mem_dev) {
-					dimm->edac_mode = EDAC_S4ECD4ED;
-					mci->edac_cap |= EDAC_FLAG_S4ECD4ED;
-				} else {
-					dimm->edac_mode = EDAC_SECDED;
-					mci->edac_cap |= EDAC_FLAG_SECDED;
-				}
-			} else
-				dimm->edac_mode = EDAC_NONE;
-		}
+		/*
+		 * if single channel or x8 devices then SECDED
+		 * if dual channel and x4 then S4ECD4ED
+		 */
+		if (drc_ddim) {
+			if (drc_chan && mem_dev) {
+				csrow->edac_mode = EDAC_S4ECD4ED;
+				mci->edac_cap |= EDAC_FLAG_S4ECD4ED;
+			} else {
+				csrow->edac_mode = EDAC_SECDED;
+				mci->edac_cap |= EDAC_FLAG_SECDED;
+			}
+		} else
+			csrow->edac_mode = EDAC_NONE;
 	}
 }
 
@@ -1182,9 +1145,11 @@ static int e752x_get_devs(struct pci_dev *pdev, int dev_idx,
 	pvt->bridge_ck = pci_get_device(PCI_VENDOR_ID_INTEL,
 				pvt->dev_info->err_dev, pvt->bridge_ck);
 
-	if (pvt->bridge_ck == NULL)
+	if (pvt->bridge_ck == NULL) {
 		pvt->bridge_ck = pci_scan_single_device(pdev->bus,
 							PCI_DEVFN(0, 1));
+		pci_dev_get(pvt->bridge_ck);
+	}
 
 	if (pvt->bridge_ck == NULL) {
 		e752x_printk(KERN_ERR, "error reporting device not found:"
@@ -1263,7 +1228,6 @@ static int e752x_probe1(struct pci_dev *pdev, int dev_idx)
 	u16 pci_data;
 	u8 stat8;
 	struct mem_ctl_info *mci;
-	struct edac_mc_layer layers[2];
 	struct e752x_pvt *pvt;
 	u16 ddrcsr;
 	int drc_chan;		/* Number of channels 0=1chan,1=2chan */
@@ -1290,15 +1254,11 @@ static int e752x_probe1(struct pci_dev *pdev, int dev_idx)
 	/* Dual channel = 1, Single channel = 0 */
 	drc_chan = dual_channel_active(ddrcsr);
 
-	layers[0].type = EDAC_MC_LAYER_CHIP_SELECT;
-	layers[0].size = E752X_NR_CSROWS;
-	layers[0].is_virt_csrow = true;
-	layers[1].type = EDAC_MC_LAYER_CHANNEL;
-	layers[1].size = drc_chan + 1;
-	layers[1].is_virt_csrow = false;
-	mci = edac_mc_alloc(0, ARRAY_SIZE(layers), layers, sizeof(*pvt));
-	if (mci == NULL)
+	mci = edac_mc_alloc(sizeof(*pvt), E752X_NR_CSROWS, drc_chan + 1, 0);
+
+	if (mci == NULL) {
 		return -ENOMEM;
+	}
 
 	debugf3("%s(): init mci\n", __func__);
 	mci->mtype_cap = MEM_FLAG_RDDR;

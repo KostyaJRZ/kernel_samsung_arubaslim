@@ -43,6 +43,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/version.h>
 #include <linux/io.h>
 #include <linux/semaphore.h>
 #include <net/iw_handler.h>
@@ -241,7 +242,7 @@ static inline char *translate_scan(struct _adapter *padapter,
 	/* Add frequency/channel */
 	iwe.cmd = SIOCGIWFREQ;
 	{
-		/*  check legal index */
+		/*  check legel index */
 		u8 dsconfig = pnetwork->network.Configuration.DSConfig;
 		if (dsconfig >= 1 && dsconfig <= sizeof(
 		    ieee80211_wlan_frequencies) / sizeof(long))
@@ -809,11 +810,11 @@ static int r871x_wx_set_pmkid(struct net_device *dev,
 
 /*
 	There are the BSSID information in the bssid.sa_data array.
-	If cmd is IW_PMKSA_FLUSH, it means the wpa_supplicant wants to clear
-	all the PMKID information. If cmd is IW_PMKSA_ADD, it means the
-	wpa_supplicant wants to add a PMKID/BSSID to driver.
+	If cmd is IW_PMKSA_FLUSH, it means the wpa_suppplicant wants to clear
+	 all the PMKID information. If cmd is IW_PMKSA_ADD, it means the
+	  wpa_supplicant wants to add a PMKID/BSSID to driver.
 	If cmd is IW_PMKSA_REMOVE, it means the wpa_supplicant wants to
-	remove a PMKID/BSSID from driver.
+	  remove a PMKID/BSSID from driver.
 */
 	if (pPMK == NULL)
 		return -EINVAL;
@@ -923,7 +924,7 @@ static int r8711_wx_get_range(struct net_device *dev,
 	range->max_qual.noise = 100;
 	range->max_qual.updated = 7; /* Updated all three */
 	range->avg_qual.qual = 92; /* > 8% missed beacons is 'bad' */
-	/* TODO: Find real 'good' to 'bad' threshold value for RSSI */
+	/* TODO: Find real 'good' to 'bad' threshol value for RSSI */
 	range->avg_qual.level = 20 + -98;
 	range->avg_qual.noise = 0;
 	range->avg_qual.updated = 7; /* Updated all three */
@@ -1070,7 +1071,7 @@ FREE_EXT:
  * MAC# of a preferred Access Point.
  * Currently, the request comes via Wireless Extensions' SIOCSIWAP ioctl.
  *
- * For this operation to succeed, there is no need for the interface to be up.
+ * For this operation to succeed, there is no need for the interface to be Up.
  *
  */
 static int r8711_wx_set_wap(struct net_device *dev,
@@ -2388,10 +2389,10 @@ static struct iw_statistics *r871x_get_wireless_stats(struct net_device *dev)
 
 struct iw_handler_def r871x_handlers_def = {
 	.standard = r8711_handlers,
-	.num_standard = ARRAY_SIZE(r8711_handlers),
+	.num_standard = sizeof(r8711_handlers) / sizeof(iw_handler),
 	.private = r8711_private_handler,
 	.private_args = (struct iw_priv_args *)r8711_private_args,
-	.num_private = ARRAY_SIZE(r8711_private_handler),
+	.num_private = sizeof(r8711_private_handler) / sizeof(iw_handler),
 	.num_private_args = sizeof(r8711_private_args) /
 			    sizeof(struct iw_priv_args),
 	.get_wireless_stats = r871x_get_wireless_stats

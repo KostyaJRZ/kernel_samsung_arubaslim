@@ -23,7 +23,6 @@
 extern unsigned long tb_ticks_per_jiffy;
 extern unsigned long tb_ticks_per_usec;
 extern unsigned long tb_ticks_per_sec;
-extern struct clock_event_device decrementer_clockevent;
 
 struct rtc_time;
 extern void to_tm(int tim, struct rtc_time * tm);
@@ -206,6 +205,8 @@ DECLARE_PER_CPU(struct cpu_usage, cpu_usage_array);
 extern void secondary_cpu_time_init(void);
 
 DECLARE_PER_CPU(u64, decrementers_next_tb);
+
+extern void decrementer_check_overflow(void);
 
 #endif /* __KERNEL__ */
 #endif /* __POWERPC_TIME_H */

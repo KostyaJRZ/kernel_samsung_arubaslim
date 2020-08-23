@@ -3,16 +3,29 @@ config PRINTK_TIME
 	bool "Show timing information on printks"
 	depends on PRINTK
 	help
-	  Selecting this option causes time stamps of the printk()
-	  messages to be added to the output of the syslog() system
-	  call and at the console.
+	  Selecting this option causes timing information to be
+	  included in printk output.  This allows you to measure
+	  the interval between kernel operations, including bootup
+	  operations.  This is useful for identifying long delays
+	  in kernel startup.  Or add printk.time=1 at boot-time.
+	  See Documentation/kernel-parameters.txt
 
-	  The timestamp is always recorded internally, and exported
-	  to /dev/kmsg. This flag just specifies if the timestamp should
-	  be included, not that the timestamp is recorded.
-
-	  The behavior is also controlled by the kernel command line
-	  parameter printk.time=1. See Documentation/kernel-parameters.txt
+config PRINTK_CPU_ID
+ 	bool "Show cpu id on printks"
+ 	depends on PRINTK
+ 	help
+ 	  Selecting this option causes current printk cpu id to be
+ 	  included in printk output. Or add printk.cpu=1 at boot-time.
+ 	  See Documentation/kernel-parameters.txt
+ 
+config PRINTK_PID
+         bool "Show pid on printks"
+         depends on PRINTK
+         help
+           Selecting this option causes current task's pid to be
+           included in printk output. Or add printk.pid=1 at boot-time.
+           This allows you to see the running process with kernel log.
+           See Documentation/kernel-parameters.txt
 
 config DEFAULT_MESSAGE_LOGLEVEL
 	int "Default message log level (1-7)"
@@ -240,26 +253,6 @@ config BOOTPARAM_SOFTLOCKUP_PANIC_VALUE
 	range 0 1
 	default 0 if !BOOTPARAM_SOFTLOCKUP_PANIC
 	default 1 if BOOTPARAM_SOFTLOCKUP_PANIC
-
-config PANIC_ON_OOPS
-	bool "Panic on Oops" if EXPERT
-	default n
-	help
-	  Say Y here to enable the kernel to panic when it oopses. This
-	  has the same effect as setting oops=panic on the kernel command
-	  line.
-
-	  This feature is useful to ensure that the kernel does not do
-	  anything erroneous after an oops which could result in data
-	  corruption or other issues.
-
-	  Say N if unsure.
-
-config PANIC_ON_OOPS_VALUE
-	int
-	range 0 1
-	default 0 if !PANIC_ON_OOPS
-	default 1 if PANIC_ON_OOPS
 
 config DETECT_HUNG_TASK
 	bool "Detect Hung Tasks"
@@ -709,8 +702,9 @@ config DEBUG_LOCKING_API_SELFTESTS
 	  mutexes and rwsems.
 
 config STACKTRACE
-	bool
+	bool "Stacktrace"
 	depends on STACKTRACE_SUPPORT
+	default y
 
 config DEBUG_STACK_USAGE
 	bool "Stack utilization instrumentation"
@@ -956,7 +950,7 @@ config RCU_CPU_STALL_TIMEOUT
 config RCU_CPU_STALL_VERBOSE
 	bool "Print additional per-task information for RCU_CPU_STALL_DETECTOR"
 	depends on TREE_PREEMPT_RCU
-	default y
+	default n
 	help
 	  This option causes RCU to printk detailed per-task information
 	  for any tasks that are stalling the current RCU grace period.
@@ -1238,13 +1232,8 @@ config DYNAMIC_DEBUG
 	  otherwise be available at runtime. These messages can then be
 	  enabled/disabled based on various levels of scope - per source file,
 	  function, module, format string, and line number. This mechanism
-	  implicitly compiles in all pr_debug() and dev_dbg() calls, which
-	  enlarges the kernel text size by about 2%.
-
-	  If a source file is compiled with DEBUG flag set, any
-	  pr_debug() calls in it are enabled by default, but can be
-	  disabled at runtime as below.  Note that DEBUG flag is
-	  turned on by many CONFIG_*DEBUG* options.
+	  implicitly enables all pr_debug() and dev_dbg() calls. The impact of
+	  this compile option is a larger kernel text size of about 2%.
 
 	  Usage:
 
@@ -1261,16 +1250,16 @@ config DYNAMIC_DEBUG
 	  lineno : line number of the debug statement
 	  module : module that contains the debug statement
 	  function : function that contains the debug statement
-          flags : '=p' means the line is turned 'on' for printing
+          flags : 'p' means the line is turned 'on' for printing
           format : the format used for the debug statement
 
 	  From a live system:
 
 		nullarbor:~ # cat <debugfs>/dynamic_debug/control
 		# filename:lineno [module]function flags format
-		fs/aio.c:222 [aio]__put_ioctx =_ "__put_ioctx:\040freeing\040%p\012"
-		fs/aio.c:248 [aio]ioctx_alloc =_ "ENOMEM:\040nr_events\040too\040high\012"
-		fs/aio.c:1770 [aio]sys_io_cancel =_ "calling\040cancel\012"
+		fs/aio.c:222 [aio]__put_ioctx - "__put_ioctx:\040freeing\040%p\012"
+		fs/aio.c:248 [aio]ioctx_alloc - "ENOMEM:\040nr_events\040too\040high\012"
+		fs/aio.c:1770 [aio]sys_io_cancel - "calling\040cancel\012"
 
 	  Example usage:
 
@@ -1327,11 +1316,21 @@ config ASYNC_RAID6_TEST
 
 	  If unsure, say N.
 
+config PANIC_ON_DATA_CORRUPTION
+	bool "Cause a Kernel Panic When Data Corruption is detected"
+	help
+	 Select this option to upgrade warnings for potentially
+	 recoverable data corruption scenarios to system-halting panics,
+	 for easier detection and debug.
+
 source "samples/Kconfig"
 
 source "lib/Kconfig.kgdb"
 
 source "lib/Kconfig.kmemcheck"
+
+config TEST_STRING_HELPERS
+	tristate "Test functions located in the string_helpers module at runtime"
 
 config TEST_KSTRTOX
 	tristate "Test kstrto*() family of functions at runtime"

@@ -129,6 +129,12 @@ static int __init pci_nanoengine_map_irq(const struct pci_dev *dev, u8 slot,
 	return NANOENGINE_IRQ_GPIO_PCI;
 }
 
+struct pci_bus * __init pci_nanoengine_scan_bus(int nr, struct pci_sys_data *sys)
+{
+	return pci_scan_root_bus(NULL, sys->busnr, &pci_nano_ops, sys,
+				 &sys->resources);
+}
+
 static struct resource pci_io_ports =
 	DEFINE_RES_IO_NAMED(0x400, 0x400, "PCI IO");
 
@@ -268,7 +274,7 @@ int __init pci_nanoengine_setup(int nr, struct pci_sys_data *sys)
 static struct hw_pci nanoengine_pci __initdata = {
 	.map_irq		= pci_nanoengine_map_irq,
 	.nr_controllers		= 1,
-	.ops			= &pci_nano_ops,
+	.scan			= pci_nanoengine_scan_bus,
 	.setup			= pci_nanoengine_setup,
 };
 

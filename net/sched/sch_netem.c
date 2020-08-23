@@ -26,7 +26,6 @@
 
 #include <net/netlink.h>
 #include <net/pkt_sched.h>
-#include <net/inet_ecn.h>
 
 #define VERSION "1.3"
 
@@ -79,7 +78,6 @@ struct netem_sched_data {
 	psched_tdiff_t jitter;
 
 	u32 loss;
-	u32 ecn;
 	u32 limit;
 	u32 counter;
 	u32 gap;
@@ -368,12 +366,9 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		++count;
 
 	/* Drop packet? */
-	if (loss_event(q)) {
-		if (q->ecn && INET_ECN_set_ce(skb))
-			sch->qstats.drops++; /* mark packet */
-		else
-			--count;
-	}
+	if (loss_event(q))
+		--count;
+
 	if (count == 0) {
 		sch->qstats.drops++;
 		kfree_skb(skb);
@@ -697,7 +692,6 @@ static const struct nla_policy netem_policy[TCA_NETEM_MAX + 1] = {
 	[TCA_NETEM_CORRUPT]	= { .len = sizeof(struct tc_netem_corrupt) },
 	[TCA_NETEM_RATE]	= { .len = sizeof(struct tc_netem_rate) },
 	[TCA_NETEM_LOSS]	= { .type = NLA_NESTED },
-	[TCA_NETEM_ECN]		= { .type = NLA_U32 },
 };
 
 static int parse_attr(struct nlattr *tb[], int maxtype, struct nlattr *nla,
@@ -768,9 +762,6 @@ static int netem_change(struct Qdisc *sch, struct nlattr *opt)
 	if (tb[TCA_NETEM_RATE])
 		get_rate(sch, tb[TCA_NETEM_RATE]);
 
-	if (tb[TCA_NETEM_ECN])
-		q->ecn = nla_get_u32(tb[TCA_NETEM_ECN]);
-
 	q->loss_model = CLG_RANDOM;
 	if (tb[TCA_NETEM_LOSS])
 		ret = get_loss_clg(sch, tb[TCA_NETEM_LOSS]);
@@ -829,8 +820,7 @@ static int dump_loss_model(const struct netem_sched_data *q,
 			.p23 = q->clg.a5,
 		};
 
-		if (nla_put(skb, NETEM_LOSS_GI, sizeof(gi), &gi))
-			goto nla_put_failure;
+		NLA_PUT(skb, NETEM_LOSS_GI, sizeof(gi), &gi);
 		break;
 	}
 	case CLG_GILB_ELL: {
@@ -841,8 +831,7 @@ static int dump_loss_model(const struct netem_sched_data *q,
 			.k1 = q->clg.a4,
 		};
 
-		if (nla_put(skb, NETEM_LOSS_GE, sizeof(ge), &ge))
-			goto nla_put_failure;
+		NLA_PUT(skb, NETEM_LOSS_GE, sizeof(ge), &ge);
 		break;
 	}
 	}
@@ -871,34 +860,26 @@ static int netem_dump(struct Qdisc *sch, struct sk_buff *skb)
 	qopt.loss = q->loss;
 	qopt.gap = q->gap;
 	qopt.duplicate = q->duplicate;
-	if (nla_put(skb, TCA_OPTIONS, sizeof(qopt), &qopt))
-		goto nla_put_failure;
+	NLA_PUT(skb, TCA_OPTIONS, sizeof(qopt), &qopt);
 
 	cor.delay_corr = q->delay_cor.rho;
 	cor.loss_corr = q->loss_cor.rho;
 	cor.dup_corr = q->dup_cor.rho;
-	if (nla_put(skb, TCA_NETEM_CORR, sizeof(cor), &cor))
-		goto nla_put_failure;
+	NLA_PUT(skb, TCA_NETEM_CORR, sizeof(cor), &cor);
 
 	reorder.probability = q->reorder;
 	reorder.correlation = q->reorder_cor.rho;
-	if (nla_put(skb, TCA_NETEM_REORDER, sizeof(reorder), &reorder))
-		goto nla_put_failure;
+	NLA_PUT(skb, TCA_NETEM_REORDER, sizeof(reorder), &reorder);
 
 	corrupt.probability = q->corrupt;
 	corrupt.correlation = q->corrupt_cor.rho;
-	if (nla_put(skb, TCA_NETEM_CORRUPT, sizeof(corrupt), &corrupt))
-		goto nla_put_failure;
+	NLA_PUT(skb, TCA_NETEM_CORRUPT, sizeof(corrupt), &corrupt);
 
 	rate.rate = q->rate;
 	rate.packet_overhead = q->packet_overhead;
 	rate.cell_size = q->cell_size;
 	rate.cell_overhead = q->cell_overhead;
-	if (nla_put(skb, TCA_NETEM_RATE, sizeof(rate), &rate))
-		goto nla_put_failure;
-
-	if (q->ecn && nla_put_u32(skb, TCA_NETEM_ECN, q->ecn))
-		goto nla_put_failure;
+	NLA_PUT(skb, TCA_NETEM_RATE, sizeof(rate), &rate);
 
 	if (dump_loss_model(q, skb) != 0)
 		goto nla_put_failure;

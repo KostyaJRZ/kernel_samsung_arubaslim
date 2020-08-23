@@ -92,8 +92,6 @@ struct pl08x_bus_data {
  * right now
  * @serving: the virtual channel currently being served by this physical
  * channel
- * @locked: channel unavailable for the system, e.g. dedicated to secure
- * world
  */
 struct pl08x_phy_chan {
 	unsigned int id;
@@ -101,7 +99,6 @@ struct pl08x_phy_chan {
 	spinlock_t lock;
 	int signal;
 	struct pl08x_dma_chan *serving;
-	bool locked;
 };
 
 /**

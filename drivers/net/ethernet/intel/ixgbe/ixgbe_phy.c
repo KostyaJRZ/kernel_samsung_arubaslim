@@ -1582,21 +1582,13 @@ static s32 ixgbe_clock_out_i2c_bit(struct ixgbe_hw *hw, bool data)
  **/
 static void ixgbe_raise_i2c_clk(struct ixgbe_hw *hw, u32 *i2cctl)
 {
-	u32 i = 0;
-	u32 timeout = IXGBE_I2C_CLOCK_STRETCHING_TIMEOUT;
-	u32 i2cctl_r = 0;
+	*i2cctl |= IXGBE_I2C_CLK_OUT;
 
-	for (i = 0; i < timeout; i++) {
-		*i2cctl |= IXGBE_I2C_CLK_OUT;
-		IXGBE_WRITE_REG(hw, IXGBE_I2CCTL, *i2cctl);
-		IXGBE_WRITE_FLUSH(hw);
-		/* SCL rise time (1000ns) */
-		udelay(IXGBE_I2C_T_RISE);
+	IXGBE_WRITE_REG(hw, IXGBE_I2CCTL, *i2cctl);
+	IXGBE_WRITE_FLUSH(hw);
 
-		i2cctl_r = IXGBE_READ_REG(hw, IXGBE_I2CCTL);
-		if (i2cctl_r & IXGBE_I2C_CLK_IN)
-			break;
-	}
+	/* SCL rise time (1000ns) */
+	udelay(IXGBE_I2C_T_RISE);
 }
 
 /**

@@ -36,8 +36,8 @@ TRACE_EVENT(ext4_free_inode,
 		__entry->dev	= inode->i_sb->s_dev;
 		__entry->ino	= inode->i_ino;
 		__entry->mode	= inode->i_mode;
-		__entry->uid	= i_uid_read(inode);
-		__entry->gid	= i_gid_read(inode);
+		__entry->uid	= inode->i_uid;
+		__entry->gid	= inode->i_gid;
 		__entry->blocks	= inode->i_blocks;
 	),
 
@@ -256,15 +256,7 @@ DECLARE_EVENT_CLASS(ext4__write_end,
 		  __entry->pos, __entry->len, __entry->copied)
 );
 
-DEFINE_EVENT(ext4__write_end, ext4_ordered_write_end,
-
-	TP_PROTO(struct inode *inode, loff_t pos, unsigned int len,
-		 unsigned int copied),
-
-	TP_ARGS(inode, pos, len, copied)
-);
-
-DEFINE_EVENT(ext4__write_end, ext4_writeback_write_end,
+DEFINE_EVENT(ext4__write_end, ext4_write_end,
 
 	TP_PROTO(struct inode *inode, loff_t pos, unsigned int len,
 		 unsigned int copied),

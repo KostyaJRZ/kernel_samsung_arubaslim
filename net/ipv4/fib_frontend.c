@@ -136,13 +136,13 @@ static void fib_flush(struct net *net)
  * Find address type as if only "dev" was present in the system. If
  * on_dev is NULL then all interfaces are taken into consideration.
  */
-static inline unsigned int __inet_dev_addr_type(struct net *net,
-						const struct net_device *dev,
-						__be32 addr)
+static inline unsigned __inet_dev_addr_type(struct net *net,
+					    const struct net_device *dev,
+					    __be32 addr)
 {
 	struct flowi4		fl4 = { .daddr = addr };
 	struct fib_result	res;
-	unsigned int ret = RTN_BROADCAST;
+	unsigned ret = RTN_BROADCAST;
 	struct fib_table *local_table;
 
 	if (ipv4_is_zeronet(addr) || ipv4_is_lbcast(addr))
@@ -481,6 +481,7 @@ const struct nla_policy rtm_ipv4_policy[RTA_MAX + 1] = {
 	[RTA_METRICS]		= { .type = NLA_NESTED },
 	[RTA_MULTIPATH]		= { .len = sizeof(struct rtnexthop) },
 	[RTA_FLOW]		= { .type = NLA_U32 },
+	[RTA_UID]		= { .type = NLA_U32 },
 };
 
 static int rtm_to_fib_config(struct net *net, struct sk_buff *skb,
@@ -740,7 +741,7 @@ void fib_del_ifaddr(struct in_ifaddr *ifa, struct in_ifaddr *iprim)
 #define BRD_OK		2
 #define BRD0_OK		4
 #define BRD1_OK		8
-	unsigned int ok = 0;
+	unsigned ok = 0;
 	int subnet = 0;		/* Primary network */
 	int gone = 1;		/* Address is missing */
 	int same_prefsrc = 0;	/* Another primary with same IP */

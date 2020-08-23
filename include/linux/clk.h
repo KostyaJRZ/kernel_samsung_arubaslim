@@ -81,7 +81,7 @@ int clk_notifier_register(struct clk *clk, struct notifier_block *nb);
 
 int clk_notifier_unregister(struct clk *clk, struct notifier_block *nb);
 
-#endif
+#endif /* !CONFIG_COMMON_CLK */
 
 /**
  * clk_get - lookup and obtain a reference to a clock producer.
@@ -101,22 +101,12 @@ int clk_notifier_unregister(struct clk *clk, struct notifier_block *nb);
 struct clk *clk_get(struct device *dev, const char *id);
 
 /**
- * devm_clk_get - lookup and obtain a managed reference to a clock producer.
- * @dev: device for clock "consumer"
- * @id: clock comsumer ID
+ * devm_clk_get - Resource managed clk_get()
+ * @dev: device for clk "consumer"
+ * @id: clk ID.
  *
- * Returns a struct clk corresponding to the clock producer, or
- * valid IS_ERR() condition containing errno.  The implementation
- * uses @dev and @id to determine the clock consumer, and thereby
- * the clock producer.  (IOW, @id may be identical strings, but
- * clk_get may return different clock producers depending on @dev.)
- *
- * Drivers must assume that the clock source is not enabled.
- *
- * devm_clk_get should not be called from within interrupt context.
- *
- * The clock will automatically be freed when the device is unbound
- * from the bus.
+ * Managed clk_get(). Clocks returned from this function are
+ * automatically clk_put() on driver detach.
  */
 struct clk *devm_clk_get(struct device *dev, const char *id);
 
@@ -226,18 +216,6 @@ unsigned long clk_get_rate(struct clk *clk);
  */
 void clk_put(struct clk *clk);
 
-/**
- * devm_clk_put	- "free" a managed clock source
- * @dev: device used to acuqire the clock
- * @clk: clock source acquired with devm_clk_get()
- *
- * Note: drivers must ensure that all clk_enable calls made on this
- * clock source are balanced by clk_disable calls prior to calling
- * this function.
- *
- * clk_put should not be called from within interrupt context.
- */
-void devm_clk_put(struct device *dev, struct clk *clk);
 
 /*
  * The remaining APIs are optional for machine class support.
@@ -252,7 +230,7 @@ void devm_clk_put(struct device *dev, struct clk *clk);
  * Returns rounded clock rate in Hz, or negative errno.
  */
 long clk_round_rate(struct clk *clk, unsigned long rate);
-
+ 
 /**
  * clk_set_rate - set the clock rate for a clock source
  * @clk: clock source
@@ -261,7 +239,7 @@ long clk_round_rate(struct clk *clk, unsigned long rate);
  * Returns success (0) or negative errno.
  */
 int clk_set_rate(struct clk *clk, unsigned long rate);
-
+ 
 /**
  * clk_set_parent - set the parent clock source for this clock
  * @clk: clock source

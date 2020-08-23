@@ -406,9 +406,10 @@ static const struct vm_operations_struct drm_vm_sg_ops = {
  * Create a new drm_vma_entry structure as the \p vma private data entry and
  * add it to drm_device::vmalist.
  */
-void drm_vm_open_locked(struct drm_device *dev,
-		struct vm_area_struct *vma)
+void drm_vm_open_locked(struct vm_area_struct *vma)
 {
+	struct drm_file *priv = vma->vm_file->private_data;
+	struct drm_device *dev = priv->minor->dev;
 	struct drm_vma_entry *vma_entry;
 
 	DRM_DEBUG("0x%08lx,0x%08lx\n",
@@ -429,13 +430,14 @@ static void drm_vm_open(struct vm_area_struct *vma)
 	struct drm_device *dev = priv->minor->dev;
 
 	mutex_lock(&dev->struct_mutex);
-	drm_vm_open_locked(dev, vma);
+	drm_vm_open_locked(vma);
 	mutex_unlock(&dev->struct_mutex);
 }
 
-void drm_vm_close_locked(struct drm_device *dev,
-		struct vm_area_struct *vma)
+void drm_vm_close_locked(struct vm_area_struct *vma)
 {
+	struct drm_file *priv = vma->vm_file->private_data;
+	struct drm_device *dev = priv->minor->dev;
 	struct drm_vma_entry *pt, *temp;
 
 	DRM_DEBUG("0x%08lx,0x%08lx\n",
@@ -465,7 +467,7 @@ static void drm_vm_close(struct vm_area_struct *vma)
 	struct drm_device *dev = priv->minor->dev;
 
 	mutex_lock(&dev->struct_mutex);
-	drm_vm_close_locked(dev, vma);
+	drm_vm_close_locked(vma);
 	mutex_unlock(&dev->struct_mutex);
 }
 
@@ -517,7 +519,7 @@ static int drm_mmap_dma(struct file *filp, struct vm_area_struct *vma)
 	vma->vm_flags |= VM_RESERVED;	/* Don't swap */
 	vma->vm_flags |= VM_DONTEXPAND;
 
-	drm_vm_open_locked(dev, vma);
+	drm_vm_open_locked(vma);
 	return 0;
 }
 
@@ -668,7 +670,7 @@ int drm_mmap_locked(struct file *filp, struct vm_area_struct *vma)
 	vma->vm_flags |= VM_RESERVED;	/* Don't swap */
 	vma->vm_flags |= VM_DONTEXPAND;
 
-	drm_vm_open_locked(dev, vma);
+	drm_vm_open_locked(vma);
 	return 0;
 }
 

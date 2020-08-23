@@ -18,8 +18,8 @@
 #include <linux/gpio.h>
 #include <linux/module.h>
 
-#include <linux/iio/iio.h>
-#include <linux/iio/sysfs.h>
+#include "../iio.h"
+#include "../sysfs.h"
 
 #include "ad7780.h"
 
@@ -94,7 +94,7 @@ static int ad7780_read_raw(struct iio_dev *indio_dev,
 	unsigned long scale_uv;
 
 	switch (m) {
-	case IIO_CHAN_INFO_RAW:
+	case 0:
 		mutex_lock(&indio_dev->mlock);
 		ret = ad7780_read(st, &smpl);
 		mutex_unlock(&indio_dev->mlock);
@@ -126,34 +126,14 @@ static int ad7780_read_raw(struct iio_dev *indio_dev,
 
 static const struct ad7780_chip_info ad7780_chip_info_tbl[] = {
 	[ID_AD7780] = {
-		.channel = {
-			.type = IIO_VOLTAGE,
-			.indexed = 1,
-			.channel = 0,
-			.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |
-			IIO_CHAN_INFO_SCALE_SHARED_BIT,
-			.scan_type = {
-				.sign = 's',
-				.realbits = 24,
-				.storagebits = 32,
-				.shift = 8,
-			},
-		},
+		.channel = IIO_CHAN(IIO_VOLTAGE, 0, 1, 0, NULL, 0, 0,
+				    IIO_CHAN_INFO_SCALE_SHARED_BIT,
+				    0, 0, IIO_ST('s', 24, 32, 8), 0),
 	},
 	[ID_AD7781] = {
-		.channel = {
-			.type = IIO_VOLTAGE,
-			.indexed = 1,
-			.channel = 0,
-			.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |
-			IIO_CHAN_INFO_SCALE_SHARED_BIT,
-			.scan_type = {
-				.sign = 's',
-				.realbits = 20,
-				.storagebits = 32,
-				.shift = 12,
-			},
-		},
+		.channel = IIO_CHAN(IIO_VOLTAGE, 0, 1, 0, NULL, 0, 0,
+				    IIO_CHAN_INFO_SCALE_SHARED_BIT,
+				    0, 0, IIO_ST('s', 20, 32, 12), 0),
 	},
 };
 
@@ -187,7 +167,7 @@ static int __devinit ad7780_probe(struct spi_device *spi)
 		return -ENODEV;
 	}
 
-	indio_dev = iio_device_alloc(sizeof(*st));
+	indio_dev = iio_allocate_device(sizeof(*st));
 	if (indio_dev == NULL)
 		return -ENOMEM;
 
@@ -265,7 +245,7 @@ error_put_reg:
 	if (!IS_ERR(st->reg))
 		regulator_put(st->reg);
 
-	iio_device_free(indio_dev);
+	iio_free_device(indio_dev);
 
 	return ret;
 }
@@ -282,7 +262,7 @@ static int ad7780_remove(struct spi_device *spi)
 		regulator_disable(st->reg);
 		regulator_put(st->reg);
 	}
-	iio_device_free(indio_dev);
+	iio_free_device(indio_dev);
 
 	return 0;
 }

@@ -26,7 +26,6 @@
 #include <linux/cache.h>
 #include <linux/audit.h>
 #include <net/dst.h>
-#include <net/flow.h>
 #include <net/xfrm.h>
 #include <net/ip.h>
 #ifdef CONFIG_XFRM_STATISTICS
@@ -57,7 +56,7 @@ static int xfrm_bundle_ok(struct xfrm_dst *xdst);
 static struct xfrm_policy *__xfrm_policy_unlink(struct xfrm_policy *pol,
 						int dir);
 
-static inline bool
+static inline int
 __xfrm4_selector_match(const struct xfrm_selector *sel, const struct flowi *fl)
 {
 	const struct flowi4 *fl4 = &fl->u.ip4;
@@ -70,7 +69,7 @@ __xfrm4_selector_match(const struct xfrm_selector *sel, const struct flowi *fl)
 		(fl4->flowi4_oif == sel->ifindex || !sel->ifindex);
 }
 
-static inline bool
+static inline int
 __xfrm6_selector_match(const struct xfrm_selector *sel, const struct flowi *fl)
 {
 	const struct flowi6 *fl6 = &fl->u.ip6;
@@ -83,8 +82,8 @@ __xfrm6_selector_match(const struct xfrm_selector *sel, const struct flowi *fl)
 		(fl6->flowi6_oif == sel->ifindex || !sel->ifindex);
 }
 
-bool xfrm_selector_match(const struct xfrm_selector *sel, const struct flowi *fl,
-			 unsigned short family)
+int xfrm_selector_match(const struct xfrm_selector *sel, const struct flowi *fl,
+			unsigned short family)
 {
 	switch (family) {
 	case AF_INET:
@@ -92,7 +91,7 @@ bool xfrm_selector_match(const struct xfrm_selector *sel, const struct flowi *fl
 	case AF_INET6:
 		return __xfrm6_selector_match(sel, fl);
 	}
-	return false;
+	return 0;
 }
 
 static inline struct dst_entry *__xfrm_dst_lookup(struct net *net, int tos,
@@ -878,8 +877,7 @@ static int xfrm_policy_match(const struct xfrm_policy *pol,
 			     u8 type, u16 family, int dir)
 {
 	const struct xfrm_selector *sel = &pol->selector;
-	int ret = -ESRCH;
-	bool match;
+	int match, ret = -ESRCH;
 
 	if (pol->family != family ||
 	    (fl->flowi_mark & pol->mark.m) != pol->mark.v ||
@@ -1008,8 +1006,8 @@ static struct xfrm_policy *xfrm_sk_policy_lookup(struct sock *sk, int dir,
 
 	read_lock_bh(&xfrm_policy_lock);
 	if ((pol = sk->sk_policy[dir]) != NULL) {
-		bool match = xfrm_selector_match(&pol->selector, fl,
-						 sk->sk_family);
+		int match = xfrm_selector_match(&pol->selector, fl,
+						sk->sk_family);
 		int err = 0;
 
 		if (match) {
@@ -1763,7 +1761,7 @@ static struct dst_entry *make_blackhole(struct net *net, u16 family,
 
 	if (!afinfo) {
 		dst_release(dst_orig);
-		ret = ERR_PTR(-EINVAL);
+		return ERR_PTR(-EINVAL);
 	} else {
 		ret = afinfo->blackhole_route(net, dst_orig);
 	}
@@ -2772,8 +2770,8 @@ EXPORT_SYMBOL_GPL(xfrm_audit_policy_delete);
 #endif
 
 #ifdef CONFIG_XFRM_MIGRATE
-static bool xfrm_migrate_selector_match(const struct xfrm_selector *sel_cmp,
-					const struct xfrm_selector *sel_tgt)
+static int xfrm_migrate_selector_match(const struct xfrm_selector *sel_cmp,
+				       const struct xfrm_selector *sel_tgt)
 {
 	if (sel_cmp->proto == IPSEC_ULPROTO_ANY) {
 		if (sel_tgt->family == sel_cmp->family &&
@@ -2783,14 +2781,14 @@ static bool xfrm_migrate_selector_match(const struct xfrm_selector *sel_cmp,
 				  sel_cmp->family) == 0 &&
 		    sel_tgt->prefixlen_d == sel_cmp->prefixlen_d &&
 		    sel_tgt->prefixlen_s == sel_cmp->prefixlen_s) {
-			return true;
+			return 1;
 		}
 	} else {
 		if (memcmp(sel_tgt, sel_cmp, sizeof(*sel_tgt)) == 0) {
-			return true;
+			return 1;
 		}
 	}
-	return false;
+	return 0;
 }
 
 static struct xfrm_policy * xfrm_migrate_policy_find(const struct xfrm_selector *sel,

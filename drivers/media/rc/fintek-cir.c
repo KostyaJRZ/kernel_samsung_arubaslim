@@ -556,11 +556,11 @@ static int fintek_probe(struct pnp_dev *pdev, const struct pnp_device_id *dev_id
 
 	if (request_irq(fintek->cir_irq, fintek_cir_isr, IRQF_SHARED,
 			FINTEK_DRIVER_NAME, (void *)fintek))
-		goto failure2;
+		goto failure;
 
 	ret = rc_register_device(rdev);
 	if (ret)
-		goto failure3;
+		goto failure;
 
 	device_init_wakeup(&pdev->dev, true);
 	fintek->rdev = rdev;
@@ -570,11 +570,12 @@ static int fintek_probe(struct pnp_dev *pdev, const struct pnp_device_id *dev_id
 
 	return 0;
 
-failure3:
-	free_irq(fintek->cir_irq, fintek);
-failure2:
-	release_region(fintek->cir_addr, fintek->cir_port_len);
 failure:
+	if (fintek->cir_irq)
+		free_irq(fintek->cir_irq, fintek);
+	if (fintek->cir_addr)
+		release_region(fintek->cir_addr, fintek->cir_port_len);
+
 	rc_free_device(rdev);
 	kfree(fintek);
 

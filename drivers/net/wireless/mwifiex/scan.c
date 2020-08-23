@@ -1048,8 +1048,10 @@ mwifiex_ret_802_11_scan_get_tlv_ptrs(struct mwifiex_adapter *adapter,
  * This function parses provided beacon buffer and updates
  * respective fields in bss descriptor structure.
  */
-int mwifiex_update_bss_desc_with_ie(struct mwifiex_adapter *adapter,
-				    struct mwifiex_bssdescriptor *bss_entry)
+int
+mwifiex_update_bss_desc_with_ie(struct mwifiex_adapter *adapter,
+				struct mwifiex_bssdescriptor *bss_entry,
+				u8 *ie_buf, u32 ie_len)
 {
 	int ret = 0;
 	u8 element_id;
@@ -1071,8 +1073,10 @@ int mwifiex_update_bss_desc_with_ie(struct mwifiex_adapter *adapter,
 
 	found_data_rate_ie = false;
 	rate_size = 0;
-	current_ptr = bss_entry->beacon_buf;
-	bytes_left = bss_entry->beacon_buf_size;
+	current_ptr = ie_buf;
+	bytes_left = ie_len;
+	bss_entry->beacon_buf = ie_buf;
+	bss_entry->beacon_buf_size = ie_len;
 
 	/* Process variable IE */
 	while (bytes_left >= 2) {
@@ -1217,9 +1221,9 @@ int mwifiex_update_bss_desc_with_ie(struct mwifiex_adapter *adapter,
 					sizeof(struct ieee_types_header) -
 					bss_entry->beacon_buf);
 			break;
-		case WLAN_EID_HT_OPERATION:
-			bss_entry->bcn_ht_oper =
-				(struct ieee80211_ht_operation *)(current_ptr +
+		case WLAN_EID_HT_INFORMATION:
+			bss_entry->bcn_ht_info = (struct ieee80211_ht_info *)
+					(current_ptr +
 					sizeof(struct ieee_types_header));
 			bss_entry->ht_info_offset = (u16) (current_ptr +
 					sizeof(struct ieee_types_header) -
@@ -1443,12 +1447,15 @@ int mwifiex_check_network_compatibility(struct mwifiex_private *priv,
 	return ret;
 }
 
-static int mwifiex_update_curr_bss_params(struct mwifiex_private *priv,
-					  struct cfg80211_bss *bss)
+static int
+mwifiex_update_curr_bss_params(struct mwifiex_private *priv, u8 *bssid,
+			       s32 rssi, const u8 *ie_buf, size_t ie_len,
+			       u16 beacon_period, u16 cap_info_bitmap, u8 band)
 {
 	struct mwifiex_bssdescriptor *bss_desc;
 	int ret;
 	unsigned long flags;
+	u8 *beacon_ie;
 
 	/* Allocate and fill new bss descriptor */
 	bss_desc = kzalloc(sizeof(struct mwifiex_bssdescriptor),
@@ -1458,7 +1465,16 @@ static int mwifiex_update_curr_bss_params(struct mwifiex_private *priv,
 		return -ENOMEM;
 	}
 
-	ret = mwifiex_fill_new_bss_desc(priv, bss, bss_desc);
+	beacon_ie = kmemdup(ie_buf, ie_len, GFP_KERNEL);
+	if (!beacon_ie) {
+		kfree(bss_desc);
+		dev_err(priv->adapter->dev, " failed to alloc beacon_ie\n");
+		return -ENOMEM;
+	}
+
+	ret = mwifiex_fill_new_bss_desc(priv, bssid, rssi, beacon_ie,
+					ie_len, beacon_period,
+					cap_info_bitmap, band, bss_desc);
 	if (ret)
 		goto done;
 
@@ -1477,7 +1493,7 @@ static int mwifiex_update_curr_bss_params(struct mwifiex_private *priv,
 	priv->curr_bss_params.bss_descriptor.bcn_ht_cap = NULL;
 	priv->curr_bss_params.bss_descriptor.ht_cap_offset =
 		0;
-	priv->curr_bss_params.bss_descriptor.bcn_ht_oper = NULL;
+	priv->curr_bss_params.bss_descriptor.bcn_ht_info = NULL;
 	priv->curr_bss_params.bss_descriptor.ht_info_offset =
 		0;
 	priv->curr_bss_params.bss_descriptor.bcn_bss_co_2040 =
@@ -1498,6 +1514,7 @@ static int mwifiex_update_curr_bss_params(struct mwifiex_private *priv,
 
 done:
 	kfree(bss_desc);
+	kfree(beacon_ie);
 	return 0;
 }
 
@@ -1603,16 +1620,14 @@ int mwifiex_ret_802_11_scan(struct mwifiex_private *priv,
 		const u8 *ie_buf;
 		size_t ie_len;
 		u16 channel = 0;
-		u64 fw_tsf = 0;
+		u64 network_tsf = 0;
 		u16 beacon_size = 0;
 		u32 curr_bcn_bytes;
 		u32 freq;
 		u16 beacon_period;
 		u16 cap_info_bitmap;
 		u8 *current_ptr;
-		u64 timestamp;
 		struct mwifiex_bcn_param *bcn_param;
-		struct mwifiex_bss_priv *bss_priv;
 
 		if (bytes_left >= sizeof(beacon_size)) {
 			/* Extract & convert beacon size from command buffer */
@@ -1652,11 +1667,9 @@ int mwifiex_ret_802_11_scan(struct mwifiex_private *priv,
 
 		memcpy(bssid, bcn_param->bssid, ETH_ALEN);
 
-		rssi = (s32) bcn_param->rssi;
-		rssi = (-rssi) * 100;		/* Convert dBm to mBm */
-		dev_dbg(adapter->dev, "info: InterpretIE: RSSI=%d\n", rssi);
+		rssi = (s32) (bcn_param->rssi);
+		dev_dbg(adapter->dev, "info: InterpretIE: RSSI=%02X\n", rssi);
 
-		timestamp = le64_to_cpu(bcn_param->timestamp);
 		beacon_period = le16_to_cpu(bcn_param->beacon_period);
 
 		cap_info_bitmap = le16_to_cpu(bcn_param->cap_info_bitmap);
@@ -1696,13 +1709,14 @@ int mwifiex_ret_802_11_scan(struct mwifiex_private *priv,
 
 		/*
 		 * If the TSF TLV was appended to the scan results, save this
-		 * entry's TSF value in the fw_tsf field. It is the firmware's
-		 * TSF value at the time the beacon or probe response was
-		 * received.
+		 * entry's TSF value in the networkTSF field.The networkTSF is
+		 * the firmware's TSF value at the time the beacon or probe
+		 * response was received.
 		 */
 		if (tsf_tlv)
-			memcpy(&fw_tsf, &tsf_tlv->tsf_data[idx * TSF_DATA_SIZE],
-			       sizeof(fw_tsf));
+			memcpy(&network_tsf,
+			       &tsf_tlv->tsf_data[idx * TSF_DATA_SIZE],
+			       sizeof(network_tsf));
 
 		if (channel) {
 			struct ieee80211_channel *chan;
@@ -1725,19 +1739,21 @@ int mwifiex_ret_802_11_scan(struct mwifiex_private *priv,
 
 			if (chan && !(chan->flags & IEEE80211_CHAN_DISABLED)) {
 				bss = cfg80211_inform_bss(priv->wdev->wiphy,
-					      chan, bssid, timestamp,
+					      chan, bssid, network_tsf,
 					      cap_info_bitmap, beacon_period,
 					      ie_buf, ie_len, rssi, GFP_KERNEL);
-				bss_priv = (struct mwifiex_bss_priv *)bss->priv;
-				bss_priv->band = band;
-				bss_priv->fw_tsf = fw_tsf;
+				*(u8 *)bss->priv = band;
+				cfg80211_put_bss(bss);
+
 				if (priv->media_connected &&
 				    !memcmp(bssid,
 					    priv->curr_bss_params.bss_descriptor
 					    .mac_address, ETH_ALEN))
-					mwifiex_update_curr_bss_params(priv,
-								       bss);
-				cfg80211_put_bss(bss);
+					mwifiex_update_curr_bss_params
+							(priv, bssid, rssi,
+							 ie_buf, ie_len,
+							 beacon_period,
+							 cap_info_bitmap, band);
 			}
 		} else {
 			dev_dbg(adapter->dev, "missing BSS channel IE\n");
@@ -2003,8 +2019,8 @@ mwifiex_save_curr_bcn(struct mwifiex_private *priv)
 			(curr_bss->beacon_buf +
 			 curr_bss->ht_cap_offset);
 
-	if (curr_bss->bcn_ht_oper)
-		curr_bss->bcn_ht_oper = (struct ieee80211_ht_operation *)
+	if (curr_bss->bcn_ht_info)
+		curr_bss->bcn_ht_info = (struct ieee80211_ht_info *)
 			(curr_bss->beacon_buf +
 			 curr_bss->ht_info_offset);
 

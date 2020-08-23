@@ -36,6 +36,12 @@ struct omap_crtc {
 	struct drm_framebuffer *old_fb;
 };
 
+static void omap_crtc_gamma_set(struct drm_crtc *crtc,
+		u16 *red, u16 *green, u16 *blue, uint32_t start, uint32_t size)
+{
+	/* not supported.. at least not yet */
+}
+
 static void omap_crtc_destroy(struct drm_crtc *crtc)
 {
 	struct omap_crtc *omap_crtc = to_omap_crtc(crtc);
@@ -192,6 +198,7 @@ static int omap_crtc_page_flip_locked(struct drm_crtc *crtc,
 }
 
 static const struct drm_crtc_funcs omap_crtc_funcs = {
+	.gamma_set = omap_crtc_gamma_set,
 	.set_config = drm_crtc_helper_set_config,
 	.destroy = omap_crtc_destroy,
 	.page_flip = omap_crtc_page_flip_locked,

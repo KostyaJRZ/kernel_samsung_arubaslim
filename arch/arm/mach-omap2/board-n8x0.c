@@ -83,9 +83,11 @@ static struct musb_hdrc_config musb_config = {
 };
 
 static struct musb_hdrc_platform_data tusb_data = {
-#ifdef CONFIG_USB_GADGET_MUSB_HDRC
+#if defined(CONFIG_USB_MUSB_OTG)
 	.mode		= MUSB_OTG,
-#else
+#elif defined(CONFIG_USB_MUSB_PERIPHERAL)
+	.mode		= MUSB_PERIPHERAL,
+#else /* defined(CONFIG_USB_MUSB_HOST) */
 	.mode		= MUSB_HOST,
 #endif
 	.set_power	= tusb_set_power,
@@ -692,7 +694,6 @@ MACHINE_START(NOKIA_N800, "Nokia N800")
 	.init_irq	= omap2_init_irq,
 	.handle_irq	= omap2_intc_handle_irq,
 	.init_machine	= n8x0_init_machine,
-	.init_late	= omap2420_init_late,
 	.timer		= &omap2_timer,
 	.restart	= omap_prcm_restart,
 MACHINE_END
@@ -705,7 +706,6 @@ MACHINE_START(NOKIA_N810, "Nokia N810")
 	.init_irq	= omap2_init_irq,
 	.handle_irq	= omap2_intc_handle_irq,
 	.init_machine	= n8x0_init_machine,
-	.init_late	= omap2420_init_late,
 	.timer		= &omap2_timer,
 	.restart	= omap_prcm_restart,
 MACHINE_END
@@ -718,7 +718,6 @@ MACHINE_START(NOKIA_N810_WIMAX, "Nokia N810 WiMAX")
 	.init_irq	= omap2_init_irq,
 	.handle_irq	= omap2_intc_handle_irq,
 	.init_machine	= n8x0_init_machine,
-	.init_late	= omap2420_init_late,
 	.timer		= &omap2_timer,
 	.restart	= omap_prcm_restart,
 MACHINE_END

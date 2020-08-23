@@ -225,4 +225,15 @@ static struct pci_driver k10temp_driver = {
 	.remove = __devexit_p(k10temp_remove),
 };
 
-module_pci_driver(k10temp_driver);
+static int __init k10temp_init(void)
+{
+	return pci_register_driver(&k10temp_driver);
+}
+
+static void __exit k10temp_exit(void)
+{
+	pci_unregister_driver(&k10temp_driver);
+}
+
+module_init(k10temp_init)
+module_exit(k10temp_exit)

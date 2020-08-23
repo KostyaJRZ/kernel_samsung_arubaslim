@@ -454,5 +454,3 @@ static struct platform_driver ohci_hcd_da8xx_driver = {
 		.name	= "ohci",
 	},
 };
-
-MODULE_ALIAS("platform:ohci");

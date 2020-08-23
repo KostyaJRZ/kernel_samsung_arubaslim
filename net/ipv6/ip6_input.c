@@ -111,6 +111,27 @@ int ipv6_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt
 	    ipv6_addr_loopback(&hdr->daddr))
 		goto err;
 
+	/* RFC4291 Errata ID: 3480
+	 * Interface-Local scope spans only a single interface on a
+	 * node and is useful only for loopback transmission of
+	 * multicast.  Packets with interface-local scope received
+	 * from another node must be discarded.
+	 */
+	if (!(skb->pkt_type == PACKET_LOOPBACK ||
+	      dev->flags & IFF_LOOPBACK) &&
+	    ipv6_addr_is_multicast(&hdr->daddr) &&
+	    IPV6_ADDR_MC_SCOPE(&hdr->daddr) == 1)
+		goto err;
+
+	/* RFC4291 2.7
+	 * Nodes must not originate a packet to a multicast address whose scope
+	 * field contains the reserved value 0; if such a packet is received, it
+	 * must be silently dropped.
+	 */
+	if (ipv6_addr_is_multicast(&hdr->daddr) &&
+	    IPV6_ADDR_MC_SCOPE(&hdr->daddr) == 0)
+		goto err;
+
 	/*
 	 * RFC4291 2.7
 	 * Multicast addresses must not be used as source addresses in IPv6
@@ -170,8 +191,7 @@ static int ip6_input_finish(struct sk_buff *skb)
 {
 	const struct inet6_protocol *ipprot;
 	unsigned int nhoff;
-	int nexthdr;
-	bool raw;
+	int nexthdr, raw;
 	u8 hash;
 	struct inet6_dev *idev;
 	struct net *net = dev_net(skb_dst(skb)->dev);
@@ -252,7 +272,7 @@ int ip6_input(struct sk_buff *skb)
 int ip6_mc_input(struct sk_buff *skb)
 {
 	const struct ipv6hdr *hdr;
-	bool deliver;
+	int deliver;
 
 	IP6_UPD_PO_STATS_BH(dev_net(skb_dst(skb)->dev),
 			 ip6_dst_idev(skb_dst(skb)), IPSTATS_MIB_INMCAST,
@@ -266,7 +286,8 @@ int ip6_mc_input(struct sk_buff *skb)
 	 *      IPv6 multicast router mode is now supported ;)
 	 */
 	if (dev_net(skb->dev)->ipv6.devconf_all->mc_forwarding &&
-	    !(ipv6_addr_type(&hdr->daddr) & IPV6_ADDR_LINKLOCAL) &&
+	    !(ipv6_addr_type(&hdr->daddr) &
+	      (IPV6_ADDR_LOOPBACK|IPV6_ADDR_LINKLOCAL)) &&
 	    likely(!(IP6CB(skb)->flags & IP6SKB_FORWARDED))) {
 		/*
 		 * Okay, we try to forward - split and duplicate
@@ -288,7 +309,7 @@ int ip6_mc_input(struct sk_buff *skb)
 			 * is for MLD (0x0000).
 			 */
 			if ((ptr[2] | ptr[3]) == 0) {
-				deliver = false;
+				deliver = 0;
 
 				if (!ipv6_ext_hdr(nexthdr)) {
 					/* BUG */
@@ -313,7 +334,7 @@ int ip6_mc_input(struct sk_buff *skb)
 				case ICMPV6_MGM_REPORT:
 				case ICMPV6_MGM_REDUCTION:
 				case ICMPV6_MLD2_REPORT:
-					deliver = true;
+					deliver = 1;
 					break;
 				}
 				goto out;

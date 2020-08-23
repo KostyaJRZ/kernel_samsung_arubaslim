@@ -2,7 +2,7 @@
 #define _ASM_M68K_UNALIGNED_H
 
 
-#if defined(CONFIG_COLDFIRE) || defined(CONFIG_M68000)
+#ifdef CONFIG_COLDFIRE
 #include <linux/unaligned/be_struct.h>
 #include <linux/unaligned/le_byteshift.h>
 #include <linux/unaligned/generic.h>

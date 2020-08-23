@@ -34,7 +34,6 @@
 #include <linux/hid.h>
 #include <linux/hiddev.h>
 #include <linux/compat.h>
-#include <linux/vmalloc.h>
 #include "usbhid.h"
 
 #ifdef CONFIG_USB_DYNAMIC_MINORS
@@ -251,13 +250,13 @@ static int hiddev_release(struct inode * inode, struct file * file)
 		} else {
 			mutex_unlock(&list->hiddev->existancelock);
 			kfree(list->hiddev);
-			vfree(list);
+			kfree(list);
 			return 0;
 		}
 	}
 
 	mutex_unlock(&list->hiddev->existancelock);
-	vfree(list);
+	kfree(list);
 
 	return 0;
 }
@@ -279,7 +278,7 @@ static int hiddev_open(struct inode *inode, struct file *file)
 	hid = usb_get_intfdata(intf);
 	hiddev = hid->hiddev;
 
-	if (!(list = vzalloc(sizeof(struct hiddev_list))))
+	if (!(list = kzalloc(sizeof(struct hiddev_list), GFP_KERNEL)))
 		return -ENOMEM;
 	mutex_init(&list->thread_lock);
 	list->hiddev = hiddev;
@@ -323,7 +322,7 @@ bail_unlock:
 	mutex_unlock(&hiddev->existancelock);
 bail:
 	file->private_data = NULL;
-	vfree(list);
+	kfree(list);
 	return res;
 }
 
@@ -516,12 +515,12 @@ static noinline int hiddev_ioctl_usage(struct hiddev *hiddev, unsigned int cmd, 
 					goto inval;
 			} else if (uref->usage_index >= field->report_count)
 				goto inval;
-
-			else if ((cmd == HIDIOCGUSAGES || cmd == HIDIOCSUSAGES) &&
-				 (uref_multi->num_values > HID_MAX_MULTI_USAGES ||
-				  uref->usage_index + uref_multi->num_values > field->report_count))
-				goto inval;
 		}
+
+		if ((cmd == HIDIOCGUSAGES || cmd == HIDIOCSUSAGES) &&
+		    (uref_multi->num_values > HID_MAX_MULTI_USAGES ||
+		     uref->usage_index + uref_multi->num_values > field->report_count))
+			goto inval;
 
 		switch (cmd) {
 		case HIDIOCGUSAGE:
@@ -641,8 +640,6 @@ static long hiddev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		{
 			struct usb_device *dev = hid_to_usb_dev(hid);
 			struct usbhid_device *usbhid = hid->driver_data;
-
-			memset(&dinfo, 0, sizeof(dinfo));
 
 			dinfo.bustype = BUS_USB;
 			dinfo.busnum = dev->bus->busnum;
@@ -860,7 +857,7 @@ static const struct file_operations hiddev_fops = {
 	.llseek		= noop_llseek,
 };
 
-static char *hiddev_devnode(struct device *dev, umode_t *mode)
+static char *hiddev_devnode(struct device *dev, mode_t *mode)
 {
 	return kasprintf(GFP_KERNEL, "usb/%s", dev_name(dev));
 }
@@ -923,10 +920,10 @@ void hiddev_disconnect(struct hid_device *hid)
 	struct hiddev *hiddev = hid->hiddev;
 	struct usbhid_device *usbhid = hid->driver_data;
 
-	usb_deregister_dev(usbhid->intf, &hiddev_class);
-
 	mutex_lock(&hiddev->existancelock);
 	hiddev->exist = 0;
+
+	usb_deregister_dev(usbhid->intf, &hiddev_class);
 
 	if (hiddev->open) {
 		mutex_unlock(&hiddev->existancelock);

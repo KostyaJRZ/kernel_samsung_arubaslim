@@ -75,9 +75,9 @@ static __always_inline void boot_init_stack_canary(void)
 
 	current->stack_canary = canary;
 #ifdef CONFIG_X86_64
-	this_cpu_write(irq_stack_union.stack_canary, canary);
+	percpu_write(irq_stack_union.stack_canary, canary);
 #else
-	this_cpu_write(stack_canary.canary, canary);
+	percpu_write(stack_canary.canary, canary);
 #endif
 }
 

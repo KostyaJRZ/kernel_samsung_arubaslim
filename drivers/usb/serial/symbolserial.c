@@ -54,6 +54,8 @@ static void symbol_int_callback(struct urb *urb)
 	int result;
 	int data_length;
 
+	dbg("%s - port %d", __func__, port->number);
+
 	switch (status) {
 	case 0:
 		/* success */
@@ -62,12 +64,12 @@ static void symbol_int_callback(struct urb *urb)
 	case -ENOENT:
 	case -ESHUTDOWN:
 		/* this urb is terminated, clean up */
-		dev_dbg(&port->dev, "%s - urb shutting down with status: %d\n",
-			__func__, status);
+		dbg("%s - urb shutting down with status: %d",
+		    __func__, status);
 		return;
 	default:
-		dev_dbg(&port->dev, "%s - nonzero urb status received: %d\n",
-			__func__, status);
+		dbg("%s - nonzero urb status received: %d",
+		    __func__, status);
 		goto exit;
 	}
 
@@ -123,6 +125,8 @@ static int symbol_open(struct tty_struct *tty, struct usb_serial_port *port)
 	unsigned long flags;
 	int result = 0;
 
+	dbg("%s - port %d", __func__, port->number);
+
 	spin_lock_irqsave(&priv->lock, flags);
 	priv->throttled = false;
 	priv->actually_throttled = false;
@@ -146,6 +150,8 @@ static void symbol_close(struct usb_serial_port *port)
 {
 	struct symbol_private *priv = usb_get_serial_data(port->serial);
 
+	dbg("%s - port %d", __func__, port->number);
+
 	/* shutdown our urbs */
 	usb_kill_urb(priv->int_urb);
 }
@@ -155,6 +161,7 @@ static void symbol_throttle(struct tty_struct *tty)
 	struct usb_serial_port *port = tty->driver_data;
 	struct symbol_private *priv = usb_get_serial_data(port->serial);
 
+	dbg("%s - port %d", __func__, port->number);
 	spin_lock_irq(&priv->lock);
 	priv->throttled = true;
 	spin_unlock_irq(&priv->lock);
@@ -166,6 +173,8 @@ static void symbol_unthrottle(struct tty_struct *tty)
 	struct symbol_private *priv = usb_get_serial_data(port->serial);
 	int result;
 	bool was_throttled;
+
+	dbg("%s - port %d", __func__, port->number);
 
 	spin_lock_irq(&priv->lock);
 	priv->throttled = false;
@@ -257,6 +266,8 @@ static void symbol_disconnect(struct usb_serial *serial)
 {
 	struct symbol_private *priv = usb_get_serial_data(serial);
 
+	dbg("%s", __func__);
+
 	usb_kill_urb(priv->int_urb);
 	usb_free_urb(priv->int_urb);
 }
@@ -265,9 +276,18 @@ static void symbol_release(struct usb_serial *serial)
 {
 	struct symbol_private *priv = usb_get_serial_data(serial);
 
+	dbg("%s", __func__);
+
 	kfree(priv->int_buffer);
 	kfree(priv);
 }
+
+static struct usb_driver symbol_driver = {
+	.name =			"symbol",
+	.probe =		usb_serial_probe,
+	.disconnect =		usb_serial_disconnect,
+	.id_table =		id_table,
+};
 
 static struct usb_serial_driver symbol_device = {
 	.driver = {
@@ -289,7 +309,7 @@ static struct usb_serial_driver * const serial_drivers[] = {
 	&symbol_device, NULL
 };
 
-module_usb_serial_driver(serial_drivers, id_table);
+module_usb_serial_driver(symbol_driver, serial_drivers);
 
 MODULE_LICENSE("GPL");
 

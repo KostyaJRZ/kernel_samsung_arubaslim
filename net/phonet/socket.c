@@ -5,8 +5,8 @@
  *
  * Copyright (C) 2008 Nokia Corporation.
  *
- * Authors: Sakari Ailus <sakari.ailus@nokia.com>
- *          Rémi Denis-Courmont
+ * Contact: Remi Denis-Courmont <remi.denis-courmont@nokia.com>
+ * Original author: Sakari Ailus <sakari.ailus@nokia.com>
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -58,7 +58,7 @@ static struct  {
 
 void __init pn_sock_init(void)
 {
-	unsigned int i;
+	unsigned i;
 
 	for (i = 0; i < PN_HASHSIZE; i++)
 		INIT_HLIST_HEAD(pnsocks.hlist + i);
@@ -116,7 +116,7 @@ struct sock *pn_find_sock_by_sa(struct net *net, const struct sockaddr_pn *spn)
 void pn_deliver_sock_broadcast(struct net *net, struct sk_buff *skb)
 {
 	struct hlist_head *hlist = pnsocks.hlist;
-	unsigned int h;
+	unsigned h;
 
 	rcu_read_lock();
 	for (h = 0; h < PN_HASHSIZE; h++) {
@@ -545,7 +545,7 @@ static struct sock *pn_sock_get_idx(struct seq_file *seq, loff_t pos)
 	struct hlist_head *hlist = pnsocks.hlist;
 	struct hlist_node *node;
 	struct sock *sknode;
-	unsigned int h;
+	unsigned h;
 
 	for (h = 0; h < PN_HASHSIZE; h++) {
 		sk_for_each_rcu(sknode, node, hlist) {
@@ -598,25 +598,24 @@ static void pn_sock_seq_stop(struct seq_file *seq, void *v)
 
 static int pn_sock_seq_show(struct seq_file *seq, void *v)
 {
-	int len;
-
+	seq_setwidth(seq, 127);
 	if (v == SEQ_START_TOKEN)
-		seq_printf(seq, "%s%n", "pt  loc  rem rs st tx_queue rx_queue "
-			"  uid inode ref pointer drops", &len);
+		seq_puts(seq, "pt  loc  rem rs st tx_queue rx_queue "
+			"  uid inode ref pointer drops");
 	else {
 		struct sock *sk = v;
 		struct pn_sock *pn = pn_sk(sk);
 
 		seq_printf(seq, "%2d %04X:%04X:%02X %02X %08X:%08X %5d %lu "
-			"%d %pK %d%n",
+			"%d %pK %d",
 			sk->sk_protocol, pn->sobject, pn->dobject,
 			pn->resource, sk->sk_state,
 			sk_wmem_alloc_get(sk), sk_rmem_alloc_get(sk),
 			sock_i_uid(sk), sock_i_ino(sk),
 			atomic_read(&sk->sk_refcnt), sk,
-			atomic_read(&sk->sk_drops), &len);
+			atomic_read(&sk->sk_drops));
 	}
-	seq_printf(seq, "%*s\n", 127 - len, "");
+	seq_pad(seq, '\n');
 	return 0;
 }
 
@@ -710,7 +709,7 @@ int pn_sock_unbind_res(struct sock *sk, u8 res)
 
 void pn_sock_unbind_all_res(struct sock *sk)
 {
-	unsigned int res, match = 0;
+	unsigned res, match = 0;
 
 	mutex_lock(&resource_mutex);
 	for (res = 0; res < 256; res++) {
@@ -732,7 +731,7 @@ void pn_sock_unbind_all_res(struct sock *sk)
 static struct sock **pn_res_get_idx(struct seq_file *seq, loff_t pos)
 {
 	struct net *net = seq_file_net(seq);
-	unsigned int i;
+	unsigned i;
 
 	if (!net_eq(net, &init_net))
 		return NULL;
@@ -750,7 +749,7 @@ static struct sock **pn_res_get_idx(struct seq_file *seq, loff_t pos)
 static struct sock **pn_res_get_next(struct seq_file *seq, struct sock **sk)
 {
 	struct net *net = seq_file_net(seq);
-	unsigned int i;
+	unsigned i;
 
 	BUG_ON(!net_eq(net, &init_net));
 
@@ -787,19 +786,19 @@ static void pn_res_seq_stop(struct seq_file *seq, void *v)
 
 static int pn_res_seq_show(struct seq_file *seq, void *v)
 {
-	int len;
-
+	seq_setwidth(seq, 63);
 	if (v == SEQ_START_TOKEN)
-		seq_printf(seq, "%s%n", "rs   uid inode", &len);
+		seq_puts(seq, "rs   uid inode");
 	else {
 		struct sock **psk = v;
 		struct sock *sk = *psk;
 
-		seq_printf(seq, "%02X %5d %lu%n",
-			   (int) (psk - pnres.sk), sock_i_uid(sk),
-			   sock_i_ino(sk), &len);
+		seq_printf(seq, "%02X %5d %lu",
+			   (int) (psk - pnres.sk),
+			   from_kuid_munged(seq_user_ns(seq), sock_i_uid(sk)),
+			   sock_i_ino(sk));
 	}
-	seq_printf(seq, "%*s\n", 63 - len, "");
+	seq_pad(seq, '\n');
 	return 0;
 }
 

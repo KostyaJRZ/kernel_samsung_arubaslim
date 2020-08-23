@@ -30,7 +30,6 @@
 #include "common.h"
 #include <plat/usb.h>
 
-#include "am35xx-emac.h"
 #include "mux.h"
 #include "control.h"
 
@@ -91,7 +90,6 @@ static void __init am3517_crane_init(void)
 	}
 
 	usbhs_init(&usbhs_bdata);
-	am35xx_emac_init(AM35XX_DEFAULT_MDIO_FREQUENCY, 1);
 }
 
 MACHINE_START(CRANEBOARD, "AM3517/05 CRANEBOARD")
@@ -102,7 +100,6 @@ MACHINE_START(CRANEBOARD, "AM3517/05 CRANEBOARD")
 	.init_irq	= omap3_init_irq,
 	.handle_irq	= omap3_intc_handle_irq,
 	.init_machine	= am3517_crane_init,
-	.init_late	= am35xx_init_late,
 	.timer		= &omap3_timer,
 	.restart	= omap_prcm_restart,
 MACHINE_END

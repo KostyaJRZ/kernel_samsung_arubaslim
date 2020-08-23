@@ -103,13 +103,11 @@ int pSeries_reconfig_notifier_register(struct notifier_block *nb)
 {
 	return blocking_notifier_chain_register(&pSeries_reconfig_chain, nb);
 }
-EXPORT_SYMBOL_GPL(pSeries_reconfig_notifier_register);
 
 void pSeries_reconfig_notifier_unregister(struct notifier_block *nb)
 {
 	blocking_notifier_chain_unregister(&pSeries_reconfig_chain, nb);
 }
-EXPORT_SYMBOL_GPL(pSeries_reconfig_notifier_unregister);
 
 int pSeries_reconfig_notify(unsigned long action, void *p)
 {
@@ -428,7 +426,6 @@ static int do_remove_property(char *buf, size_t bufsize)
 static int do_update_property(char *buf, size_t bufsize)
 {
 	struct device_node *np;
-	struct pSeries_reconfig_prop_update upd_value;
 	unsigned char *value;
 	char *name, *end, *next_prop;
 	int rc, length;
@@ -456,10 +453,6 @@ static int do_update_property(char *buf, size_t bufsize)
 			return prom_add_property(np, newprop);
 		return -ENODEV;
 	}
-
-	upd_value.node = np;
-	upd_value.property = newprop;
-	pSeries_reconfig_notify(PSERIES_UPDATE_PROPERTY, &upd_value);
 
 	rc = prom_update_property(np, newprop, oldprop);
 	if (rc)

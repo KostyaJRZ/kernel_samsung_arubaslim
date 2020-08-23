@@ -70,6 +70,7 @@ struct tipc_link_req {
  * @dest_domain: network domain of node(s) which should respond to message
  * @b_ptr: ptr to bearer issuing message
  */
+
 static struct sk_buff *tipc_disc_init_msg(u32 type,
 					  u32 dest_domain,
 					  struct tipc_bearer *b_ptr)
@@ -95,6 +96,7 @@ static struct sk_buff *tipc_disc_init_msg(u32 type,
  * @node_addr: duplicated node address
  * @media_addr: media address advertised by duplicated node
  */
+
 static void disc_dupl_alert(struct tipc_bearer *b_ptr, u32 node_addr,
 			    struct tipc_media_addr *media_addr)
 {
@@ -115,6 +117,7 @@ static void disc_dupl_alert(struct tipc_bearer *b_ptr, u32 node_addr,
  * @buf: buffer containing message
  * @b_ptr: bearer that message arrived on
  */
+
 void tipc_disc_recv_msg(struct sk_buff *buf, struct tipc_bearer *b_ptr)
 {
 	struct tipc_node *n_ptr;
@@ -218,6 +221,7 @@ void tipc_disc_recv_msg(struct sk_buff *buf, struct tipc_bearer *b_ptr)
 	 * the new media address and reset the link to ensure it starts up
 	 * cleanly.
 	 */
+
 	if (addr_mismatch) {
 		if (tipc_link_is_up(link)) {
 			disc_dupl_alert(b_ptr, orig, &media_addr);
@@ -260,6 +264,7 @@ void tipc_disc_recv_msg(struct sk_buff *buf, struct tipc_bearer *b_ptr)
  * Reinitiates discovery process if discovery object has no associated nodes
  * and is either not currently searching or is searching at a slow rate
  */
+
 static void disc_update(struct tipc_link_req *req)
 {
 	if (!req->num_nodes) {
@@ -275,6 +280,7 @@ static void disc_update(struct tipc_link_req *req)
  * tipc_disc_add_dest - increment set of discovered nodes
  * @req: ptr to link request structure
  */
+
 void tipc_disc_add_dest(struct tipc_link_req *req)
 {
 	req->num_nodes++;
@@ -284,6 +290,7 @@ void tipc_disc_add_dest(struct tipc_link_req *req)
  * tipc_disc_remove_dest - decrement set of discovered nodes
  * @req: ptr to link request structure
  */
+
 void tipc_disc_remove_dest(struct tipc_link_req *req)
 {
 	req->num_nodes--;
@@ -294,6 +301,7 @@ void tipc_disc_remove_dest(struct tipc_link_req *req)
  * disc_send_msg - send link setup request message
  * @req: ptr to link request structure
  */
+
 static void disc_send_msg(struct tipc_link_req *req)
 {
 	if (!req->bearer->blocked)
@@ -306,6 +314,7 @@ static void disc_send_msg(struct tipc_link_req *req)
  *
  * Called whenever a link setup request timer associated with a bearer expires.
  */
+
 static void disc_timeout(struct tipc_link_req *req)
 {
 	int max_delay;
@@ -313,6 +322,7 @@ static void disc_timeout(struct tipc_link_req *req)
 	spin_lock_bh(&req->bearer->lock);
 
 	/* Stop searching if only desired node has been found */
+
 	if (tipc_node(req->domain) && req->num_nodes) {
 		req->timer_intv = TIPC_LINK_REQ_INACTIVE;
 		goto exit;
@@ -325,6 +335,7 @@ static void disc_timeout(struct tipc_link_req *req)
 	 * hold at fast polling rate if don't have any associated nodes,
 	 * otherwise hold at slow polling rate
 	 */
+
 	disc_send_msg(req);
 
 	req->timer_intv *= 2;
@@ -348,6 +359,7 @@ exit:
  *
  * Returns 0 if successful, otherwise -errno.
  */
+
 int tipc_disc_create(struct tipc_bearer *b_ptr,
 		     struct tipc_media_addr *dest, u32 dest_domain)
 {
@@ -379,6 +391,7 @@ int tipc_disc_create(struct tipc_bearer *b_ptr,
  * tipc_disc_delete - destroy object sending periodic link setup requests
  * @req: ptr to link request structure
  */
+
 void tipc_disc_delete(struct tipc_link_req *req)
 {
 	k_cancel_timer(&req->timer);
@@ -386,3 +399,4 @@ void tipc_disc_delete(struct tipc_link_req *req)
 	kfree_skb(req->buf);
 	kfree(req);
 }
+

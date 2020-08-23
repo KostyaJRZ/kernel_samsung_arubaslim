@@ -155,7 +155,10 @@ static void context_free(struct raid_set *rs)
 	for (i = 0; i < rs->md.raid_disks; i++) {
 		if (rs->dev[i].meta_dev)
 			dm_put_device(rs->ti, rs->dev[i].meta_dev);
-		md_rdev_clear(&rs->dev[i].rdev);
+		if (rs->dev[i].rdev.sb_page)
+			put_page(rs->dev[i].rdev.sb_page);
+		rs->dev[i].rdev.sb_page = NULL;
+		rs->dev[i].rdev.sb_loaded = 0;
 		if (rs->dev[i].data_dev)
 			dm_put_device(rs->ti, rs->dev[i].data_dev);
 	}
@@ -589,8 +592,7 @@ struct dm_raid_superblock {
 	__le32 layout;
 	__le32 stripe_sectors;
 
-	__u8 pad[452];		/* Round struct to 512 bytes. */
-				/* Always set to 0 when writing. */
+	/* Remainder of a logical block is zero-filled when writing (see super_sync()). */
 } __packed;
 
 static int read_disk_sb(struct md_rdev *rdev, int size)
@@ -603,7 +605,7 @@ static int read_disk_sb(struct md_rdev *rdev, int size)
 	if (!sync_page_io(rdev, 0, size, rdev->sb_page, READ, 1)) {
 		DMERR("Failed to read superblock of device at position %d",
 		      rdev->raid_disk);
-		md_error(rdev->mddev, rdev);
+		set_bit(Faulty, &rdev->flags);
 		return -EINVAL;
 	}
 
@@ -614,20 +616,18 @@ static int read_disk_sb(struct md_rdev *rdev, int size)
 
 static void super_sync(struct mddev *mddev, struct md_rdev *rdev)
 {
-	int i;
+	struct md_rdev *r;
 	uint64_t failed_devices;
 	struct dm_raid_superblock *sb;
-	struct raid_set *rs = container_of(mddev, struct raid_set, md);
 
 	sb = page_address(rdev->sb_page);
 	failed_devices = le64_to_cpu(sb->failed_devices);
 
-	for (i = 0; i < mddev->raid_disks; i++)
-		if (!rs->dev[i].data_dev ||
-		    test_bit(Faulty, &(rs->dev[i].rdev.flags)))
-			failed_devices |= (1ULL << i);
+	rdev_for_each(r, mddev)
+		if ((r->raid_disk >= 0) && test_bit(Faulty, &r->flags))
+			failed_devices |= (1ULL << r->raid_disk);
 
-	memset(sb, 0, sizeof(*sb));
+	memset(sb + 1, 0, rdev->sb_size - sizeof(*sb));
 
 	sb->magic = cpu_to_le32(DM_RAID_MAGIC);
 	sb->features = cpu_to_le32(0);	/* No features yet */
@@ -662,7 +662,11 @@ static int super_load(struct md_rdev *rdev, struct md_rdev *refdev)
 	uint64_t events_sb, events_refsb;
 
 	rdev->sb_start = 0;
-	rdev->sb_size = sizeof(*sb);
+	rdev->sb_size = bdev_logical_block_size(rdev->meta_bdev);
+	if (rdev->sb_size < sizeof(*sb) || rdev->sb_size > PAGE_SIZE) {
+		DMERR("superblock size of a logical block is no longer valid");
+		return -EINVAL;
+	}
 
 	ret = read_disk_sb(rdev, rdev->sb_size);
 	if (ret)
@@ -1251,13 +1255,12 @@ static void raid_resume(struct dm_target *ti)
 {
 	struct raid_set *rs = ti->private;
 
-	set_bit(MD_CHANGE_DEVS, &rs->md.flags);
 	if (!rs->bitmap_loaded) {
 		bitmap_load(&rs->md);
 		rs->bitmap_loaded = 1;
-	}
+	} else
+		md_wakeup_thread(rs->md.thread);
 
-	clear_bit(MD_RECOVERY_FROZEN, &rs->md.recovery);
 	mddev_resume(&rs->md);
 }
 

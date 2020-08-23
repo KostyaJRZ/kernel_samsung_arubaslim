@@ -245,9 +245,7 @@ static int i3000_process_error_info(struct mem_ctl_info *mci,
 		return 1;
 
 	if ((info->errsts ^ info->errsts2) & I3000_ERRSTS_BITS) {
-		edac_mc_handle_error(HW_EVENT_ERR_UNCORRECTED, mci, 0, 0, 0,
-				     -1, -1, -1,
-				     "UE overwrote CE", "", NULL);
+		edac_mc_handle_ce_no_info(mci, "UE overwrote CE");
 		info->errsts = info->errsts2;
 	}
 
@@ -258,15 +256,10 @@ static int i3000_process_error_info(struct mem_ctl_info *mci,
 	row = edac_mc_find_csrow_by_page(mci, pfn);
 
 	if (info->errsts & I3000_ERRSTS_UE)
-		edac_mc_handle_error(HW_EVENT_ERR_UNCORRECTED, mci,
-				     pfn, offset, 0,
-				     row, -1, -1,
-				     "i3000 UE", "", NULL);
+		edac_mc_handle_ue(mci, pfn, offset, row, "i3000 UE");
 	else
-		edac_mc_handle_error(HW_EVENT_ERR_CORRECTED, mci,
-				     pfn, offset, info->derrsyn,
-				     row, multi_chan ? channel : 0, -1,
-				     "i3000 CE", "", NULL);
+		edac_mc_handle_ce(mci, pfn, offset, info->derrsyn, row,
+				multi_chan ? channel : 0, "i3000 CE");
 
 	return 1;
 }
@@ -311,10 +304,9 @@ static int i3000_is_interleaved(const unsigned char *c0dra,
 static int i3000_probe1(struct pci_dev *pdev, int dev_idx)
 {
 	int rc;
-	int i, j;
+	int i;
 	struct mem_ctl_info *mci = NULL;
-	struct edac_mc_layer layers[2];
-	unsigned long last_cumul_size, nr_pages;
+	unsigned long last_cumul_size;
 	int interleaved, nr_channels;
 	unsigned char dra[I3000_RANKS / 2], drb[I3000_RANKS];
 	unsigned char *c0dra = dra, *c1dra = &dra[I3000_RANKS_PER_CHANNEL / 2];
@@ -355,14 +347,7 @@ static int i3000_probe1(struct pci_dev *pdev, int dev_idx)
 	 */
 	interleaved = i3000_is_interleaved(c0dra, c1dra, c0drb, c1drb);
 	nr_channels = interleaved ? 2 : 1;
-
-	layers[0].type = EDAC_MC_LAYER_CHIP_SELECT;
-	layers[0].size = I3000_RANKS / nr_channels;
-	layers[0].is_virt_csrow = true;
-	layers[1].type = EDAC_MC_LAYER_CHANNEL;
-	layers[1].size = nr_channels;
-	layers[1].is_virt_csrow = false;
-	mci = edac_mc_alloc(0, ARRAY_SIZE(layers), layers, 0);
+	mci = edac_mc_alloc(0, I3000_RANKS / nr_channels, nr_channels, 0);
 	if (!mci)
 		return -ENOMEM;
 
@@ -401,23 +386,19 @@ static int i3000_probe1(struct pci_dev *pdev, int dev_idx)
 			cumul_size <<= 1;
 		debugf3("MC: %s(): (%d) cumul_size 0x%x\n",
 			__func__, i, cumul_size);
-		if (cumul_size == last_cumul_size)
+		if (cumul_size == last_cumul_size) {
+			csrow->mtype = MEM_EMPTY;
 			continue;
+		}
 
 		csrow->first_page = last_cumul_size;
 		csrow->last_page = cumul_size - 1;
-		nr_pages = cumul_size - last_cumul_size;
+		csrow->nr_pages = cumul_size - last_cumul_size;
 		last_cumul_size = cumul_size;
-
-		for (j = 0; j < nr_channels; j++) {
-			struct dimm_info *dimm = csrow->channels[j].dimm;
-
-			dimm->nr_pages = nr_pages / nr_channels;
-			dimm->grain = I3000_DEAP_GRAIN;
-			dimm->mtype = MEM_DDR2;
-			dimm->dtype = DEV_UNKNOWN;
-			dimm->edac_mode = EDAC_UNKNOWN;
-		}
+		csrow->grain = I3000_DEAP_GRAIN;
+		csrow->mtype = MEM_DDR2;
+		csrow->dtype = DEV_UNKNOWN;
+		csrow->edac_mode = EDAC_UNKNOWN;
 	}
 
 	/*

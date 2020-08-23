@@ -36,7 +36,6 @@
 int snd_soc_jack_new(struct snd_soc_codec *codec, const char *id, int type,
 		     struct snd_soc_jack *jack)
 {
-	mutex_init(&jack->mutex);
 	jack->codec = codec;
 	INIT_LIST_HEAD(&jack->pins);
 	INIT_LIST_HEAD(&jack->jack_zones);
@@ -76,7 +75,7 @@ void snd_soc_jack_report(struct snd_soc_jack *jack, int status, int mask)
 	codec = jack->codec;
 	dapm =  &codec->dapm;
 
-	mutex_lock(&jack->mutex);
+	mutex_lock(&codec->mutex);
 
 	oldstatus = jack->status;
 
@@ -110,9 +109,26 @@ void snd_soc_jack_report(struct snd_soc_jack *jack, int status, int mask)
 	snd_jack_report(jack->jack, jack->status);
 
 out:
-	mutex_unlock(&jack->mutex);
+	mutex_unlock(&codec->mutex);
 }
 EXPORT_SYMBOL_GPL(snd_soc_jack_report);
+
+/**
+ * snd_soc_jack_report_no_dapm - Report the current status for a jack
+ *				 without DAPM sync
+ * @jack:   the jack
+ * @status: a bitmask of enum snd_jack_type values that are currently detected.
+ * @mask:   a bitmask of enum snd_jack_type values that being reported.
+ */
+void snd_soc_jack_report_no_dapm(struct snd_soc_jack *jack, int status,
+				 int mask)
+{
+	jack->status &= ~mask;
+	jack->status |= status & mask;
+
+	snd_jack_report(jack->jack, jack->status);
+}
+EXPORT_SYMBOL_GPL(snd_soc_jack_report_no_dapm);
 
 /**
  * snd_soc_jack_add_zones - Associate voltage zones with jack
@@ -270,7 +286,7 @@ static irqreturn_t gpio_handler(int irq, void *data)
 	if (device_may_wakeup(dev))
 		pm_wakeup_event(dev, gpio->debounce_time + 50);
 
-	schedule_delayed_work(&gpio->work,
+	queue_delayed_work(system_power_efficient_wq, &gpio->work,
 			      msecs_to_jiffies(gpio->debounce_time));
 
 	return IRQ_HANDLED;

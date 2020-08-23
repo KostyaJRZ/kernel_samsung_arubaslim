@@ -80,7 +80,7 @@ int radeon_gart_table_vram_alloc(struct radeon_device *rdev)
 	if (rdev->gart.robj == NULL) {
 		r = radeon_bo_create(rdev, rdev->gart.table_size,
 				     PAGE_SIZE, true, RADEON_GEM_DOMAIN_VRAM,
-				     NULL, &rdev->gart.robj);
+				     &rdev->gart.robj);
 		if (r) {
 			return r;
 		}
@@ -327,7 +327,7 @@ static void radeon_vm_unbind_locked(struct radeon_device *rdev,
 	rdev->vm_manager.use_bitmap &= ~(1 << vm->id);
 	list_del_init(&vm->list);
 	vm->id = -1;
-	radeon_sa_bo_free(rdev, &vm->sa_bo, NULL);
+	radeon_sa_bo_free(rdev, &vm->sa_bo);
 	vm->pt = NULL;
 
 	list_for_each_entry(bo_va, &vm->va, vm_list) {
@@ -396,7 +396,7 @@ int radeon_vm_bind(struct radeon_device *rdev, struct radeon_vm *vm)
 retry:
 	r = radeon_sa_bo_new(rdev, &rdev->vm_manager.sa_manager, &vm->sa_bo,
 			     RADEON_GPU_PAGE_ALIGN(vm->last_pfn * 8),
-			     RADEON_GPU_PAGE_SIZE, false);
+			     RADEON_GPU_PAGE_SIZE);
 	if (r) {
 		if (list_empty(&rdev->vm_manager.lru_vm)) {
 			return r;
@@ -405,8 +405,10 @@ retry:
 		radeon_vm_unbind(rdev, vm_evict);
 		goto retry;
 	}
-	vm->pt = radeon_sa_bo_cpu_addr(vm->sa_bo);
-	vm->pt_gpu_addr = radeon_sa_bo_gpu_addr(vm->sa_bo);
+	vm->pt = rdev->vm_manager.sa_manager.cpu_ptr;
+	vm->pt += (vm->sa_bo.offset >> 3);
+	vm->pt_gpu_addr = rdev->vm_manager.sa_manager.gpu_addr;
+	vm->pt_gpu_addr += vm->sa_bo.offset;
 	memset(vm->pt, 0, RADEON_GPU_PAGE_ALIGN(vm->last_pfn * 8));
 
 retry_id:
@@ -427,14 +429,14 @@ retry_id:
 	/* do hw bind */
 	r = rdev->vm_manager.funcs->bind(rdev, vm, id);
 	if (r) {
-		radeon_sa_bo_free(rdev, &vm->sa_bo, NULL);
+		radeon_sa_bo_free(rdev, &vm->sa_bo);
 		return r;
 	}
 	rdev->vm_manager.use_bitmap |= 1 << id;
 	vm->id = id;
 	list_add_tail(&vm->list, &rdev->vm_manager.lru_vm);
-	return radeon_vm_bo_update_pte(rdev, vm, rdev->ring_tmp_bo.bo,
-				       &rdev->ring_tmp_bo.bo->tbo.mem);
+	return radeon_vm_bo_update_pte(rdev, vm, rdev->ib_pool.sa_manager.bo,
+				       &rdev->ib_pool.sa_manager.bo->tbo.mem);
 }
 
 /* object have to be reserved */
@@ -646,7 +648,7 @@ int radeon_vm_init(struct radeon_device *rdev, struct radeon_vm *vm)
 	/* map the ib pool buffer at 0 in virtual address space, set
 	 * read only
 	 */
-	r = radeon_vm_bo_add(rdev, vm, rdev->ring_tmp_bo.bo, 0,
+	r = radeon_vm_bo_add(rdev, vm, rdev->ib_pool.sa_manager.bo, 0,
 			     RADEON_VM_PAGE_READABLE | RADEON_VM_PAGE_SNOOPED);
 	return r;
 }
@@ -662,12 +664,12 @@ void radeon_vm_fini(struct radeon_device *rdev, struct radeon_vm *vm)
 	radeon_mutex_unlock(&rdev->cs_mutex);
 
 	/* remove all bo */
-	r = radeon_bo_reserve(rdev->ring_tmp_bo.bo, false);
+	r = radeon_bo_reserve(rdev->ib_pool.sa_manager.bo, false);
 	if (!r) {
-		bo_va = radeon_bo_va(rdev->ring_tmp_bo.bo, vm);
+		bo_va = radeon_bo_va(rdev->ib_pool.sa_manager.bo, vm);
 		list_del_init(&bo_va->bo_list);
 		list_del_init(&bo_va->vm_list);
-		radeon_bo_unreserve(rdev->ring_tmp_bo.bo);
+		radeon_bo_unreserve(rdev->ib_pool.sa_manager.bo);
 		kfree(bo_va);
 	}
 	if (!list_empty(&vm->va)) {

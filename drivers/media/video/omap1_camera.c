@@ -206,10 +206,15 @@ static int omap1_videobuf_setup(struct videobuf_queue *vq, unsigned int *count,
 		unsigned int *size)
 {
 	struct soc_camera_device *icd = vq->priv_data;
+	int bytes_per_line = soc_mbus_bytes_per_line(icd->user_width,
+			icd->current_fmt->host_fmt);
 	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
 	struct omap1_cam_dev *pcdev = ici->priv;
 
-	*size = icd->sizeimage;
+	if (bytes_per_line < 0)
+		return bytes_per_line;
+
+	*size = bytes_per_line * icd->user_height;
 
 	if (!*count || *count < OMAP1_CAMERA_MIN_BUF_COUNT(pcdev->vb_mode))
 		*count = OMAP1_CAMERA_MIN_BUF_COUNT(pcdev->vb_mode);
@@ -251,9 +256,14 @@ static int omap1_videobuf_prepare(struct videobuf_queue *vq,
 {
 	struct soc_camera_device *icd = vq->priv_data;
 	struct omap1_cam_buf *buf = container_of(vb, struct omap1_cam_buf, vb);
+	int bytes_per_line = soc_mbus_bytes_per_line(icd->user_width,
+			icd->current_fmt->host_fmt);
 	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
 	struct omap1_cam_dev *pcdev = ici->priv;
 	int ret;
+
+	if (bytes_per_line < 0)
+		return bytes_per_line;
 
 	WARN_ON(!list_empty(&vb->queue));
 
@@ -271,7 +281,7 @@ static int omap1_videobuf_prepare(struct videobuf_queue *vq,
 		vb->state  = VIDEOBUF_NEEDS_INIT;
 	}
 
-	vb->size = icd->sizeimage;
+	vb->size = bytes_per_line * vb->height;
 
 	if (vb->baddr && vb->bsize < vb->size) {
 		ret = -EINVAL;
@@ -989,7 +999,6 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_VYUY8_2X8,
@@ -999,7 +1008,6 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_YUYV8_2X8,
@@ -1009,7 +1017,6 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_YVYU8_2X8,
@@ -1019,7 +1026,6 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB555_2X8_PADHI_BE,
@@ -1029,7 +1035,6 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB555_2X8_PADHI_LE,
@@ -1039,7 +1044,6 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB565_2X8_BE,
@@ -1049,7 +1053,6 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB565_2X8_LE,
@@ -1059,7 +1062,6 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 },
 };

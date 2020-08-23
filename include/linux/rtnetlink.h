@@ -283,6 +283,8 @@ enum rtattr_type_t {
 	RTA_MP_ALGO, /* no longer used */
 	RTA_TABLE,
 	RTA_MARK,
+	RTA_MFC_STATS, /* not used - backported from the future */
+	RTA_UID,
 	__RTA_MAX
 };
 
@@ -801,10 +803,6 @@ rtattr_failure:
 	return table;
 }
 
-extern int ndo_dflt_fdb_dump(struct sk_buff *skb,
-			     struct netlink_callback *cb,
-			     struct net_device *dev,
-			     int idx);
 #endif /* __KERNEL__ */
 
 

@@ -62,7 +62,6 @@ obj-$(CONFIG_SENSORS_ULTRA45)	+= ultra45_env.o
 obj-$(CONFIG_SENSORS_I5K_AMB)	+= i5k_amb.o
 obj-$(CONFIG_SENSORS_IBMAEM)	+= ibmaem.o
 obj-$(CONFIG_SENSORS_IBMPEX)	+= ibmpex.o
-obj-$(CONFIG_SENSORS_INA2XX)	+= ina2xx.o
 obj-$(CONFIG_SENSORS_IT87)	+= it87.o
 obj-$(CONFIG_SENSORS_JC42)	+= jc42.o
 obj-$(CONFIG_SENSORS_JZ4740)	+= jz4740-hwmon.o
@@ -127,6 +126,10 @@ obj-$(CONFIG_SENSORS_W83L785TS)	+= w83l785ts.o
 obj-$(CONFIG_SENSORS_W83L786NG)	+= w83l786ng.o
 obj-$(CONFIG_SENSORS_WM831X)	+= wm831x-hwmon.o
 obj-$(CONFIG_SENSORS_WM8350)	+= wm8350-hwmon.o
+obj-$(CONFIG_SENSORS_WPCE775X)	+= wpce775x.o
+obj-$(CONFIG_SENSORS_MSM_ADC)	+= msm_adc.o m_adcproc.o
+obj-$(CONFIG_SENSORS_PM8XXX_ADC)	+= pm8xxx-adc.o pm8xxx-adc-scale.o
+obj-$(CONFIG_SENSORS_EPM_ADC)	+= epm_adc.o
 
 obj-$(CONFIG_PMBUS)		+= pmbus/
 

@@ -95,16 +95,6 @@ static struct vivi_fmt formats[] = {
 		.depth    = 16,
 	},
 	{
-		.name     = "4:2:2, packed, YVYU",
-		.fourcc   = V4L2_PIX_FMT_YVYU,
-		.depth    = 16,
-	},
-	{
-		.name     = "4:2:2, packed, VYUY",
-		.fourcc   = V4L2_PIX_FMT_VYUY,
-		.depth    = 16,
-	},
-	{
 		.name     = "RGB565 (LE)",
 		.fourcc   = V4L2_PIX_FMT_RGB565, /* gggbbbbb rrrrrggg */
 		.depth    = 16,
@@ -123,26 +113,6 @@ static struct vivi_fmt formats[] = {
 		.name     = "RGB555 (BE)",
 		.fourcc   = V4L2_PIX_FMT_RGB555X, /* arrrrrgg gggbbbbb */
 		.depth    = 16,
-	},
-	{
-		.name     = "RGB24 (LE)",
-		.fourcc   = V4L2_PIX_FMT_RGB24, /* rgb */
-		.depth    = 24,
-	},
-	{
-		.name     = "RGB24 (BE)",
-		.fourcc   = V4L2_PIX_FMT_BGR24, /* bgr */
-		.depth    = 24,
-	},
-	{
-		.name     = "RGB32 (LE)",
-		.fourcc   = V4L2_PIX_FMT_RGB32, /* argb */
-		.depth    = 32,
-	},
-	{
-		.name     = "RGB32 (BE)",
-		.fourcc   = V4L2_PIX_FMT_BGR32, /* bgra */
-		.depth    = 32,
 	},
 };
 
@@ -200,7 +170,6 @@ struct vivi_dev {
 		struct v4l2_ctrl	   *gain;
 	};
 	struct v4l2_ctrl	   *volume;
-	struct v4l2_ctrl	   *alpha;
 	struct v4l2_ctrl	   *button;
 	struct v4l2_ctrl	   *boolean;
 	struct v4l2_ctrl	   *int32;
@@ -208,7 +177,6 @@ struct vivi_dev {
 	struct v4l2_ctrl	   *menu;
 	struct v4l2_ctrl	   *string;
 	struct v4l2_ctrl	   *bitmask;
-	struct v4l2_ctrl	   *int_menu;
 
 	spinlock_t                 slock;
 	struct mutex		   mutex;
@@ -235,10 +203,8 @@ struct vivi_dev {
 	enum v4l2_field		   field;
 	unsigned int		   field_count;
 
-	u8			   bars[9][3];
-	u8			   line[MAX_WIDTH * 8];
-	unsigned int		   pixelsize;
-	u8			   alpha_component;
+	u8 			   bars[9][3];
+	u8 			   line[MAX_WIDTH * 4];
 };
 
 /* ------------------------------------------------------------------
@@ -317,8 +283,6 @@ static void precalculate_bars(struct vivi_dev *dev)
 		switch (dev->fmt->fourcc) {
 		case V4L2_PIX_FMT_YUYV:
 		case V4L2_PIX_FMT_UYVY:
-		case V4L2_PIX_FMT_YVYU:
-		case V4L2_PIX_FMT_VYUY:
 			is_yuv = 1;
 			break;
 		case V4L2_PIX_FMT_RGB565:
@@ -332,11 +296,6 @@ static void precalculate_bars(struct vivi_dev *dev)
 			r >>= 3;
 			g >>= 3;
 			b >>= 3;
-			break;
-		case V4L2_PIX_FMT_RGB24:
-		case V4L2_PIX_FMT_BGR24:
-		case V4L2_PIX_FMT_RGB32:
-		case V4L2_PIX_FMT_BGR32:
 			break;
 		}
 
@@ -357,11 +316,9 @@ static void precalculate_bars(struct vivi_dev *dev)
 #define TSTAMP_INPUT_X	10
 #define TSTAMP_MIN_X	(54 + TSTAMP_INPUT_X)
 
-/* 'odd' is true for pixels 1, 3, 5, etc. and false for pixels 0, 2, 4, etc. */
-static void gen_twopix(struct vivi_dev *dev, u8 *buf, int colorpos, bool odd)
+static void gen_twopix(struct vivi_dev *dev, u8 *buf, int colorpos)
 {
 	u8 r_y, g_u, b_v;
-	u8 alpha = dev->alpha_component;
 	int color;
 	u8 *p;
 
@@ -369,56 +326,46 @@ static void gen_twopix(struct vivi_dev *dev, u8 *buf, int colorpos, bool odd)
 	g_u = dev->bars[colorpos][1]; /* G or precalculated U */
 	b_v = dev->bars[colorpos][2]; /* B or precalculated V */
 
-	for (color = 0; color < dev->pixelsize; color++) {
+	for (color = 0; color < 4; color++) {
 		p = buf + color;
 
 		switch (dev->fmt->fourcc) {
 		case V4L2_PIX_FMT_YUYV:
 			switch (color) {
 			case 0:
+			case 2:
 				*p = r_y;
 				break;
 			case 1:
-				*p = odd ? b_v : g_u;
+				*p = g_u;
+				break;
+			case 3:
+				*p = b_v;
 				break;
 			}
 			break;
 		case V4L2_PIX_FMT_UYVY:
 			switch (color) {
-			case 0:
-				*p = odd ? b_v : g_u;
-				break;
 			case 1:
+			case 3:
 				*p = r_y;
 				break;
-			}
-			break;
-		case V4L2_PIX_FMT_YVYU:
-			switch (color) {
 			case 0:
-				*p = r_y;
+				*p = g_u;
 				break;
-			case 1:
-				*p = odd ? g_u : b_v;
-				break;
-			}
-			break;
-		case V4L2_PIX_FMT_VYUY:
-			switch (color) {
-			case 0:
-				*p = odd ? g_u : b_v;
-				break;
-			case 1:
-				*p = r_y;
+			case 2:
+				*p = b_v;
 				break;
 			}
 			break;
 		case V4L2_PIX_FMT_RGB565:
 			switch (color) {
 			case 0:
+			case 2:
 				*p = (g_u << 5) | b_v;
 				break;
 			case 1:
+			case 3:
 				*p = (r_y << 3) | (g_u >> 3);
 				break;
 			}
@@ -426,9 +373,11 @@ static void gen_twopix(struct vivi_dev *dev, u8 *buf, int colorpos, bool odd)
 		case V4L2_PIX_FMT_RGB565X:
 			switch (color) {
 			case 0:
+			case 2:
 				*p = (r_y << 3) | (g_u >> 3);
 				break;
 			case 1:
+			case 3:
 				*p = (g_u << 5) | b_v;
 				break;
 			}
@@ -436,78 +385,24 @@ static void gen_twopix(struct vivi_dev *dev, u8 *buf, int colorpos, bool odd)
 		case V4L2_PIX_FMT_RGB555:
 			switch (color) {
 			case 0:
+			case 2:
 				*p = (g_u << 5) | b_v;
 				break;
 			case 1:
-				*p = (alpha & 0x80) | (r_y << 2) | (g_u >> 3);
+			case 3:
+				*p = (r_y << 2) | (g_u >> 3);
 				break;
 			}
 			break;
 		case V4L2_PIX_FMT_RGB555X:
 			switch (color) {
 			case 0:
-				*p = (alpha & 0x80) | (r_y << 2) | (g_u >> 3);
+			case 2:
+				*p = (r_y << 2) | (g_u >> 3);
 				break;
 			case 1:
+			case 3:
 				*p = (g_u << 5) | b_v;
-				break;
-			}
-			break;
-		case V4L2_PIX_FMT_RGB24:
-			switch (color) {
-			case 0:
-				*p = r_y;
-				break;
-			case 1:
-				*p = g_u;
-				break;
-			case 2:
-				*p = b_v;
-				break;
-			}
-			break;
-		case V4L2_PIX_FMT_BGR24:
-			switch (color) {
-			case 0:
-				*p = b_v;
-				break;
-			case 1:
-				*p = g_u;
-				break;
-			case 2:
-				*p = r_y;
-				break;
-			}
-			break;
-		case V4L2_PIX_FMT_RGB32:
-			switch (color) {
-			case 0:
-				*p = alpha;
-				break;
-			case 1:
-				*p = r_y;
-				break;
-			case 2:
-				*p = g_u;
-				break;
-			case 3:
-				*p = b_v;
-				break;
-			}
-			break;
-		case V4L2_PIX_FMT_BGR32:
-			switch (color) {
-			case 0:
-				*p = b_v;
-				break;
-			case 1:
-				*p = g_u;
-				break;
-			case 2:
-				*p = r_y;
-				break;
-			case 3:
-				*p = alpha;
 				break;
 			}
 			break;
@@ -519,10 +414,10 @@ static void precalculate_line(struct vivi_dev *dev)
 {
 	int w;
 
-	for (w = 0; w < dev->width * 2; w++) {
-		int colorpos = w / (dev->width / 8) % 8;
+	for (w = 0; w < dev->width * 2; w += 2) {
+		int colorpos = (w / (dev->width / 8) % 8);
 
-		gen_twopix(dev, dev->line + w * dev->pixelsize, colorpos, w & 1);
+		gen_twopix(dev, dev->line + w * 2, colorpos);
 	}
 }
 
@@ -538,7 +433,7 @@ static void gen_text(struct vivi_dev *dev, char *basep,
 	/* Print stream time */
 	for (line = y; line < y + 16; line++) {
 		int j = 0;
-		char *pos = basep + line * dev->width * dev->pixelsize + x * dev->pixelsize;
+		char *pos = basep + line * dev->width * 2 + x * 2;
 		char *s;
 
 		for (s = text; *s; s++) {
@@ -548,9 +443,9 @@ static void gen_text(struct vivi_dev *dev, char *basep,
 			for (i = 0; i < 7; i++, j++) {
 				/* Draw white font on black background */
 				if (chr & (1 << (7 - i)))
-					gen_twopix(dev, pos + j * dev->pixelsize, WHITE, (x+y) & 1);
+					gen_twopix(dev, pos + j * 2, WHITE);
 				else
-					gen_twopix(dev, pos + j * dev->pixelsize, TEXT_BLACK, (x+y) & 1);
+					gen_twopix(dev, pos + j * 2, TEXT_BLACK);
 			}
 		}
 	}
@@ -571,9 +466,7 @@ static void vivi_fillbuff(struct vivi_dev *dev, struct vivi_buffer *buf)
 		return;
 
 	for (h = 0; h < hmax; h++)
-		memcpy(vbuf + h * wmax * dev->pixelsize,
-		       dev->line + (dev->mv_count % wmax) * dev->pixelsize,
-		       wmax * dev->pixelsize);
+		memcpy(vbuf + h * wmax * 2, dev->line + (dev->mv_count % wmax) * 2, wmax * 2);
 
 	/* Updates stream time */
 
@@ -591,16 +484,15 @@ static void vivi_fillbuff(struct vivi_dev *dev, struct vivi_buffer *buf)
 	gen_text(dev, vbuf, line++ * 16, 16, str);
 
 	gain = v4l2_ctrl_g_ctrl(dev->gain);
-	mutex_lock(dev->ctrl_handler.lock);
+	mutex_lock(&dev->ctrl_handler.lock);
 	snprintf(str, sizeof(str), " brightness %3d, contrast %3d, saturation %3d, hue %d ",
 			dev->brightness->cur.val,
 			dev->contrast->cur.val,
 			dev->saturation->cur.val,
 			dev->hue->cur.val);
 	gen_text(dev, vbuf, line++ * 16, 16, str);
-	snprintf(str, sizeof(str), " autogain %d, gain %3d, volume %3d, alpha 0x%02x ",
-			dev->autogain->cur.val, gain, dev->volume->cur.val,
-			dev->alpha->cur.val);
+	snprintf(str, sizeof(str), " autogain %d, gain %3d, volume %3d ",
+			dev->autogain->cur.val, gain, dev->volume->cur.val);
 	gen_text(dev, vbuf, line++ * 16, 16, str);
 	snprintf(str, sizeof(str), " int32 %d, int64 %lld, bitmask %08x ",
 			dev->int32->cur.val,
@@ -611,12 +503,8 @@ static void vivi_fillbuff(struct vivi_dev *dev, struct vivi_buffer *buf)
 			dev->boolean->cur.val,
 			dev->menu->qmenu[dev->menu->cur.val],
 			dev->string->cur.string);
+	mutex_unlock(&dev->ctrl_handler.lock);
 	gen_text(dev, vbuf, line++ * 16, 16, str);
-	snprintf(str, sizeof(str), " integer_menu %lld, value %d ",
-			dev->int_menu->qmenu_int[dev->int_menu->cur.val],
-			dev->int_menu->cur.val);
-	gen_text(dev, vbuf, line++ * 16, 16, str);
-	mutex_unlock(dev->ctrl_handler.lock);
 	if (dev->button_pressed) {
 		dev->button_pressed--;
 		snprintf(str, sizeof(str), " button pressed!");
@@ -769,7 +657,7 @@ static int queue_setup(struct vb2_queue *vq, const struct v4l2_format *fmt,
 	struct vivi_dev *dev = vb2_get_drv_priv(vq);
 	unsigned long size;
 
-	size = dev->width * dev->height * dev->pixelsize;
+	size = dev->width * dev->height * 2;
 
 	if (0 == *nbuffers)
 		*nbuffers = 32;
@@ -833,7 +721,7 @@ static int buffer_prepare(struct vb2_buffer *vb)
 	    dev->height < 32 || dev->height > MAX_HEIGHT)
 		return -EINVAL;
 
-	size = dev->width * dev->height * dev->pixelsize;
+	size = dev->width * dev->height * 2;
 	if (vb2_plane_size(vb, 0) < size) {
 		dprintk(dev, 1, "%s data will not fit into plane (%lu < %lu)\n",
 				__func__, vb2_plane_size(vb, 0), size);
@@ -1027,7 +915,6 @@ static int vidioc_s_fmt_vid_cap(struct file *file, void *priv,
 	}
 
 	dev->fmt = get_format(f);
-	dev->pixelsize = dev->fmt->depth / 8;
 	dev->width = f->fmt.pix.width;
 	dev->height = f->fmt.pix.height;
 	dev->field = f->fmt.pix.field;
@@ -1129,15 +1016,8 @@ static int vivi_s_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct vivi_dev *dev = container_of(ctrl->handler, struct vivi_dev, ctrl_handler);
 
-	switch (ctrl->id) {
-	case V4L2_CID_ALPHA_COMPONENT:
-		dev->alpha_component = ctrl->val;
-		break;
-	default:
-		if (ctrl == dev->button)
-			dev->button_pressed = 30;
-		break;
-	}
+	if (ctrl == dev->button)
+		dev->button_pressed = 30;
 	return 0;
 }
 
@@ -1149,24 +1029,27 @@ static ssize_t
 vivi_read(struct file *file, char __user *data, size_t count, loff_t *ppos)
 {
 	struct vivi_dev *dev = video_drvdata(file);
-	int err;
 
 	dprintk(dev, 1, "read called\n");
-	mutex_lock(&dev->mutex);
-	err = vb2_read(&dev->vb_vidq, data, count, ppos,
+	return vb2_read(&dev->vb_vidq, data, count, ppos,
 		       file->f_flags & O_NONBLOCK);
-	mutex_unlock(&dev->mutex);
-	return err;
 }
 
 static unsigned int
 vivi_poll(struct file *file, struct poll_table_struct *wait)
 {
 	struct vivi_dev *dev = video_drvdata(file);
+	struct v4l2_fh *fh = file->private_data;
 	struct vb2_queue *q = &dev->vb_vidq;
+	unsigned int res;
 
 	dprintk(dev, 1, "%s\n", __func__);
-	return vb2_poll(q, file, wait);
+	res = vb2_poll(q, file, wait);
+	if (v4l2_event_pending(fh))
+		res |= POLLPRI;
+	else
+		poll_wait(file, &fh->wait, wait);
+	return res;
 }
 
 static int vivi_close(struct file *file)
@@ -1282,22 +1165,6 @@ static const struct v4l2_ctrl_config vivi_ctrl_bitmask = {
 	.step = 0,
 };
 
-static const s64 vivi_ctrl_int_menu_values[] = {
-	1, 1, 2, 3, 5, 8, 13, 21, 42,
-};
-
-static const struct v4l2_ctrl_config vivi_ctrl_int_menu = {
-	.ops = &vivi_ctrl_ops,
-	.id = VIVI_CID_CUSTOM_BASE + 7,
-	.name = "Integer menu",
-	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
-	.min = 1,
-	.max = 8,
-	.def = 4,
-	.menu_skip_mask = 0x02,
-	.qmenu_int = vivi_ctrl_int_menu_values,
-};
-
 static const struct v4l2_file_operations vivi_fops = {
 	.owner		= THIS_MODULE,
 	.open           = v4l2_fh_open,
@@ -1385,7 +1252,6 @@ static int __init vivi_create_instance(int inst)
 	dev->fmt = &formats[0];
 	dev->width = 640;
 	dev->height = 480;
-	dev->pixelsize = dev->fmt->depth / 8;
 	hdl = &dev->ctrl_handler;
 	v4l2_ctrl_handler_init(hdl, 11);
 	dev->volume = v4l2_ctrl_new_std(hdl, &vivi_ctrl_ops,
@@ -1402,8 +1268,6 @@ static int __init vivi_create_instance(int inst)
 			V4L2_CID_AUTOGAIN, 0, 1, 1, 1);
 	dev->gain = v4l2_ctrl_new_std(hdl, &vivi_ctrl_ops,
 			V4L2_CID_GAIN, 0, 255, 1, 100);
-	dev->alpha = v4l2_ctrl_new_std(hdl, &vivi_ctrl_ops,
-			V4L2_CID_ALPHA_COMPONENT, 0, 255, 1, 0);
 	dev->button = v4l2_ctrl_new_custom(hdl, &vivi_ctrl_button, NULL);
 	dev->int32 = v4l2_ctrl_new_custom(hdl, &vivi_ctrl_int32, NULL);
 	dev->int64 = v4l2_ctrl_new_custom(hdl, &vivi_ctrl_int64, NULL);
@@ -1411,7 +1275,6 @@ static int __init vivi_create_instance(int inst)
 	dev->menu = v4l2_ctrl_new_custom(hdl, &vivi_ctrl_menu, NULL);
 	dev->string = v4l2_ctrl_new_custom(hdl, &vivi_ctrl_string, NULL);
 	dev->bitmask = v4l2_ctrl_new_custom(hdl, &vivi_ctrl_bitmask, NULL);
-	dev->int_menu = v4l2_ctrl_new_custom(hdl, &vivi_ctrl_int_menu, NULL);
 	if (hdl->error) {
 		ret = hdl->error;
 		goto unreg_dev;

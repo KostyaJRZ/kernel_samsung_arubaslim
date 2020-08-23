@@ -38,15 +38,16 @@ netdev_tx_t br_dev_xmit(struct sk_buff *skb, struct net_device *dev)
 	}
 #endif
 
-	u64_stats_update_begin(&brstats->syncp);
-	brstats->tx_packets++;
-	brstats->tx_bytes += skb->len;
-	u64_stats_update_end(&brstats->syncp);
-
 	BR_INPUT_SKB_CB(skb)->brdev = dev;
 
 	skb_reset_mac_header(skb);
 	skb_pull(skb, ETH_HLEN);
+
+	u64_stats_update_begin(&brstats->syncp);
+	brstats->tx_packets++;
+	/* Exclude ETH_HLEN from byte stats for consistency with Rx chain */
+	brstats->tx_bytes += skb->len;
+	u64_stats_update_end(&brstats->syncp);
 
 	rcu_read_lock();
 	if (is_broadcast_ether_addr(dest))
@@ -170,7 +171,7 @@ static int br_set_mac_address(struct net_device *dev, void *p)
 		return -EADDRNOTAVAIL;
 
 	spin_lock_bh(&br->lock);
-	if (!ether_addr_equal(dev->dev_addr, addr->sa_data)) {
+	if (compare_ether_addr(dev->dev_addr, addr->sa_data)) {
 		dev->addr_assign_type &= ~NET_ADDR_RANDOM;
 		memcpy(dev->dev_addr, addr->sa_data, ETH_ALEN);
 		br_fdb_change_mac_address(br, addr->sa_data);
@@ -317,9 +318,6 @@ static const struct net_device_ops br_netdev_ops = {
 	.ndo_add_slave		 = br_add_slave,
 	.ndo_del_slave		 = br_del_slave,
 	.ndo_fix_features        = br_fix_features,
-	.ndo_fdb_add		 = br_fdb_add,
-	.ndo_fdb_del		 = br_fdb_delete,
-	.ndo_fdb_dump		 = br_fdb_dump,
 };
 
 static void br_dev_free(struct net_device *dev)

@@ -15,26 +15,15 @@
 
 #include <asm/olpc.h>
 
-static bool card_blocked;
-
 static int rfkill_set_block(void *data, bool blocked)
 {
 	unsigned char cmd;
-	int r;
-
-	if (blocked == card_blocked)
-		return 0;
-
 	if (blocked)
 		cmd = EC_WLAN_ENTER_RESET;
 	else
 		cmd = EC_WLAN_LEAVE_RESET;
 
-	r = olpc_ec_cmd(cmd, NULL, 0, NULL, 0);
-	if (r == 0)
-		card_blocked = blocked;
-
-	return r;
+	return olpc_ec_cmd(cmd, NULL, 0, NULL, 0);
 }
 
 static const struct rfkill_ops rfkill_ops = {

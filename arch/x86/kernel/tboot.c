@@ -32,7 +32,7 @@
 #include <linux/mm.h>
 #include <linux/tboot.h>
 
-#include <asm/realmode.h>
+#include <asm/trampoline.h>
 #include <asm/processor.h>
 #include <asm/bootparam.h>
 #include <asm/pgtable.h>
@@ -44,7 +44,7 @@
 #include <asm/e820.h>
 #include <asm/io.h>
 
-#include "../realmode/rm/wakeup.h"
+#include "acpi/realmode/wakeup.h"
 
 /* Global pointer to shared data; NULL means no measured launch. */
 struct tboot *tboot __read_mostly;
@@ -201,8 +201,7 @@ static int tboot_setup_sleep(void)
 		add_mac_region(e820.map[i].addr, e820.map[i].size);
 	}
 
-	tboot->acpi_sinfo.kernel_s3_resume_vector =
-		real_mode_header->wakeup_start;
+	tboot->acpi_sinfo.kernel_s3_resume_vector = acpi_wakeup_address;
 
 	return 0;
 }

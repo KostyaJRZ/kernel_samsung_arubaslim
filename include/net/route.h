@@ -50,7 +50,7 @@ struct rtable {
 	__be32			rt_key_src;
 
 	int			rt_genid;
-	unsigned int		rt_flags;
+	unsigned		rt_flags;
 	__u16			rt_type;
 	__u8			rt_key_tos;
 
@@ -60,6 +60,7 @@ struct rtable {
 	int			rt_iif;
 	int			rt_oif;
 	__u32			rt_mark;
+	uid_t			rt_uid;
 
 	/* Info on neighbour */
 	__be32			rt_gateway;
@@ -130,9 +131,9 @@ static inline struct rtable *ip_route_output(struct net *net, __be32 daddr,
 {
 	struct flowi4 fl4 = {
 		.flowi4_oif = oif,
-		.flowi4_tos = tos,
 		.daddr = daddr,
 		.saddr = saddr,
+		.flowi4_tos = tos,
 	};
 	return ip_route_output_key(net, &fl4);
 }
@@ -146,7 +147,7 @@ static inline struct rtable *ip_route_output_ports(struct net *net, struct flowi
 	flowi4_init_output(fl4, oif, sk ? sk->sk_mark : 0, tos,
 			   RT_SCOPE_UNIVERSE, proto,
 			   sk ? inet_sk_flowi_flags(sk) : 0,
-			   daddr, saddr, dport, sport);
+			   daddr, saddr, dport, sport, sk ? sock_i_uid(sk) : 0);
 	if (sk)
 		security_sk_classify_flow(sk, flowi4_to_flowi(fl4));
 	return ip_route_output_flow(net, fl4, sk);
@@ -185,8 +186,8 @@ extern unsigned short	ip_rt_frag_needed(struct net *net, const struct iphdr *iph
 					  unsigned short new_mtu, struct net_device *dev);
 extern void		ip_rt_send_redirect(struct sk_buff *skb);
 
-extern unsigned int		inet_addr_type(struct net *net, __be32 addr);
-extern unsigned int		inet_dev_addr_type(struct net *net, const struct net_device *dev, __be32 addr);
+extern unsigned		inet_addr_type(struct net *net, __be32 addr);
+extern unsigned		inet_dev_addr_type(struct net *net, const struct net_device *dev, __be32 addr);
 extern void		ip_rt_multicast_event(struct in_device *);
 extern int		ip_rt_ioctl(struct net *, unsigned int cmd, void __user *arg);
 extern void		ip_rt_get_source(u8 *src, struct sk_buff *skb, struct rtable *rt);
@@ -250,7 +251,8 @@ static inline void ip_route_connect_init(struct flowi4 *fl4, __be32 dst, __be32 
 		flow_flags |= FLOWI_FLAG_CAN_SLEEP;
 
 	flowi4_init_output(fl4, oif, sk->sk_mark, tos, RT_SCOPE_UNIVERSE,
-			   protocol, flow_flags, dst, src, dport, sport);
+			   protocol, flow_flags, dst, src, dport, sport,
+			   sock_i_uid(sk));
 }
 
 static inline struct rtable *ip_route_connect(struct flowi4 *fl4,

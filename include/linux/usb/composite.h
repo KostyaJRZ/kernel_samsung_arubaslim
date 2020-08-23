@@ -118,6 +118,12 @@ struct usb_function {
 
 	struct usb_configuration	*config;
 
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+	int	(*set_intf_num)(struct usb_function *f,
+			int intf_num, int index_num);
+	int	(*set_config_desc)(int conf_num);
+#endif
+
 	/* REVISIT:  bind() functions can be marked __init, which
 	 * makes trouble for section mismatch analysis.  See if
 	 * we can't restructure things to avoid mismatching.
@@ -242,7 +248,7 @@ int usb_add_config(struct usb_composite_dev *,
 		struct usb_configuration *,
 		int (*)(struct usb_configuration *));
 
-void usb_remove_config(struct usb_composite_dev *,
+int usb_remove_config(struct usb_composite_dev *,
 		struct usb_configuration *);
 
 /**
@@ -253,8 +259,6 @@ void usb_remove_config(struct usb_composite_dev *,
  * @iManufacturer: Used as iManufacturer override if @dev->iManufacturer is
  *	not set. If NULL a default "<system> <release> with <udc>" value
  *	will be used.
- * @iSerialNumber: Used as iSerialNumber override if @dev->iSerialNumber is
- *	not set.
  * @dev: Template descriptor for the device, including default device
  *	identifiers.
  * @strings: tables of strings, keyed by identifiers assigned during bind()
@@ -285,7 +289,6 @@ struct usb_composite_driver {
 	const char				*name;
 	const char				*iProduct;
 	const char				*iManufacturer;
-	const char				*iSerialNumber;
 	const struct usb_device_descriptor	*dev;
 	struct usb_gadget_strings		**strings;
 	enum usb_device_speed			max_speed;

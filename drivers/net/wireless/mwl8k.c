@@ -1235,7 +1235,7 @@ mwl8k_capture_bssid(struct mwl8k_priv *priv, struct ieee80211_hdr *wh)
 {
 	return priv->capture_beacon &&
 		ieee80211_is_beacon(wh->frame_control) &&
-		ether_addr_equal(wh->addr3, priv->capture_bssid);
+		!compare_ether_addr(wh->addr3, priv->capture_bssid);
 }
 
 static inline void mwl8k_save_beacon(struct ieee80211_hw *hw,
@@ -5893,7 +5893,18 @@ static struct pci_driver mwl8k_driver = {
 	.shutdown	= __devexit_p(mwl8k_shutdown),
 };
 
-module_pci_driver(mwl8k_driver);
+static int __init mwl8k_init(void)
+{
+	return pci_register_driver(&mwl8k_driver);
+}
+
+static void __exit mwl8k_exit(void)
+{
+	pci_unregister_driver(&mwl8k_driver);
+}
+
+module_init(mwl8k_init);
+module_exit(mwl8k_exit);
 
 MODULE_DESCRIPTION(MWL8K_DESC);
 MODULE_VERSION(MWL8K_VERSION);

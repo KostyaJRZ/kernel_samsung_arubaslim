@@ -32,11 +32,10 @@
 #include <linux/err.h>
 #include <linux/module.h>
 
-#include <linux/iio/iio.h>
-#include <linux/iio/sysfs.h>
-#include <linux/iio/events.h>
-#include <linux/iio/buffer.h>
-#include <linux/iio/driver.h>
+#include "../iio.h"
+#include "../sysfs.h"
+#include "../events.h"
+#include "../buffer.h"
 
 #include "max1363.h"
 
@@ -249,7 +248,7 @@ static int max1363_read_raw(struct iio_dev *indio_dev,
 	struct max1363_state *st = iio_priv(indio_dev);
 	int ret;
 	switch (m) {
-	case IIO_CHAN_INFO_RAW:
+	case 0:
 		ret = max1363_read_single_chan(indio_dev, chan, val, m);
 		if (ret < 0)
 			return ret;
@@ -282,8 +281,7 @@ static const enum max1363_modes max1363_mode_list[] = {
 #define MAX1363_EV_M						\
 	(IIO_EV_BIT(IIO_EV_TYPE_THRESH, IIO_EV_DIR_RISING)	\
 	 | IIO_EV_BIT(IIO_EV_TYPE_THRESH, IIO_EV_DIR_FALLING))
-#define MAX1363_INFO_MASK (IIO_CHAN_INFO_RAW_SEPARATE_BIT |	\
-			   IIO_CHAN_INFO_SCALE_SHARED_BIT)
+#define MAX1363_INFO_MASK IIO_CHAN_INFO_SCALE_SHARED_BIT
 #define MAX1363_CHAN_U(num, addr, si, bits, evmask)			\
 	{								\
 		.type = IIO_VOLTAGE,					\
@@ -499,7 +497,7 @@ static ssize_t max1363_monitor_show_freq(struct device *dev,
 					struct device_attribute *attr,
 					char *buf)
 {
-	struct max1363_state *st = iio_priv(dev_to_iio_dev(dev));
+	struct max1363_state *st = iio_priv(dev_get_drvdata(dev));
 	return sprintf(buf, "%d\n", max1363_monitor_speeds[st->monitor_speed]);
 }
 
@@ -508,7 +506,7 @@ static ssize_t max1363_monitor_store_freq(struct device *dev,
 					const char *buf,
 					size_t len)
 {
-	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
+	struct iio_dev *indio_dev = dev_get_drvdata(dev);
 	struct max1363_state *st = iio_priv(indio_dev);
 	int i, ret;
 	unsigned long val;
@@ -832,7 +830,6 @@ static struct attribute_group max1363_event_attribute_group = {
 static const struct iio_info max1238_info = {
 	.read_raw = &max1363_read_raw,
 	.driver_module = THIS_MODULE,
-	.update_scan_mode = &max1363_update_scan_mode,
 };
 
 static const struct iio_info max1363_info = {
@@ -1287,14 +1284,11 @@ static int __devinit max1363_probe(struct i2c_client *client,
 	if (ret)
 		goto error_put_reg;
 
-	indio_dev = iio_device_alloc(sizeof(struct max1363_state));
+	indio_dev = iio_allocate_device(sizeof(struct max1363_state));
 	if (indio_dev == NULL) {
 		ret = -ENOMEM;
 		goto error_disable_reg;
 	}
-	ret = iio_map_array_register(indio_dev, client->dev.platform_data);
-	if (ret < 0)
-		goto error_free_device;
 	st = iio_priv(indio_dev);
 	st->reg = reg;
 	/* this is only used for device removal purposes */
@@ -1305,7 +1299,7 @@ static int __devinit max1363_probe(struct i2c_client *client,
 
 	ret = max1363_alloc_scan_masks(indio_dev);
 	if (ret)
-		goto error_unregister_map;
+		goto error_free_device;
 
 	/* Estabilish that the iio_dev is a child of the i2c device */
 	indio_dev->dev.parent = &client->dev;
@@ -1355,10 +1349,8 @@ error_cleanup_ring:
 	max1363_ring_cleanup(indio_dev);
 error_free_available_scan_masks:
 	kfree(indio_dev->available_scan_masks);
-error_unregister_map:
-	iio_map_array_unregister(indio_dev, client->dev.platform_data);
 error_free_device:
-	iio_device_free(indio_dev);
+	iio_free_device(indio_dev);
 error_disable_reg:
 	regulator_disable(reg);
 error_put_reg:
@@ -1383,8 +1375,7 @@ static int max1363_remove(struct i2c_client *client)
 		regulator_disable(reg);
 		regulator_put(reg);
 	}
-	iio_map_array_unregister(indio_dev, client->dev.platform_data);
-	iio_device_free(indio_dev);
+	iio_free_device(indio_dev);
 
 	return 0;
 }

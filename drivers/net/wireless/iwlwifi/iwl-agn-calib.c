@@ -64,6 +64,7 @@
 #include <net/mac80211.h>
 
 #include "iwl-dev.h"
+#include "iwl-core.h"
 #include "iwl-agn-calib.h"
 #include "iwl-trans.h"
 #include "iwl-agn.h"
@@ -189,7 +190,7 @@ static int iwl_sens_energy_cck(struct iwl_priv *priv,
 	u32 max_false_alarms = MAX_FA_CCK * rx_enable_time;
 	u32 min_false_alarms = MIN_FA_CCK * rx_enable_time;
 	struct iwl_sensitivity_data *data = NULL;
-	const struct iwl_sensitivity_ranges *ranges = priv->hw_params.sens;
+	const struct iwl_sensitivity_ranges *ranges = hw_params(priv).sens;
 
 	data = &(priv->sensitivity_data);
 
@@ -372,7 +373,7 @@ static int iwl_sens_auto_corr_ofdm(struct iwl_priv *priv,
 	u32 max_false_alarms = MAX_FA_OFDM * rx_enable_time;
 	u32 min_false_alarms = MIN_FA_OFDM * rx_enable_time;
 	struct iwl_sensitivity_data *data = NULL;
-	const struct iwl_sensitivity_ranges *ranges = priv->hw_params.sens;
+	const struct iwl_sensitivity_ranges *ranges = hw_params(priv).sens;
 
 	data = &(priv->sensitivity_data);
 
@@ -520,7 +521,7 @@ static int iwl_enhance_sensitivity_write(struct iwl_priv *priv)
 
 	iwl_prepare_legacy_sensitivity_tbl(priv, data, &cmd.enhance_table[0]);
 
-	if (priv->cfg->base_params->hd_v2) {
+	if (cfg(priv)->base_params->hd_v2) {
 		cmd.enhance_table[HD_INA_NON_SQUARE_DET_OFDM_INDEX] =
 			HD_INA_NON_SQUARE_DET_OFDM_DATA_V2;
 		cmd.enhance_table[HD_INA_NON_SQUARE_DET_CCK_INDEX] =
@@ -596,9 +597,9 @@ void iwl_init_sensitivity(struct iwl_priv *priv)
 	int ret = 0;
 	int i;
 	struct iwl_sensitivity_data *data = NULL;
-	const struct iwl_sensitivity_ranges *ranges = priv->hw_params.sens;
+	const struct iwl_sensitivity_ranges *ranges = hw_params(priv).sens;
 
-	if (priv->calib_disabled & IWL_SENSITIVITY_CALIB_DISABLED)
+	if (priv->disable_sens_cal)
 		return;
 
 	IWL_DEBUG_CALIB(priv, "Start iwl_init_sensitivity\n");
@@ -662,7 +663,7 @@ void iwl_sensitivity_calibration(struct iwl_priv *priv)
 	struct statistics_rx_phy *ofdm, *cck;
 	struct statistics_general_data statis;
 
-	if (priv->calib_disabled & IWL_SENSITIVITY_CALIB_DISABLED)
+	if (priv->disable_sens_cal)
 		return;
 
 	data = &(priv->sensitivity_data);
@@ -832,28 +833,28 @@ static void iwl_find_disconn_antenna(struct iwl_priv *priv, u32* average_sig,
 	 * To be safe, simply mask out any chains that we know
 	 * are not on the device.
 	 */
-	active_chains &= priv->hw_params.valid_rx_ant;
+	active_chains &= hw_params(priv).valid_rx_ant;
 
 	num_tx_chains = 0;
 	for (i = 0; i < NUM_RX_CHAINS; i++) {
 		/* loops on all the bits of
 		 * priv->hw_setting.valid_tx_ant */
 		u8 ant_msk = (1 << i);
-		if (!(priv->hw_params.valid_tx_ant & ant_msk))
+		if (!(hw_params(priv).valid_tx_ant & ant_msk))
 			continue;
 
 		num_tx_chains++;
 		if (data->disconn_array[i] == 0)
 			/* there is a Tx antenna connected */
 			break;
-		if (num_tx_chains == priv->hw_params.tx_chains_num &&
+		if (num_tx_chains == hw_params(priv).tx_chains_num &&
 		    data->disconn_array[i]) {
 			/*
 			 * If all chains are disconnected
 			 * connect the first valid tx chain
 			 */
 			first_chain =
-				find_first_chain(priv->hw_params.valid_tx_ant);
+				find_first_chain(hw_params(priv).valid_tx_ant);
 			data->disconn_array[first_chain] = 0;
 			active_chains |= BIT(first_chain);
 			IWL_DEBUG_CALIB(priv,
@@ -863,13 +864,13 @@ static void iwl_find_disconn_antenna(struct iwl_priv *priv, u32* average_sig,
 		}
 	}
 
-	if (active_chains != priv->hw_params.valid_rx_ant &&
+	if (active_chains != hw_params(priv).valid_rx_ant &&
 	    active_chains != priv->chain_noise_data.active_chains)
 		IWL_DEBUG_CALIB(priv,
 				"Detected that not all antennas are connected! "
 				"Connected: %#x, valid: %#x.\n",
 				active_chains,
-				priv->hw_params.valid_rx_ant);
+				hw_params(priv).valid_rx_ant);
 
 	/* Save for use within RXON, TX, SCAN commands, etc. */
 	data->active_chains = active_chains;
@@ -894,7 +895,7 @@ static void iwlagn_gain_computation(struct iwl_priv *priv,
 			continue;
 		}
 
-		delta_g = (priv->cfg->base_params->chain_noise_scale *
+		delta_g = (cfg(priv)->base_params->chain_noise_scale *
 			((s32)average_noise[default_chain] -
 			(s32)average_noise[i])) / 1500;
 
@@ -969,7 +970,7 @@ void iwl_chain_noise_calibration(struct iwl_priv *priv)
 	 */
 	struct iwl_rxon_context *ctx = &priv->contexts[IWL_RXON_CTX_BSS];
 
-	if (priv->calib_disabled & IWL_CHAIN_NOISE_CALIB_DISABLED)
+	if (priv->disable_chain_noise_cal)
 		return;
 
 	data = &(priv->chain_noise_data);
@@ -1050,11 +1051,11 @@ void iwl_chain_noise_calibration(struct iwl_priv *priv)
 		return;
 
 	/* Analyze signal for disconnected antenna */
-	if (priv->cfg->bt_params &&
-	    priv->cfg->bt_params->advanced_bt_coexist) {
+	if (cfg(priv)->bt_params &&
+	    cfg(priv)->bt_params->advanced_bt_coexist) {
 		/* Disable disconnected antenna algorithm for advanced
 		   bt coex, assuming valid antennas are connected */
-		data->active_chains = priv->hw_params.valid_rx_ant;
+		data->active_chains = hw_params(priv).valid_rx_ant;
 		for (i = 0; i < NUM_RX_CHAINS; i++)
 			if (!(data->active_chains & (1<<i)))
 				data->disconn_array[i] = 1;
@@ -1084,7 +1085,7 @@ void iwl_chain_noise_calibration(struct iwl_priv *priv)
 			min_average_noise, min_average_noise_antenna_i);
 
 	iwlagn_gain_computation(priv, average_noise,
-				find_first_chain(priv->hw_params.valid_rx_ant));
+				find_first_chain(hw_params(priv).valid_rx_ant));
 
 	/* Some power changes may have been made during the calibration.
 	 * Update and commit the RXON

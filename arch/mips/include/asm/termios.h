@@ -60,7 +60,7 @@ struct termio {
 };
 
 #ifdef __KERNEL__
-#include <asm/uaccess.h>
+#include <linux/module.h>
 
 /*
  *	intr=^C		quit=^\		erase=del	kill=^U

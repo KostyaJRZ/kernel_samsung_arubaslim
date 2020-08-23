@@ -70,6 +70,10 @@ static ssize_t vfd_write(struct file *file, const char __user *buf,
 static int ir_open(void *data);
 static void ir_close(void *data);
 
+/* Driver init/exit prototypes */
+static int __init imon_init(void);
+static void __exit imon_exit(void);
+
 /*** G L O B A L S ***/
 #define IMON_DATA_BUF_SZ	35
 
@@ -205,9 +209,8 @@ static void deregister_from_lirc(struct imon_context *context)
 
 	retval = lirc_unregister_driver(minor);
 	if (retval)
-		printk(KERN_ERR KBUILD_MODNAME
-		       ": %s: unable to deregister from lirc(%d)",
-		       __func__, retval);
+		err("%s: unable to deregister from lirc(%d)",
+			__func__, retval);
 	else
 		printk(KERN_INFO MOD_NAME ": Deregistered iMON driver "
 		       "(minor:%d)\n", minor);
@@ -231,18 +234,16 @@ static int display_open(struct inode *inode, struct file *file)
 	subminor = iminor(inode);
 	interface = usb_find_interface(&imon_driver, subminor);
 	if (!interface) {
-		printk(KERN_ERR KBUILD_MODNAME
-		       ": %s: could not find interface for minor %d\n",
-		       __func__, subminor);
+		err("%s: could not find interface for minor %d",
+		    __func__, subminor);
 		retval = -ENODEV;
 		goto exit;
 	}
 	context = usb_get_intfdata(interface);
 
 	if (!context) {
-		dev_err(&interface->dev,
-			"%s: no context found for minor %d\n",
-			__func__, subminor);
+		err("%s: no context found for minor %d",
+					__func__, subminor);
 		retval = -ENODEV;
 		goto exit;
 	}
@@ -250,12 +251,10 @@ static int display_open(struct inode *inode, struct file *file)
 	mutex_lock(&context->ctx_lock);
 
 	if (!context->display) {
-		dev_err(&interface->dev,
-			"%s: display not supported by device\n", __func__);
+		err("%s: display not supported by device", __func__);
 		retval = -ENODEV;
 	} else if (context->display_isopen) {
-		dev_err(&interface->dev,
-			"%s: display port is already open\n", __func__);
+		err("%s: display port is already open", __func__);
 		retval = -EBUSY;
 	} else {
 		context->display_isopen = 1;
@@ -282,20 +281,17 @@ static int display_close(struct inode *inode, struct file *file)
 	context = file->private_data;
 
 	if (!context) {
-		printk(KERN_ERR KBUILD_MODNAME
-		       "%s: no context for device\n", __func__);
+		err("%s: no context for device", __func__);
 		return -ENODEV;
 	}
 
 	mutex_lock(&context->ctx_lock);
 
 	if (!context->display) {
-		dev_err(&context->usbdev->dev,
-			"%s: display not supported by device\n", __func__);
+		err("%s: display not supported by device", __func__);
 		retval = -ENODEV;
 	} else if (!context->display_isopen) {
-		dev_err(&context->usbdev->dev,
-			"%s: display is not open\n", __func__);
+		err("%s: display is not open", __func__);
 		retval = -EIO;
 	} else {
 		context->display_isopen = 0;
@@ -344,23 +340,19 @@ static int send_packet(struct imon_context *context)
 	retval = usb_submit_urb(context->tx_urb, GFP_KERNEL);
 	if (retval) {
 		atomic_set(&(context->tx.busy), 0);
-		dev_err(&context->usbdev->dev,
-			"%s: error submitting urb(%d)\n", __func__, retval);
+		err("%s: error submitting urb(%d)", __func__, retval);
 	} else {
 		/* Wait for transmission to complete (or abort) */
 		mutex_unlock(&context->ctx_lock);
 		retval = wait_for_completion_interruptible(
 				&context->tx.finished);
 		if (retval)
-			dev_err(&context->usbdev->dev,
-				"%s: task interrupted\n", __func__);
+			err("%s: task interrupted", __func__);
 		mutex_lock(&context->ctx_lock);
 
 		retval = context->tx.status;
 		if (retval)
-			dev_err(&context->usbdev->dev,
-				"%s: packet tx failed (%d)\n",
-				__func__, retval);
+			err("%s: packet tx failed (%d)", __func__, retval);
 	}
 
 	return retval;
@@ -391,23 +383,20 @@ static ssize_t vfd_write(struct file *file, const char __user *buf,
 
 	context = file->private_data;
 	if (!context) {
-		printk(KERN_ERR KBUILD_MODNAME
-		       "%s: no context for device\n", __func__);
+		err("%s: no context for device", __func__);
 		return -ENODEV;
 	}
 
 	mutex_lock(&context->ctx_lock);
 
 	if (!context->dev_present) {
-		dev_err(&context->usbdev->dev,
-			"%s: no iMON device present\n", __func__);
+		err("%s: no iMON device present", __func__);
 		retval = -ENODEV;
 		goto exit;
 	}
 
 	if (n_bytes <= 0 || n_bytes > IMON_DATA_BUF_SZ - 3) {
-		dev_err(&context->usbdev->dev,
-			"%s: invalid payload size\n", __func__);
+		err("%s: invalid payload size", __func__);
 		retval = -EINVAL;
 		goto exit;
 	}
@@ -436,9 +425,8 @@ static ssize_t vfd_write(struct file *file, const char __user *buf,
 
 		retval = send_packet(context);
 		if (retval) {
-			dev_err(&context->usbdev->dev,
-				"%s: send packet failed for packet #%d\n",
-				__func__, seq/2);
+			err("%s: send packet failed for packet #%d",
+					__func__, seq/2);
 			goto exit;
 		} else {
 			seq += 2;
@@ -453,8 +441,7 @@ static ssize_t vfd_write(struct file *file, const char __user *buf,
 		context->usb_tx_buf[7] = (unsigned char) seq;
 		retval = send_packet(context);
 		if (retval)
-			dev_err(&context->usbdev->dev,
-				"%s: send packet failed for packet #%d\n",
+			err("%s: send packet failed for packet #%d",
 					__func__, seq/2);
 	}
 
@@ -521,8 +508,7 @@ static void ir_close(void *data)
 
 	context = (struct imon_context *)data;
 	if (!context) {
-		printk(KERN_ERR KBUILD_MODNAME
-		       "%s: no context for device\n", __func__);
+		err("%s: no context for device", __func__);
 		return;
 	}
 
@@ -746,7 +732,7 @@ static int imon_probe(struct usb_interface *interface,
 
 	context = kzalloc(sizeof(struct imon_context), GFP_KERNEL);
 	if (!context) {
-		dev_err(dev, "%s: kzalloc failed for context\n", __func__);
+		err("%s: kzalloc failed for context", __func__);
 		alloc_status = 1;
 		goto alloc_status_switch;
 	}
@@ -811,7 +797,7 @@ static int imon_probe(struct usb_interface *interface,
 
 	/* Input endpoint is mandatory */
 	if (!ir_ep_found) {
-		dev_err(dev, "%s: no valid input (IR) endpoint found.\n", __func__);
+		err("%s: no valid input (IR) endpoint found.", __func__);
 		retval = -ENODEV;
 		alloc_status = 2;
 		goto alloc_status_switch;
@@ -828,30 +814,30 @@ static int imon_probe(struct usb_interface *interface,
 
 	driver = kzalloc(sizeof(struct lirc_driver), GFP_KERNEL);
 	if (!driver) {
-		dev_err(dev, "%s: kzalloc failed for lirc_driver\n", __func__);
+		err("%s: kzalloc failed for lirc_driver", __func__);
 		alloc_status = 2;
 		goto alloc_status_switch;
 	}
 	rbuf = kmalloc(sizeof(struct lirc_buffer), GFP_KERNEL);
 	if (!rbuf) {
-		dev_err(dev, "%s: kmalloc failed for lirc_buffer\n", __func__);
+		err("%s: kmalloc failed for lirc_buffer", __func__);
 		alloc_status = 3;
 		goto alloc_status_switch;
 	}
 	if (lirc_buffer_init(rbuf, BUF_CHUNK_SIZE, BUF_SIZE)) {
-		dev_err(dev, "%s: lirc_buffer_init failed\n", __func__);
+		err("%s: lirc_buffer_init failed", __func__);
 		alloc_status = 4;
 		goto alloc_status_switch;
 	}
 	rx_urb = usb_alloc_urb(0, GFP_KERNEL);
 	if (!rx_urb) {
-		dev_err(dev, "%s: usb_alloc_urb failed for IR urb\n", __func__);
+		err("%s: usb_alloc_urb failed for IR urb", __func__);
 		alloc_status = 5;
 		goto alloc_status_switch;
 	}
 	tx_urb = usb_alloc_urb(0, GFP_KERNEL);
 	if (!tx_urb) {
-		dev_err(dev, "%s: usb_alloc_urb failed for display urb\n",
+		err("%s: usb_alloc_urb failed for display urb",
 		    __func__);
 		alloc_status = 6;
 		goto alloc_status_switch;
@@ -879,7 +865,7 @@ static int imon_probe(struct usb_interface *interface,
 
 	lirc_minor = lirc_register_driver(driver);
 	if (lirc_minor < 0) {
-		dev_err(dev, "%s: lirc_register_driver failed\n", __func__);
+		err("%s: lirc_register_driver failed", __func__);
 		alloc_status = 7;
 		goto unlock;
 	} else
@@ -914,8 +900,8 @@ static int imon_probe(struct usb_interface *interface,
 	retval = usb_submit_urb(context->rx_urb, GFP_KERNEL);
 
 	if (retval) {
-		dev_err(dev, "%s: usb_submit_urb failed for intf0 (%d)\n",
-			__func__, retval);
+		err("%s: usb_submit_urb failed for intf0 (%d)",
+		    __func__, retval);
 		mutex_unlock(&context->ctx_lock);
 		goto exit;
 	}

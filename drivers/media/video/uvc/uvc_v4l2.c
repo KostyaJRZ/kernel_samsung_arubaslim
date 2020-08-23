@@ -25,8 +25,6 @@
 #include <linux/atomic.h>
 
 #include <media/v4l2-common.h>
-#include <media/v4l2-ctrls.h>
-#include <media/v4l2-event.h>
 #include <media/v4l2-ioctl.h>
 
 #include "uvcvideo.h"
@@ -61,6 +59,15 @@ static int uvc_ioctl_ctrl_map(struct uvc_video_chain *chain,
 		break;
 
 	case V4L2_CTRL_TYPE_MENU:
+		/* Prevent excessive memory consumption, as well as integer
+		 * overflows.
+		 */
+		if (xmap->menu_count == 0 ||
+		    xmap->menu_count > UVC_MAX_CONTROL_MENU_ENTRIES) {
+			ret = -EINVAL;
+			goto done;
+		}
+
 		/* Prevent excessive memory consumption, as well as integer
 		 * overflows.
 		 */
@@ -507,8 +514,6 @@ static int uvc_v4l2_open(struct file *file)
 		}
 	}
 
-	v4l2_fh_init(&handle->vfh, stream->vdev);
-	v4l2_fh_add(&handle->vfh);
 	handle->chain = stream->chain;
 	handle->stream = stream;
 	handle->state = UVC_HANDLE_PASSIVE;
@@ -532,8 +537,6 @@ static int uvc_v4l2_release(struct file *file)
 
 	/* Release the file handle. */
 	uvc_dismiss_privileges(handle);
-	v4l2_fh_del(&handle->vfh);
-	v4l2_fh_exit(&handle->vfh);
 	kfree(handle);
 	file->private_data = NULL;
 
@@ -590,7 +593,7 @@ static long uvc_v4l2_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 			return ret;
 
 		ret = uvc_ctrl_get(chain, &xctrl);
-		uvc_ctrl_rollback(handle);
+		uvc_ctrl_rollback(chain);
 		if (ret >= 0)
 			ctrl->value = xctrl.value;
 		break;
@@ -611,10 +614,10 @@ static long uvc_v4l2_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 
 		ret = uvc_ctrl_set(chain, &xctrl);
 		if (ret < 0) {
-			uvc_ctrl_rollback(handle);
+			uvc_ctrl_rollback(chain);
 			return ret;
 		}
-		ret = uvc_ctrl_commit(handle, &xctrl, 1);
+		ret = uvc_ctrl_commit(chain);
 		if (ret == 0)
 			ctrl->value = xctrl.value;
 		break;
@@ -636,13 +639,13 @@ static long uvc_v4l2_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 		for (i = 0; i < ctrls->count; ++ctrl, ++i) {
 			ret = uvc_ctrl_get(chain, ctrl);
 			if (ret < 0) {
-				uvc_ctrl_rollback(handle);
+				uvc_ctrl_rollback(chain);
 				ctrls->error_idx = i;
 				return ret;
 			}
 		}
 		ctrls->error_idx = 0;
-		ret = uvc_ctrl_rollback(handle);
+		ret = uvc_ctrl_rollback(chain);
 		break;
 	}
 
@@ -660,7 +663,7 @@ static long uvc_v4l2_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 		for (i = 0; i < ctrls->count; ++ctrl, ++i) {
 			ret = uvc_ctrl_set(chain, ctrl);
 			if (ret < 0) {
-				uvc_ctrl_rollback(handle);
+				uvc_ctrl_rollback(chain);
 				ctrls->error_idx = i;
 				return ret;
 			}
@@ -669,10 +672,9 @@ static long uvc_v4l2_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 		ctrls->error_idx = 0;
 
 		if (cmd == VIDIOC_S_EXT_CTRLS)
-			ret = uvc_ctrl_commit(handle,
-					      ctrls->controls, ctrls->count);
+			ret = uvc_ctrl_commit(chain);
 		else
-			ret = uvc_ctrl_rollback(handle);
+			ret = uvc_ctrl_rollback(chain);
 		break;
 	}
 
@@ -997,26 +999,6 @@ static long uvc_v4l2_do_ioctl(struct file *file, unsigned int cmd, void *arg)
 		return uvc_video_enable(stream, 0);
 	}
 
-	case VIDIOC_SUBSCRIBE_EVENT:
-	{
-		struct v4l2_event_subscription *sub = arg;
-
-		switch (sub->type) {
-		case V4L2_EVENT_CTRL:
-			return v4l2_event_subscribe(&handle->vfh, sub, 0,
-						    &uvc_ctrl_sub_ev_ops);
-		default:
-			return -EINVAL;
-		}
-	}
-
-	case VIDIOC_UNSUBSCRIBE_EVENT:
-		return v4l2_event_unsubscribe(&handle->vfh, arg);
-
-	case VIDIOC_DQEVENT:
-		return v4l2_event_dequeue(&handle->vfh, arg,
-					  file->f_flags & O_NONBLOCK);
-
 	/* Analog video standards make no sense for digital cameras. */
 	case VIDIOC_ENUMSTD:
 	case VIDIOC_QUERYSTD:
@@ -1124,8 +1106,7 @@ static int uvc_v4l2_put_xu_mapping(const struct uvc_xu_control_mapping *kp,
 	    __put_user(kp->menu_count, &up->menu_count))
 		return -EFAULT;
 
-	if (__clear_user(up->reserved, sizeof(up->reserved)))
-		return -EFAULT;
+	__clear_user(up->reserved, sizeof(up->reserved));
 
 	if (kp->menu_count == 0)
 		return 0;
@@ -1133,6 +1114,8 @@ static int uvc_v4l2_put_xu_mapping(const struct uvc_xu_control_mapping *kp,
 	if (get_user(p, &up->menu_info))
 		return -EFAULT;
 	umenus = compat_ptr(p);
+	if (!access_ok(VERIFY_WRITE, umenus, kp->menu_count * sizeof(*umenus)))
+		return -EFAULT;
 
 	if (copy_in_user(umenus, kmenus, kp->menu_count * sizeof(*umenus)))
 		return -EFAULT;

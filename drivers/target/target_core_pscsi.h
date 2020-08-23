@@ -22,6 +22,7 @@
 #include <linux/kobject.h>
 
 struct pscsi_plugin_task {
+	struct se_task pscsi_task;
 	unsigned char pscsi_sense[SCSI_SENSE_BUFFERSIZE];
 	int	pscsi_direction;
 	int	pscsi_result;
@@ -44,6 +45,7 @@ struct pscsi_dev_virt {
 	int	pdv_lun_id;
 	struct block_device *pdv_bd;
 	struct scsi_device *pdv_sd;
+	struct Scsi_Host *pdv_lld_host;
 	struct se_hba *pdv_se_hba;
 } ____cacheline_aligned;
 

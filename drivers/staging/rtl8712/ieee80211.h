@@ -705,7 +705,7 @@ enum ieee80211_state {
 	IEEE80211_ASSOCIATING_RETRY,
 	/* the association procedure is sending AUTH request*/
 	IEEE80211_ASSOCIATING_AUTHENTICATING,
-	/* the association procedure has successfully authenticated
+	/* the association procedure has successfully authentcated
 	 * and is sending association request
 	 */
 	IEEE80211_ASSOCIATING_AUTHENTICATED,

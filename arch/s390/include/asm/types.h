@@ -28,7 +28,7 @@ typedef __signed__ long saddr_t;
 
 #ifndef __ASSEMBLY__
 
-#ifndef CONFIG_64BIT
+#ifndef __s390x__
 typedef union {
 	unsigned long long pair;
 	struct {
@@ -37,7 +37,7 @@ typedef union {
 	} subreg;
 } register_pair;
 
-#endif /* ! CONFIG_64BIT   */
+#endif /* ! __s390x__   */
 #endif /* __ASSEMBLY__  */
 #endif /* __KERNEL__    */
 #endif /* _S390_TYPES_H */

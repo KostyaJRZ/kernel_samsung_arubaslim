@@ -8,6 +8,7 @@
  * published by the Free Software Foundation.
  */
 #include <linux/errno.h>
+#include <linux/random.h>
 #include <linux/signal.h>
 #include <linux/personality.h>
 #include <linux/freezer.h>
@@ -16,11 +17,13 @@
 
 #include <asm/elf.h>
 #include <asm/cacheflush.h>
+#include <asm/traps.h>
 #include <asm/ucontext.h>
 #include <asm/unistd.h>
 #include <asm/vfp.h>
-
 #include "signal.h"
+
+#define _BLOCKABLE (~(sigmask(SIGKILL) | sigmask(SIGSTOP)))
 
 /*
  * For ARM syscalls, we encode the syscall number into the instruction.
@@ -42,7 +45,7 @@
 #define SWI_THUMB_SIGRETURN	(0xdf00 << 16 | 0x2700 | (__NR_sigreturn - __NR_SYSCALL_BASE))
 #define SWI_THUMB_RT_SIGRETURN	(0xdf00 << 16 | 0x2700 | (__NR_rt_sigreturn - __NR_SYSCALL_BASE))
 
-const unsigned long sigreturn_codes[7] = {
+static const unsigned long sigreturn_codes[7] = {
 	MOV_R7_NR_SIGRETURN,    SWI_SYS_SIGRETURN,    SWI_THUMB_SIGRETURN,
 	MOV_R7_NR_RT_SIGRETURN, SWI_SYS_RT_SIGRETURN, SWI_THUMB_RT_SIGRETURN,
 };
@@ -65,8 +68,17 @@ const unsigned long syscall_restart_code[2] = {
 asmlinkage int sys_sigsuspend(int restart, unsigned long oldmask, old_sigset_t mask)
 {
 	sigset_t blocked;
+
+	current->saved_sigmask = current->blocked;
+
+	mask &= _BLOCKABLE;
 	siginitset(&blocked, mask);
-	return sigsuspend(&blocked);
+	set_current_blocked(&blocked);
+
+	current->state = TASK_INTERRUPTIBLE;
+	schedule();
+	set_restore_sigmask();
+	return -ERESTARTNOHAND;
 }
 
 asmlinkage int 
@@ -100,6 +112,8 @@ sys_sigaction(int sig, const struct old_sigaction __user *act,
 
 	return ret;
 }
+
+static unsigned long signal_return_offset;
 
 #ifdef CONFIG_CRUNCH
 static int preserve_crunch_context(struct crunch_sigframe __user *frame)
@@ -221,8 +235,10 @@ static int restore_sigframe(struct pt_regs *regs, struct sigframe __user *sf)
 	int err;
 
 	err = __copy_from_user(&set, &sf->uc.uc_sigmask, sizeof(set));
-	if (err == 0)
+	if (err == 0) {
+		sigdelsetmask(&set, ~_BLOCKABLE);
 		set_current_blocked(&set);
+	}
 
 	__get_user_error(regs->ARM_r0, &sf->uc.uc_mcontext.arm_r0, err);
 	__get_user_error(regs->ARM_r1, &sf->uc.uc_mcontext.arm_r1, err);
@@ -424,12 +440,23 @@ setup_return(struct pt_regs *regs, struct k_sigaction *ka,
 		 */
 		thumb = handler & 1;
 
+#if __LINUX_ARM_ARCH__ >= 6
+		/*
+		 * Clear the If-Then Thumb-2 execution state.  ARM spec
+		 * requires this to be all 000s in ARM mode.  Snapdragon
+		 * S4/Krait misbehaves on a Thumb=>ARM signal transition
+		 * without this.
+		 *
+		 * We must do this whenever we are running on a Thumb-2
+		 * capable CPU, which includes ARMv6T2.  However, we elect
+		 * to do this whenever we're on an ARMv6 or later CPU for
+		 * simplicity.
+		 */
+		cpsr &= ~PSR_IT_MASK;
+#endif
+
 		if (thumb) {
 			cpsr |= PSR_T_BIT;
-#if __LINUX_ARM_ARCH__ >= 7
-			/* clear the If-Then Thumb-2 execution state */
-			cpsr &= ~PSR_IT_MASK;
-#endif
 		} else
 			cpsr &= ~PSR_T_BIT;
 	}
@@ -447,13 +474,20 @@ setup_return(struct pt_regs *regs, struct k_sigaction *ka,
 		    __put_user(sigreturn_codes[idx+1], rc+1))
 			return 1;
 
+#ifdef CONFIG_MMU
 		if (cpsr & MODE32_BIT) {
+			struct mm_struct *mm = current->mm;
+
 			/*
-			 * 32-bit code can use the new high-page
-			 * signal return code support.
+			 * 32-bit code can use the signal return page
+			 * except when the MPU has protected the vectors
+			 * page from PL0
 			 */
-			retcode = KERN_SIGRETURN_CODE + (idx << 2) + thumb;
-		} else {
+			retcode = mm->context.sigpage + signal_return_offset +
+				  (idx << 2) + thumb;
+		} else
+#endif
+		{
 			/*
 			 * Ensure that the instruction cache sees
 			 * the return code written onto the stack.
@@ -537,13 +571,13 @@ setup_rt_frame(int usig, struct k_sigaction *ka, siginfo_t *info,
 /*
  * OK, we're invoking a handler
  */	
-static void
+static int
 handle_signal(unsigned long sig, struct k_sigaction *ka,
-	      siginfo_t *info, struct pt_regs *regs)
+	      siginfo_t *info, sigset_t *oldset,
+	      struct pt_regs * regs)
 {
 	struct thread_info *thread = current_thread_info();
 	struct task_struct *tsk = current;
-	sigset_t *oldset = sigmask_to_save();
 	int usig = sig;
 	int ret;
 
@@ -568,9 +602,15 @@ handle_signal(unsigned long sig, struct k_sigaction *ka,
 
 	if (ret != 0) {
 		force_sigsegv(sig, tsk);
-		return;
+		return ret;
 	}
-	signal_delivered(sig, info, ka, regs, 0);
+
+	/*
+	 * Block the signal if we were successful.
+	 */
+	block_sigmask(ka, sig);
+
+	return 0;
 }
 
 /*
@@ -590,6 +630,15 @@ static void do_signal(struct pt_regs *regs, int syscall)
 	int signr;
 
 	/*
+	 * We want the common case to go fast, which
+	 * is why we may in certain cases get here from
+	 * kernel mode. Just return without doing anything
+	 * if so.
+	 */
+	if (!user_mode(regs))
+		return;
+
+	/*
 	 * If we were from a system call, check for system call restarting...
 	 */
 	if (syscall) {
@@ -605,14 +654,15 @@ static void do_signal(struct pt_regs *regs, int syscall)
 		case -ERESTARTNOHAND:
 		case -ERESTARTSYS:
 		case -ERESTARTNOINTR:
+		case -ERESTART_RESTARTBLOCK:
 			regs->ARM_r0 = regs->ARM_ORIG_r0;
 			regs->ARM_pc = restart_addr;
 			break;
-		case -ERESTART_RESTARTBLOCK:
-			regs->ARM_r0 = -EINTR;
-			break;
 		}
 	}
+
+	if (try_to_freeze_nowarn())
+		goto no_signal;
 
 	/*
 	 * Get the signal to deliver.  When running under ptrace, at this
@@ -620,24 +670,42 @@ static void do_signal(struct pt_regs *regs, int syscall)
 	 */
 	signr = get_signal_to_deliver(&info, &ka, regs, NULL);
 	if (signr > 0) {
+		sigset_t *oldset;
+
 		/*
 		 * Depending on the signal settings we may need to revert the
 		 * decision to restart the system call.  But skip this if a
 		 * debugger has chosen to restart at a different PC.
 		 */
 		if (regs->ARM_pc == restart_addr) {
-			if (retval == -ERESTARTNOHAND
+			if (retval == -ERESTARTNOHAND ||
+			    retval == -ERESTART_RESTARTBLOCK
 			    || (retval == -ERESTARTSYS
 				&& !(ka.sa.sa_flags & SA_RESTART))) {
 				regs->ARM_r0 = -EINTR;
 				regs->ARM_pc = continue_addr;
 			}
+			clear_thread_flag(TIF_SYSCALL_RESTARTSYS);
 		}
 
-		handle_signal(signr, &ka, &info, regs);
+		if (test_thread_flag(TIF_RESTORE_SIGMASK))
+			oldset = &current->saved_sigmask;
+		else
+			oldset = &current->blocked;
+		if (handle_signal(signr, &ka, &info, oldset, regs) == 0) {
+			/*
+			 * A signal was successfully delivered; the saved
+			 * sigmask will have been stored in the signal frame,
+			 * and will be restored by sigreturn, so we can simply
+			 * clear the TIF_RESTORE_SIGMASK flag.
+			 */
+			if (test_thread_flag(TIF_RESTORE_SIGMASK))
+				clear_thread_flag(TIF_RESTORE_SIGMASK);
+		}
 		return;
 	}
 
+ no_signal:
 	if (syscall) {
 		/*
 		 * Handle restarting a different system call.  As above,
@@ -645,32 +713,15 @@ static void do_signal(struct pt_regs *regs, int syscall)
 		 * ignore the restart.
 		 */
 		if (retval == -ERESTART_RESTARTBLOCK
-		    && regs->ARM_pc == continue_addr) {
-			if (thumb_mode(regs)) {
-				regs->ARM_r7 = __NR_restart_syscall - __NR_SYSCALL_BASE;
-				regs->ARM_pc -= 2;
-			} else {
-#if defined(CONFIG_AEABI) && !defined(CONFIG_OABI_COMPAT)
-				regs->ARM_r7 = __NR_restart_syscall;
-				regs->ARM_pc -= 4;
-#else
-				u32 __user *usp;
-
-				regs->ARM_sp -= 4;
-				usp = (u32 __user *)regs->ARM_sp;
-
-				if (put_user(regs->ARM_pc, usp) == 0) {
-					regs->ARM_pc = KERN_RESTART_CODE;
-				} else {
-					regs->ARM_sp += 4;
-					force_sigsegv(0, current);
-				}
-#endif
-			}
-		}
+		    && regs->ARM_pc == restart_addr)
+			set_thread_flag(TIF_SYSCALL_RESTARTSYS);
 	}
 
-	restore_saved_sigmask();
+	/* If there's no signal to deliver, we just put the saved sigmask
+	 * back.
+	 */
+	if (test_and_clear_thread_flag(TIF_RESTORE_SIGMASK))
+		set_current_blocked(&current->saved_sigmask);
 }
 
 asmlinkage void
@@ -682,5 +733,37 @@ do_notify_resume(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 	if (thread_flags & _TIF_NOTIFY_RESUME) {
 		clear_thread_flag(TIF_NOTIFY_RESUME);
 		tracehook_notify_resume(regs);
+		if (current->replacement_session_keyring)
+			key_replace_session_keyring();
 	}
+}
+
+struct page *get_signal_page(void)
+{
+	unsigned long ptr;
+	unsigned offset;
+	struct page *page;
+	void *addr;
+
+	page = alloc_pages(GFP_KERNEL, 0);
+
+	if (!page)
+		return NULL;
+
+	addr = page_address(page);
+
+	/* Give the signal return code some randomness */
+	offset = 0x200 + (get_random_int() & 0x7fc);
+	signal_return_offset = offset;
+
+	/*
+	 * Copy signal return handlers into the vector page, and
+	 * set sigreturn to be a pointer to these.
+	 */
+	memcpy(addr + offset, sigreturn_codes, sizeof(sigreturn_codes));
+
+	ptr = (unsigned long)addr + offset;
+	flush_icache_range(ptr, ptr + sizeof(sigreturn_codes));
+
+	return page;
 }

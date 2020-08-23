@@ -46,7 +46,7 @@ static void dwmac1000_core_init(void __iomem *ioaddr)
 #endif
 }
 
-static int dwmac1000_rx_ipc_enable(void __iomem *ioaddr)
+static int dwmac1000_rx_coe_supported(void __iomem *ioaddr)
 {
 	u32 value = readl(ioaddr + GMAC_CONTROL);
 
@@ -84,11 +84,10 @@ static void dwmac1000_get_umac_addr(void __iomem *ioaddr, unsigned char *addr,
 				GMAC_ADDR_LOW(reg_n));
 }
 
-static void dwmac1000_set_filter(struct net_device *dev, int id)
+static void dwmac1000_set_filter(struct net_device *dev)
 {
 	void __iomem *ioaddr = (void __iomem *) dev->base_addr;
 	unsigned int value = 0;
-	unsigned int perfect_addr_number;
 
 	CHIP_DBG(KERN_INFO "%s: # mcasts %d, # unicast %d\n",
 		 __func__, netdev_mc_count(dev), netdev_uc_count(dev));
@@ -122,14 +121,8 @@ static void dwmac1000_set_filter(struct net_device *dev, int id)
 		writel(mc_filter[1], ioaddr + GMAC_HASH_HIGH);
 	}
 
-	/* Extra 16 regs are available in cores newer than the 3.40. */
-	if (id > DWMAC_CORE_3_40)
-		perfect_addr_number = GMAC_MAX_PERFECT_ADDRESSES;
-	else
-		perfect_addr_number = GMAC_MAX_PERFECT_ADDRESSES / 2;
-
 	/* Handle multiple unicast addresses (perfect filtering)*/
-	if (netdev_uc_count(dev) > perfect_addr_number)
+	if (netdev_uc_count(dev) > GMAC_MAX_UNICAST_ADDRESSES)
 		/* Switch to promiscuous mode is more than 16 addrs
 		   are required */
 		value |= GMAC_FRAME_FILTER_PR;
@@ -218,7 +211,7 @@ static void dwmac1000_irq_status(void __iomem *ioaddr)
 
 static const struct stmmac_ops dwmac1000_ops = {
 	.core_init = dwmac1000_core_init,
-	.rx_ipc = dwmac1000_rx_ipc_enable,
+	.rx_coe = dwmac1000_rx_coe_supported,
 	.dump_regs = dwmac1000_dump_regs,
 	.host_irq_status = dwmac1000_irq_status,
 	.set_filter = dwmac1000_set_filter,

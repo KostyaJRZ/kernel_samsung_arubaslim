@@ -439,7 +439,7 @@ void omap2_clk_disable_unused(struct clk *clk)
 		clk->ops->disable(clk);
 	}
 	if (clk->clkdm != NULL)
-		pwrdm_state_switch(clk->clkdm->pwrdm.ptr);
+		pwrdm_clkdm_state_switch(clk->clkdm);
 }
 #endif
 

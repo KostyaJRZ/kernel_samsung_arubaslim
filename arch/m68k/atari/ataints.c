@@ -206,7 +206,7 @@ void __init atari_init_IRQ(void)
  * hardware with a programmable int vector (probably a VME board).
  */
 
-unsigned int atari_register_vme_int(void)
+unsigned long atari_register_vme_int(void)
 {
 	int i;
 
@@ -223,7 +223,7 @@ unsigned int atari_register_vme_int(void)
 EXPORT_SYMBOL(atari_register_vme_int);
 
 
-void atari_unregister_vme_int(unsigned int irq)
+void atari_unregister_vme_int(unsigned long irq)
 {
 	if (irq >= VME_SOURCE_BASE && irq < VME_SOURCE_BASE + VME_MAX_SOURCES) {
 		irq -= VME_SOURCE_BASE;

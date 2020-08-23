@@ -903,10 +903,6 @@ struct aa_profile *aa_lookup_profile(struct aa_namespace *ns, const char *hname)
 	profile = aa_get_profile(__lookup_profile(&ns->base, hname));
 	read_unlock(&ns->lock);
 
-	/* the unconfined profile is not in the regular profile list */
-	if (!profile && strcmp(hname, "unconfined") == 0)
-		profile = aa_get_profile(ns->unconfined);
-
 	/* refcount released by caller */
 	return profile;
 }
@@ -969,7 +965,7 @@ static int audit_policy(int op, gfp_t gfp, const char *name, const char *info,
 {
 	struct common_audit_data sa;
 	struct apparmor_audit_data aad = {0,};
-	sa.type = LSM_AUDIT_DATA_NONE;
+	COMMON_AUDIT_DATA_INIT(&sa, NONE);
 	sa.aad = &aad;
 	aad.op = op;
 	aad.name = name;

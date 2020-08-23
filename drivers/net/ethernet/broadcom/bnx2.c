@@ -3006,7 +3006,7 @@ error:
 
 	dma_unmap_single(&bp->pdev->dev, dma_addr, bp->rx_buf_use_size,
 			 PCI_DMA_FROMDEVICE);
-	skb = build_skb(data, 0);
+	skb = build_skb(data);
 	if (!skb) {
 		kfree(data);
 		goto error;
@@ -7343,7 +7343,8 @@ static struct {
 	{ "rx_fw_discards" },
 };
 
-#define BNX2_NUM_STATS ARRAY_SIZE(bnx2_stats_str_arr)
+#define BNX2_NUM_STATS (sizeof(bnx2_stats_str_arr)/\
+			sizeof(bnx2_stats_str_arr[0]))
 
 #define STATS_OFFSET32(offset_name) (offsetof(struct statistics_block, offset_name) / 4)
 
@@ -7975,6 +7976,7 @@ static int __devinit
 bnx2_init_board(struct pci_dev *pdev, struct net_device *dev)
 {
 	struct bnx2 *bp;
+	unsigned long mem_len;
 	int rc, i, j;
 	u32 reg;
 	u64 dma_mask, persist_dma_mask;
@@ -8034,8 +8036,13 @@ bnx2_init_board(struct pci_dev *pdev, struct net_device *dev)
 #endif
 	INIT_WORK(&bp->reset_task, bnx2_reset_task);
 
-	bp->regview = pci_iomap(pdev, 0, MB_GET_CID_ADDR(TX_TSS_CID +
-							 TX_MAX_TSS_RINGS + 1));
+	dev->base_addr = dev->mem_start = pci_resource_start(pdev, 0);
+	mem_len = MB_GET_CID_ADDR(TX_TSS_CID + TX_MAX_TSS_RINGS + 1);
+	dev->mem_end = dev->mem_start + mem_len;
+	dev->irq = pdev->irq;
+
+	bp->regview = ioremap_nocache(dev->base_addr, mem_len);
+
 	if (!bp->regview) {
 		dev_err(&pdev->dev, "Cannot map register space, aborting\n");
 		rc = -ENOMEM;
@@ -8339,8 +8346,10 @@ err_out_unmap:
 		bp->flags &= ~BNX2_FLAG_AER_ENABLED;
 	}
 
-	pci_iounmap(pdev, bp->regview);
-	bp->regview = NULL;
+	if (bp->regview) {
+		iounmap(bp->regview);
+		bp->regview = NULL;
+	}
 
 err_out_release:
 	pci_release_regions(pdev);
@@ -8423,7 +8432,7 @@ static int __devinit
 bnx2_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	static int version_printed = 0;
-	struct net_device *dev;
+	struct net_device *dev = NULL;
 	struct bnx2 *bp;
 	int rc;
 	char str[40];
@@ -8433,12 +8442,15 @@ bnx2_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	/* dev zeroed in init_etherdev */
 	dev = alloc_etherdev_mq(sizeof(*bp), TX_MAX_RINGS);
+
 	if (!dev)
 		return -ENOMEM;
 
 	rc = bnx2_init_board(pdev, dev);
-	if (rc < 0)
-		goto err_free;
+	if (rc < 0) {
+		free_netdev(dev);
+		return rc;
+	}
 
 	dev->netdev_ops = &bnx2_netdev_ops;
 	dev->watchdog_timeo = TX_TIMEOUT;
@@ -8468,21 +8480,22 @@ bnx2_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto error;
 	}
 
-	netdev_info(dev, "%s (%c%d) %s found at mem %lx, IRQ %d, "
-		    "node addr %pM\n", board_info[ent->driver_data].name,
+	netdev_info(dev, "%s (%c%d) %s found at mem %lx, IRQ %d, node addr %pM\n",
+		    board_info[ent->driver_data].name,
 		    ((CHIP_ID(bp) & 0xf000) >> 12) + 'A',
 		    ((CHIP_ID(bp) & 0x0ff0) >> 4),
-		    bnx2_bus_string(bp, str), (long)pci_resource_start(pdev, 0),
-		    pdev->irq, dev->dev_addr);
+		    bnx2_bus_string(bp, str),
+		    dev->base_addr,
+		    bp->pdev->irq, dev->dev_addr);
 
 	return 0;
 
 error:
-	iounmap(bp->regview);
+	if (bp->regview)
+		iounmap(bp->regview);
 	pci_release_regions(pdev);
 	pci_disable_device(pdev);
 	pci_set_drvdata(pdev, NULL);
-err_free:
 	free_netdev(dev);
 	return rc;
 }
@@ -8498,7 +8511,8 @@ bnx2_remove_one(struct pci_dev *pdev)
 	del_timer_sync(&bp->timer);
 	cancel_work_sync(&bp->reset_task);
 
-	pci_iounmap(bp->pdev, bp->regview);
+	if (bp->regview)
+		iounmap(bp->regview);
 
 	kfree(bp->temp_stats_blk);
 

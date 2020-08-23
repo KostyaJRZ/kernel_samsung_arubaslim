@@ -73,8 +73,7 @@ unsigned long voltdm_get_voltage(struct voltagedomain *voltdm)
 int voltdm_scale(struct voltagedomain *voltdm,
 		 unsigned long target_volt)
 {
-	int ret, i;
-	unsigned long volt = 0;
+	int ret;
 
 	if (!voltdm || IS_ERR(voltdm)) {
 		pr_warning("%s: VDD specified does not exist!\n", __func__);
@@ -87,23 +86,9 @@ int voltdm_scale(struct voltagedomain *voltdm,
 		return -ENODATA;
 	}
 
-	/* Adjust voltage to the exact voltage from the OPP table */
-	for (i = 0; voltdm->volt_data[i].volt_nominal != 0; i++) {
-		if (voltdm->volt_data[i].volt_nominal >= target_volt) {
-			volt = voltdm->volt_data[i].volt_nominal;
-			break;
-		}
-	}
-
-	if (!volt) {
-		pr_warning("%s: not scaling. OPP voltage for %lu, not found.\n",
-			   __func__, target_volt);
-		return -EINVAL;
-	}
-
-	ret = voltdm->scale(voltdm, volt);
+	ret = voltdm->scale(voltdm, target_volt);
 	if (!ret)
-		voltdm->nominal_volt = volt;
+		voltdm->nominal_volt = target_volt;
 
 	return ret;
 }

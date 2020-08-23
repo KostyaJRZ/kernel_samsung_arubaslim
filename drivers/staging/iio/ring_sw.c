@@ -15,7 +15,7 @@
 #include <linux/sched.h>
 #include <linux/poll.h>
 #include "ring_sw.h"
-#include <linux/iio/trigger.h>
+#include "trigger.h"
 
 /**
  * struct iio_sw_ring_buffer - software ring buffer

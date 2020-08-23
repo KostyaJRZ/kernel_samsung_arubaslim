@@ -211,7 +211,7 @@ int sclp_sdias_copy(void *dest, int start_blk, int nr_blks)
 	sccb.evbuf.event_qual = EQ_STORE_DATA;
 	sccb.evbuf.data_id = DI_FCP_DUMP;
 	sccb.evbuf.event_id = 4712;
-#ifdef CONFIG_64BIT
+#ifdef __s390x__
 	sccb.evbuf.asa_size = ASA_SIZE_64;
 #else
 	sccb.evbuf.asa_size = ASA_SIZE_32;

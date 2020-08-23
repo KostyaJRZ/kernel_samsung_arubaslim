@@ -188,6 +188,7 @@ struct ssb_sprom {
 struct ssb_boardinfo {
 	u16 vendor;
 	u16 type;
+	u8  rev;
 };
 
 

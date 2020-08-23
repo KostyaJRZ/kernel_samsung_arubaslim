@@ -166,15 +166,10 @@ static int do_commit(struct ubifs_info *c)
 	err = ubifs_orphan_end_commit(c);
 	if (err)
 		goto out;
-	old_ltail_lnum = c->ltail_lnum;
-	err = ubifs_log_end_commit(c, new_ltail_lnum);
-	if (err)
-		goto out;
 	err = dbg_check_old_index(c, &zroot);
 	if (err)
 		goto out;
 
-	mutex_lock(&c->mst_mutex);
 	c->mst_node->cmt_no      = cpu_to_le64(c->cmt_no);
 	c->mst_node->log_lnum    = cpu_to_le32(new_ltail_lnum);
 	c->mst_node->root_lnum   = cpu_to_le32(zroot.lnum);
@@ -203,8 +198,9 @@ static int do_commit(struct ubifs_info *c)
 		c->mst_node->flags |= cpu_to_le32(UBIFS_MST_NO_ORPHS);
 	else
 		c->mst_node->flags &= ~cpu_to_le32(UBIFS_MST_NO_ORPHS);
-	err = ubifs_write_master(c);
-	mutex_unlock(&c->mst_mutex);
+
+	old_ltail_lnum = c->ltail_lnum;
+	err = ubifs_log_end_commit(c, new_ltail_lnum);
 	if (err)
 		goto out;
 
@@ -496,9 +492,7 @@ int ubifs_gc_should_commit(struct ubifs_info *c)
 	return ret;
 }
 
-/*
- * Everything below is related to debugging.
- */
+#ifdef CONFIG_UBIFS_FS_DEBUG
 
 /**
  * struct idx_node - hold index nodes during index tree traversal.
@@ -716,14 +710,14 @@ out:
 	return 0;
 
 out_dump:
-	ubifs_err("dumping index node (iip=%d)", i->iip);
-	ubifs_dump_node(c, idx);
+	dbg_err("dumping index node (iip=%d)", i->iip);
+	dbg_dump_node(c, idx);
 	list_del(&i->list);
 	kfree(i);
 	if (!list_empty(&list)) {
 		i = list_entry(list.prev, struct idx_node, list);
-		ubifs_err("dumping parent index node");
-		ubifs_dump_node(c, &i->idx);
+		dbg_err("dumping parent index node");
+		dbg_dump_node(c, &i->idx);
 	}
 out_free:
 	while (!list_empty(&list)) {
@@ -736,3 +730,5 @@ out_free:
 		err = -EINVAL;
 	return err;
 }
+
+#endif /* CONFIG_UBIFS_FS_DEBUG */

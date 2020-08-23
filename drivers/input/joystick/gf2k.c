@@ -373,4 +373,15 @@ static struct gameport_driver gf2k_drv = {
 	.disconnect	= gf2k_disconnect,
 };
 
-module_gameport_driver(gf2k_drv);
+static int __init gf2k_init(void)
+{
+	return gameport_register_driver(&gf2k_drv);
+}
+
+static void __exit gf2k_exit(void)
+{
+	gameport_unregister_driver(&gf2k_drv);
+}
+
+module_init(gf2k_init);
+module_exit(gf2k_exit);

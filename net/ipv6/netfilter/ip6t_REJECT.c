@@ -114,7 +114,8 @@ static void send_reset(struct net *net, struct sk_buff *oldskb)
 			 GFP_ATOMIC);
 
 	if (!nskb) {
-		net_dbg_ratelimited("cannot alloc skb\n");
+		if (net_ratelimit())
+			pr_debug("cannot alloc skb\n");
 		dst_release(dst);
 		return;
 	}
@@ -177,6 +178,15 @@ send_unreach(struct net *net, struct sk_buff *skb_in, unsigned char code,
 		skb_in->dev = net->loopback_dev;
 
 	icmpv6_send(skb_in, ICMPV6_DEST_UNREACH, code, 0);
+#ifdef CONFIG_IP6_NF_TARGET_REJECT_SKERR
+	if (skb_in->sk) {
+		icmpv6_err_convert(ICMPV6_DEST_UNREACH, code,
+				   &skb_in->sk->sk_err);
+		skb_in->sk->sk_error_report(skb_in->sk);
+		pr_debug("ip6t_REJECT: sk_err=%d for skb=%p sk=%p\n",
+			skb_in->sk->sk_err, skb_in, skb_in->sk);
+	}
+#endif
 }
 
 static unsigned int
@@ -209,7 +219,8 @@ reject_tg6(struct sk_buff *skb, const struct xt_action_param *par)
 		send_reset(net, skb);
 		break;
 	default:
-		net_info_ratelimited("case %u not handled yet\n", reject->with);
+		if (net_ratelimit())
+			pr_info("case %u not handled yet\n", reject->with);
 		break;
 	}
 

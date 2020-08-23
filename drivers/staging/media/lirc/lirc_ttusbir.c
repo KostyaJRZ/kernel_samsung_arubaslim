@@ -113,9 +113,8 @@ static int set_use_inc(void *data)
 	for (i = 0; i < num_urbs; i++) {
 		retval = usb_submit_urb(ttusbir->urb[i], GFP_KERNEL);
 		if (retval) {
-			dev_err(&ttusbir->interf->dev,
-				"%s: usb_submit_urb failed on urb %d\n",
-				__func__, i);
+			err("%s: usb_submit_urb failed on urb %d",
+			    __func__, i);
 			return retval;
 		}
 	}
@@ -279,7 +278,7 @@ static int probe(struct usb_interface *intf, const struct usb_device_id *id)
 	if (ttusbir->alt_setting != -1)
 		DPRINTK("alt setting: %d\n", ttusbir->alt_setting);
 	else {
-		dev_err(&intf->dev, "Could not find alternate setting\n");
+		err("Could not find alternate setting\n");
 		kfree(ttusbir);
 		return -EINVAL;
 	}
@@ -292,7 +291,7 @@ static int probe(struct usb_interface *intf, const struct usb_device_id *id)
 
 	/* Register as a LIRC driver */
 	if (lirc_buffer_init(&ttusbir->rbuf, sizeof(int), 256) < 0) {
-		dev_err(&intf->dev, "Could not get memory for LIRC data buffer\n");
+		err("Could not get memory for LIRC data buffer\n");
 		usb_set_intfdata(intf, NULL);
 		kfree(ttusbir);
 		return -ENOMEM;
@@ -311,7 +310,7 @@ static int probe(struct usb_interface *intf, const struct usb_device_id *id)
 	ttusbir->driver.features = LIRC_CAN_REC_MODE2;
 	ttusbir->minor = lirc_register_driver(&ttusbir->driver);
 	if (ttusbir->minor < 0) {
-		dev_err(&intf->dev, "Error registering as LIRC driver\n");
+		err("Error registering as LIRC driver\n");
 		usb_set_intfdata(intf, NULL);
 		lirc_buffer_free(&ttusbir->rbuf);
 		kfree(ttusbir);
@@ -322,7 +321,7 @@ static int probe(struct usb_interface *intf, const struct usb_device_id *id)
 	for (i = 0; i < num_urbs; i++) {
 		ttusbir->urb[i] = usb_alloc_urb(8, GFP_KERNEL);
 		if (!ttusbir->urb[i]) {
-			dev_err(&intf->dev, "Could not allocate memory for the URB\n");
+			err("Could not allocate memory for the URB\n");
 			for (j = i - 1; j >= 0; j--)
 				kfree(ttusbir->urb[j]);
 			lirc_buffer_free(&ttusbir->rbuf);

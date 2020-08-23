@@ -1,8 +1,6 @@
 #include "drmP.h"
 #include "drm.h"
-
 #include "nouveau_drv.h"
-#include "nouveau_fifo.h"
 #include "nouveau_ramht.h"
 
 /* returns the size of fifo context */
@@ -12,15 +10,12 @@ nouveau_fifo_ctx_size(struct drm_device *dev)
 	struct drm_nouveau_private *dev_priv = dev->dev_private;
 
 	if (dev_priv->chipset >= 0x40)
-		return 128 * 32;
+		return 128;
 	else
 	if (dev_priv->chipset >= 0x17)
-		return 64 * 32;
-	else
-	if (dev_priv->chipset >= 0x10)
-		return 32 * 32;
+		return 64;
 
-	return 32 * 16;
+	return 32;
 }
 
 int nv04_instmem_init(struct drm_device *dev)
@@ -44,10 +39,14 @@ int nv04_instmem_init(struct drm_device *dev)
 		else if (nv44_graph_class(dev))	    rsvd = 0x4980 * vs;
 		else				    rsvd = 0x4a40 * vs;
 		rsvd += 16 * 1024;
-		rsvd *= 32; /* per-channel */
+		rsvd *= dev_priv->engine.fifo.channels;
 
-		rsvd += 512 * 1024; /* pci(e)gart table */
-		rsvd += 512 * 1024; /* object storage */
+		/* pciegart table */
+		if (pci_is_pcie(dev->pdev))
+			rsvd += 512 * 1024;
+
+		/* object storage */
+		rsvd += 512 * 1024;
 
 		dev_priv->ramin_rsvd_vram = round_up(rsvd, 4096);
 	} else {
@@ -72,7 +71,7 @@ int nv04_instmem_init(struct drm_device *dev)
 		return ret;
 
 	/* And RAMFC */
-	length = nouveau_fifo_ctx_size(dev);
+	length = dev_priv->engine.fifo.channels * nouveau_fifo_ctx_size(dev);
 	switch (dev_priv->card_type) {
 	case NV_40:
 		offset = 0x20000;

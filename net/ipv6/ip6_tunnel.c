@@ -18,8 +18,6 @@
  *
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include <linux/module.h>
 #include <linux/capability.h>
 #include <linux/errno.h>
@@ -59,10 +57,11 @@
 MODULE_AUTHOR("Ville Nuorvala");
 MODULE_DESCRIPTION("IPv6 tunneling device");
 MODULE_LICENSE("GPL");
+MODULE_ALIAS_RTNL_LINK("ip6tnl");
 MODULE_ALIAS_NETDEV("ip6tnl0");
 
 #ifdef IP6_TNL_DEBUG
-#define IP6_TNL_TRACE(x...) pr_debug("%s:" x "\n", __func__)
+#define IP6_TNL_TRACE(x...) printk(KERN_DEBUG "%s:" x "\n", __func__)
 #else
 #define IP6_TNL_TRACE(x...) do {;} while(0)
 #endif
@@ -200,7 +199,7 @@ ip6_tnl_bucket(struct ip6_tnl_net *ip6n, const struct ip6_tnl_parm *p)
 {
 	const struct in6_addr *remote = &p->raddr;
 	const struct in6_addr *local = &p->laddr;
-	unsigned int h = 0;
+	unsigned h = 0;
 	int prio = 0;
 
 	if (!ipv6_addr_any(remote) || !ipv6_addr_any(local)) {
@@ -462,14 +461,19 @@ ip6_tnl_err(struct sk_buff *skb, __u8 ipproto, struct inet6_skb_parm *opt,
 		struct ipv6_tlv_tnl_enc_lim *tel;
 		__u32 mtu;
 	case ICMPV6_DEST_UNREACH:
-		net_warn_ratelimited("%s: Path to destination invalid or inactive!\n",
-				     t->parms.name);
+		if (net_ratelimit())
+			printk(KERN_WARNING
+			       "%s: Path to destination invalid "
+			       "or inactive!\n", t->parms.name);
 		rel_msg = 1;
 		break;
 	case ICMPV6_TIME_EXCEED:
 		if ((*code) == ICMPV6_EXC_HOPLIMIT) {
-			net_warn_ratelimited("%s: Too small hop limit or routing loop in tunnel!\n",
-					     t->parms.name);
+			if (net_ratelimit())
+				printk(KERN_WARNING
+				       "%s: Too small hop limit or "
+				       "routing loop in tunnel!\n",
+				       t->parms.name);
 			rel_msg = 1;
 		}
 		break;
@@ -481,13 +485,17 @@ ip6_tnl_err(struct sk_buff *skb, __u8 ipproto, struct inet6_skb_parm *opt,
 		if (teli && teli == *info - 2) {
 			tel = (struct ipv6_tlv_tnl_enc_lim *) &skb->data[teli];
 			if (tel->encap_limit == 0) {
-				net_warn_ratelimited("%s: Too small encapsulation limit or routing loop in tunnel!\n",
-						     t->parms.name);
+				if (net_ratelimit())
+					printk(KERN_WARNING
+					       "%s: Too small encapsulation "
+					       "limit or routing loop in "
+					       "tunnel!\n", t->parms.name);
 				rel_msg = 1;
 			}
-		} else {
-			net_warn_ratelimited("%s: Recipient unable to parse tunneled packet!\n",
-					     t->parms.name);
+		} else if (net_ratelimit()) {
+			printk(KERN_WARNING
+			       "%s: Recipient unable to parse tunneled "
+			       "packet!\n ", t->parms.name);
 		}
 		break;
 	case ICMPV6_PKT_TOOBIG:
@@ -818,7 +826,7 @@ static void init_tel_txopt(struct ipv6_tel_txoption *opt, __u8 encap_limit)
  *   0 else
  **/
 
-static inline bool
+static inline int
 ip6_tnl_addr_conflict(const struct ip6_tnl *t, const struct ipv6hdr *hdr)
 {
 	return ipv6_addr_equal(&t->parms.raddr, &hdr->saddr);
@@ -838,12 +846,15 @@ static inline int ip6_tnl_xmit_ctl(struct ip6_tnl *t)
 			ldev = dev_get_by_index_rcu(net, p->link);
 
 		if (unlikely(!ipv6_chk_addr(net, &p->laddr, ldev, 0)))
-			pr_warn("%s xmit: Local address not yet configured!\n",
-				p->name);
+			printk(KERN_WARNING
+			       "%s xmit: Local address not yet configured!\n",
+			       p->name);
 		else if (!ipv6_addr_is_multicast(&p->raddr) &&
 			 unlikely(ipv6_chk_addr(net, &p->raddr, NULL, 0)))
-			pr_warn("%s xmit: Routing loop! Remote address found on this node!\n",
-				p->name);
+			printk(KERN_WARNING
+			       "%s xmit: Routing loop! "
+			       "Remote address found on this node!\n",
+			       p->name);
 		else
 			ret = 1;
 		rcu_read_unlock();
@@ -909,8 +920,10 @@ static int ip6_tnl_xmit2(struct sk_buff *skb,
 
 	if (tdev == dev) {
 		stats->collisions++;
-		net_warn_ratelimited("%s: Local routing loop detected!\n",
-				     t->parms.name);
+		if (net_ratelimit())
+			printk(KERN_WARNING
+			       "%s: Local routing loop detected!\n",
+			       t->parms.name);
 		goto tx_err_dst_release;
 	}
 	mtu = dst_mtu(dst) - sizeof (*ipv6h);
@@ -942,7 +955,7 @@ static int ip6_tnl_xmit2(struct sk_buff *skb,
 
 		if (skb->sk)
 			skb_set_owner_w(new_skb, skb->sk);
-		consume_skb(skb);
+		kfree_skb(skb);
 		skb = new_skb;
 	}
 	skb_dst_drop(skb);
@@ -1541,13 +1554,13 @@ static int __init ip6_tunnel_init(void)
 
 	err = xfrm6_tunnel_register(&ip4ip6_handler, AF_INET);
 	if (err < 0) {
-		pr_err("%s: can't register ip4ip6\n", __func__);
+		printk(KERN_ERR "ip6_tunnel init: can't register ip4ip6\n");
 		goto out_ip4ip6;
 	}
 
 	err = xfrm6_tunnel_register(&ip6ip6_handler, AF_INET6);
 	if (err < 0) {
-		pr_err("%s: can't register ip6ip6\n", __func__);
+		printk(KERN_ERR "ip6_tunnel init: can't register ip6ip6\n");
 		goto out_ip6ip6;
 	}
 
@@ -1568,10 +1581,10 @@ out_pernet:
 static void __exit ip6_tunnel_cleanup(void)
 {
 	if (xfrm6_tunnel_deregister(&ip4ip6_handler, AF_INET))
-		pr_info("%s: can't deregister ip4ip6\n", __func__);
+		printk(KERN_INFO "ip6_tunnel close: can't deregister ip4ip6\n");
 
 	if (xfrm6_tunnel_deregister(&ip6ip6_handler, AF_INET6))
-		pr_info("%s: can't deregister ip6ip6\n", __func__);
+		printk(KERN_INFO "ip6_tunnel close: can't deregister ip6ip6\n");
 
 	unregister_pernet_device(&ip6_tnl_net_ops);
 }

@@ -22,7 +22,6 @@
 #include <linux/clk.h>
 #include <linux/gpio.h>
 #include <linux/videodev2.h>
-#include <linux/sh_intc.h>
 #include <video/sh_mobile_lcdc.h>
 #include <media/sh_mobile_ceu.h>
 #include <media/ov772x.h>
@@ -55,7 +54,7 @@ static struct resource smc91x_eth_resources[] = {
 		.flags  = IORESOURCE_MEM,
 	},
 	[1] = {
-		.start  = evt2irq(0x600), /* IRQ0 */
+		.start  = 32, /* IRQ0 */
 		.flags  = IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHLEVEL,
 	},
 };
@@ -89,7 +88,7 @@ static struct resource sh_keysc_resources[] = {
 		.flags  = IORESOURCE_MEM,
 	},
 	[1] = {
-		.start  = evt2irq(0xbe0),
+		.start  = 79,
 		.flags  = IORESOURCE_IRQ,
 	},
 };
@@ -188,6 +187,7 @@ static struct platform_nand_data migor_nand_flash_data = {
 		.partitions = migor_nand_flash_partitions,
 		.nr_partitions = ARRAY_SIZE(migor_nand_flash_partitions),
 		.chip_delay = 20,
+		.part_probe_types = (const char *[]) { "cmdlinepart", NULL },
 	},
 	.ctrl = {
 		.dev_ready = migor_nand_flash_ready,
@@ -285,7 +285,7 @@ static struct resource migor_lcdc_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x580),
+		.start	= 28,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -368,7 +368,7 @@ static struct resource migor_ceu_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start  = evt2irq(0x880),
+		.start  = 52,
 		.flags  = IORESOURCE_IRQ,
 	},
 	[2] = {
@@ -394,7 +394,7 @@ static struct resource sdhi_cn9_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xe80),
+		.start	= 100,
 		.flags  = IORESOURCE_IRQ,
 	},
 };
@@ -420,7 +420,7 @@ static struct i2c_board_info migor_i2c_devices[] = {
 	},
 	{
 		I2C_BOARD_INFO("migor_ts", 0x51),
-		.irq = evt2irq(0x6c0), /* IRQ6 */
+		.irq = 38, /* IRQ6 */
 	},
 	{
 		I2C_BOARD_INFO("wm8978", 0x1a),

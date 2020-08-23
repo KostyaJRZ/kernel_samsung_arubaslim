@@ -679,6 +679,8 @@ static struct mtd_partition balloon3_partition_info[] = {
 	},
 };
 
+static const char *balloon3_part_probes[] = { "cmdlinepart", NULL };
+
 struct platform_nand_data balloon3_nand_pdata = {
 	.chip = {
 		.nr_chips	= 4,
@@ -686,6 +688,7 @@ struct platform_nand_data balloon3_nand_pdata = {
 		.nr_partitions	= ARRAY_SIZE(balloon3_partition_info),
 		.partitions	= balloon3_partition_info,
 		.chip_delay	= 50,
+		.part_probe_types = balloon3_part_probes,
 	},
 	.ctrl = {
 		.hwcontrol	= 0,
@@ -729,7 +732,9 @@ static inline void balloon3_nand_init(void) {}
 #if defined(CONFIG_REGULATOR_MAX1586) || \
     defined(CONFIG_REGULATOR_MAX1586_MODULE)
 static struct regulator_consumer_supply balloon3_max1587a_consumers[] = {
-	REGULATOR_SUPPLY("vcc_core", NULL),
+	{
+		.supply	= "vcc_core",
+	}
 };
 
 static struct regulator_init_data balloon3_max1587a_v3_info = {

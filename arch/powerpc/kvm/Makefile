@@ -36,17 +36,7 @@ kvm-e500-objs := \
 	e500.o \
 	e500_tlb.o \
 	e500_emulate.o
-kvm-objs-$(CONFIG_KVM_E500V2) := $(kvm-e500-objs)
-
-kvm-e500mc-objs := \
-	$(common-objs-y) \
-	booke.o \
-	booke_emulate.o \
-	bookehv_interrupts.o \
-	e500mc.o \
-	e500_tlb.o \
-	e500_emulate.o
-kvm-objs-$(CONFIG_KVM_E500MC) := $(kvm-e500mc-objs)
+kvm-objs-$(CONFIG_KVM_E500) := $(kvm-e500-objs)
 
 kvm-book3s_64-objs-$(CONFIG_KVM_BOOK3S_64_PR) := \
 	../../../virt/kvm/coalesced_mmio.o \
@@ -54,7 +44,6 @@ kvm-book3s_64-objs-$(CONFIG_KVM_BOOK3S_64_PR) := \
 	book3s_paired_singles.o \
 	book3s_pr.o \
 	book3s_pr_papr.o \
-	book3s_64_vio_hv.o \
 	book3s_emulate.o \
 	book3s_interrupts.o \
 	book3s_mmu_hpte.o \
@@ -79,7 +68,6 @@ kvm-book3s_64-module-objs := \
 	powerpc.o \
 	emulate.o \
 	book3s.o \
-	book3s_64_vio.o \
 	$(kvm-book3s_64-objs-y)
 
 kvm-objs-$(CONFIG_KVM_BOOK3S_64) := $(kvm-book3s_64-module-objs)
@@ -100,8 +88,7 @@ kvm-objs-$(CONFIG_KVM_BOOK3S_32) := $(kvm-book3s_32-objs)
 kvm-objs := $(kvm-objs-m) $(kvm-objs-y)
 
 obj-$(CONFIG_KVM_440) += kvm.o
-obj-$(CONFIG_KVM_E500V2) += kvm.o
-obj-$(CONFIG_KVM_E500MC) += kvm.o
+obj-$(CONFIG_KVM_E500) += kvm.o
 obj-$(CONFIG_KVM_BOOK3S_64) += kvm.o
 obj-$(CONFIG_KVM_BOOK3S_32) += kvm.o
 

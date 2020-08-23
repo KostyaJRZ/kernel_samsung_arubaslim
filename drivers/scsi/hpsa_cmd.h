@@ -82,29 +82,6 @@
 #define TYPE_CMD				0x00
 #define TYPE_MSG				0x01
 
-/* Message Types  */
-#define HPSA_TASK_MANAGEMENT    0x00
-#define HPSA_RESET              0x01
-#define HPSA_SCAN               0x02
-#define HPSA_NOOP               0x03
-
-#define HPSA_CTLR_RESET_TYPE    0x00
-#define HPSA_BUS_RESET_TYPE     0x01
-#define HPSA_TARGET_RESET_TYPE  0x03
-#define HPSA_LUN_RESET_TYPE     0x04
-#define HPSA_NEXUS_RESET_TYPE   0x05
-
-/* Task Management Functions */
-#define HPSA_TMF_ABORT_TASK     0x00
-#define HPSA_TMF_ABORT_TASK_SET 0x01
-#define HPSA_TMF_CLEAR_ACA      0x02
-#define HPSA_TMF_CLEAR_TASK_SET 0x03
-#define HPSA_TMF_QUERY_TASK     0x04
-#define HPSA_TMF_QUERY_TASK_SET 0x05
-#define HPSA_TMF_QUERY_ASYNCEVENT 0x06
-
-
-
 /* config space register offsets */
 #define CFG_VENDORID            0x00
 #define CFG_DEVICEID            0x02
@@ -129,7 +106,6 @@
 #define CFGTBL_Trans_Simple     0x00000002l
 #define CFGTBL_Trans_Performant 0x00000004l
 #define CFGTBL_Trans_use_short_tags 0x20000000l
-#define CFGTBL_Trans_enable_directed_msix (1 << 30)
 
 #define CFGTBL_BusType_Ultra2   0x00000001l
 #define CFGTBL_BusType_Ultra3   0x00000002l
@@ -362,17 +338,11 @@ struct CfgTable {
 	u32		MaxPhysicalDevices;
 	u32		MaxPhysicalDrivesPerLogicalUnit;
 	u32		MaxPerformantModeCommands;
-	u32		MaxBlockFetch;
-	u32		PowerConservationSupport;
-	u32		PowerConservationEnable;
-	u32		TMFSupportFlags;
-	u8		TMFTagMask[8];
-	u8		reserved[0x78 - 0x70];
+	u8		reserved[0x78 - 0x58];
 	u32		misc_fw_support; /* offset 0x78 */
 #define			MISC_FW_DOORBELL_RESET (0x02)
 #define			MISC_FW_DOORBELL_RESET2 (0x010)
 	u8		driver_version[32];
-
 };
 
 #define NUM_BLOCKFETCH_ENTRIES 8
@@ -382,8 +352,8 @@ struct TransTable_struct {
 	u32            RepQCount;
 	u32            RepQCtrAddrLow32;
 	u32            RepQCtrAddrHigh32;
-#define MAX_REPLY_QUEUES 8
-	struct vals32  RepQAddr[MAX_REPLY_QUEUES];
+	u32            RepQAddr0Low32;
+	u32            RepQAddr0High32;
 };
 
 struct hpsa_pci_info {

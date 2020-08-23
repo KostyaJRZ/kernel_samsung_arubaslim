@@ -40,7 +40,6 @@ Table of Contents
   3.4	/proc/<pid>/coredump_filter - Core dump filtering settings
   3.5	/proc/<pid>/mountinfo - Information about mounts
   3.6	/proc/<pid>/comm  & /proc/<pid>/task/<tid>/comm
-  3.7   /proc/<pid>/task/<tid>/children - Information about task children
 
   4	Configuring procfs
   4.1	Mount options
@@ -311,11 +310,6 @@ Table 1-4: Contents of the stat files (as of 2.6.30-rc7)
   start_data    address above which program data+bss is placed
   end_data      address below which program data+bss is placed
   start_brk     address above which program heap can be expanded with brk()
-  arg_start     address above which program command line is placed
-  arg_end       address below which program command line is placed
-  env_start     address above which program environment is placed
-  env_end       address below which program environment is placed
-  exit_code     the thread's exit_code in the form reported by the waitpid system call
 ..............................................................................
 
 The /proc/PID/maps file containing the currently mapped memory regions and
@@ -366,6 +360,8 @@ is not associated with a file:
  [stack:1001]             = the stack of the thread with tid 1001
  [vdso]                   = the "virtual dynamic shared object",
                             the kernel system call handler
+ [anon:<name>]            = an anonymous mapping that has been
+                            named by userspace
 
  or if empty, the mapping is anonymous.
 
@@ -415,6 +411,7 @@ Swap:                  0 kB
 KernelPageSize:        4 kB
 MMUPageSize:           4 kB
 Locked:              374 kB
+Name:           name from userspace
 
 The first of these lines shows the same information as is displayed for the
 mapping in /proc/PID/maps.  The remaining lines show the size of the mapping
@@ -430,6 +427,9 @@ and a page is modified, the file page is replaced by a private anonymous copy.
 "Swap" shows how much would-be-anonymous memory is also used, but out on
 swap.
 
+The "Name" field will only be present on a mapping that has been named by
+userspace, and will show the name passed in by userspace.
+
 This file is only present if the CONFIG_MMU kernel configuration option is
 enabled.
 
@@ -444,6 +444,10 @@ To clear the bits for the anonymous pages associated with the process
 To clear the bits for the file mapped pages associated with the process
     > echo 3 > /proc/PID/clear_refs
 Any other value written to /proc/PID/clear_refs will have no effect.
+
+To reset the peak resident set size ("high water mark") to the process's
+current value:
+    > echo 5 > /proc/PID/clear_refs
 
 The /proc/pid/pagemap gives the PFN, which can be used to find the pageflags
 using /proc/kpageflags and number of times a page is mapped using
@@ -749,7 +753,6 @@ Committed_AS:   100056 kB
 VmallocTotal:   112216 kB
 VmallocUsed:       428 kB
 VmallocChunk:   111088 kB
-AnonHugePages:   49152 kB
 
     MemTotal: Total usable ram (i.e. physical ram minus a few reserved
               bits and the kernel binary code)
@@ -783,7 +786,6 @@ AnonHugePages:   49152 kB
        Dirty: Memory which is waiting to get written back to the disk
    Writeback: Memory which is actively being written back to the disk
    AnonPages: Non-file backed pages mapped into userspace page tables
-AnonHugePages: Non-file backed huge pages mapped into userspace page tables
       Mapped: files which have been mmaped, such as libraries
         Slab: in-kernel data structures cache
 SReclaimable: Part of Slab, that might be reclaimed, such as caches
@@ -1582,23 +1584,6 @@ a task to set its own or one of its thread siblings comm value. The comm value
 is limited in size compared to the cmdline value, so writing anything longer
 then the kernel's TASK_COMM_LEN (currently 16 chars) will result in a truncated
 comm value.
-
-
-3.7	/proc/<pid>/task/<tid>/children - Information about task children
--------------------------------------------------------------------------
-This file provides a fast way to retrieve first level children pids
-of a task pointed by <pid>/<tid> pair. The format is a space separated
-stream of pids.
-
-Note the "first level" here -- if a child has own children they will
-not be listed here, one needs to read /proc/<children-pid>/task/<tid>/children
-to obtain the descendants.
-
-Since this interface is intended to be fast and cheap it doesn't
-guarantee to provide precise results and some children might be
-skipped, especially if they've exited right after we printed their
-pids, so one need to either stop or freeze processes being inspected
-if precise results are needed.
 
 
 ------------------------------------------------------------------------------

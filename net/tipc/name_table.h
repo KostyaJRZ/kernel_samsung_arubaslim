@@ -45,7 +45,9 @@ struct tipc_port_list;
 /*
  * TIPC name types reserved for internal TIPC use (both current and planned)
  */
+
 #define TIPC_ZM_SRV 3		/* zone master service name type */
+
 
 /**
  * struct publication - info about a published (name or) name sequence
@@ -65,6 +67,7 @@ struct tipc_port_list;
  *
  * Note that the node list, cluster list, and zone list are circular lists.
  */
+
 struct publication {
 	u32 type;
 	u32 lower;

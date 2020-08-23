@@ -332,13 +332,15 @@ static int choke_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	}
 
 	q->stats.pdrop++;
-	return qdisc_drop(skb, sch);
+	sch->qstats.drops++;
+	kfree_skb(skb);
+	return NET_XMIT_DROP;
 
-congestion_drop:
+ congestion_drop:
 	qdisc_drop(skb, sch);
 	return NET_XMIT_CN;
 
-other_drop:
+ other_drop:
 	if (ret & __NET_XMIT_BYPASS)
 		sch->qstats.drops++;
 	kfree_skb(skb);
@@ -513,9 +515,8 @@ static int choke_dump(struct Qdisc *sch, struct sk_buff *skb)
 	if (opts == NULL)
 		goto nla_put_failure;
 
-	if (nla_put(skb, TCA_CHOKE_PARMS, sizeof(opt), &opt) ||
-	    nla_put_u32(skb, TCA_CHOKE_MAX_P, q->parms.max_P))
-		goto nla_put_failure;
+	NLA_PUT(skb, TCA_CHOKE_PARMS, sizeof(opt), &opt);
+	NLA_PUT_U32(skb, TCA_CHOKE_MAX_P, q->parms.max_P);
 	return nla_nest_end(skb, opts);
 
 nla_put_failure:

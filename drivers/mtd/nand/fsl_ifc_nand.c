@@ -63,7 +63,6 @@ struct fsl_ifc_nand_ctrl {
 	unsigned int oob;	/* Non zero if operating on OOB data	*/
 	unsigned int eccread;	/* Non zero for a full-page ECC read	*/
 	unsigned int counter;	/* counter for the initializations	*/
-	unsigned int max_bitflips;  /* Saved during READ0 cmd		*/
 };
 
 static struct fsl_ifc_nand_ctrl *ifc_nand_ctrl;
@@ -263,8 +262,6 @@ static void fsl_ifc_run_command(struct mtd_info *mtd)
 	if (ctrl->nand_stat & IFC_NAND_EVTER_STAT_WPER)
 		dev_err(priv->dev, "NAND Flash Write Protect Error\n");
 
-	nctrl->max_bitflips = 0;
-
 	if (nctrl->eccread) {
 		int errors;
 		int bufnum = nctrl->page & priv->bufnum_mask;
@@ -293,9 +290,6 @@ static void fsl_ifc_run_command(struct mtd_info *mtd)
 			}
 
 			mtd->ecc_stats.corrected += errors;
-			nctrl->max_bitflips = max_t(unsigned int,
-						    nctrl->max_bitflips,
-						    errors);
 		}
 
 		nctrl->eccread = 0;
@@ -381,31 +375,21 @@ static void fsl_ifc_cmdfunc(struct mtd_info *mtd, unsigned int command,
 
 		return;
 
+	/* READID must read all 8 possible bytes */
 	case NAND_CMD_READID:
-	case NAND_CMD_PARAM: {
-		int timing = IFC_FIR_OP_RB;
-		if (command == NAND_CMD_PARAM)
-			timing = IFC_FIR_OP_RBCD;
-
 		out_be32(&ifc->ifc_nand.nand_fir0,
 				(IFC_FIR_OP_CMD0 << IFC_NAND_FIR0_OP0_SHIFT) |
 				(IFC_FIR_OP_UA  << IFC_NAND_FIR0_OP1_SHIFT) |
-				(timing << IFC_NAND_FIR0_OP2_SHIFT));
+				(IFC_FIR_OP_RB << IFC_NAND_FIR0_OP2_SHIFT));
 		out_be32(&ifc->ifc_nand.nand_fcr0,
-				command << IFC_NAND_FCR0_CMD0_SHIFT);
-		out_be32(&ifc->ifc_nand.row3, column);
-
-		/*
-		 * although currently it's 8 bytes for READID, we always read
-		 * the maximum 256 bytes(for PARAM)
-		 */
-		out_be32(&ifc->ifc_nand.nand_fbcr, 256);
-		ifc_nand_ctrl->read_bytes = 256;
+				NAND_CMD_READID << IFC_NAND_FCR0_CMD0_SHIFT);
+		/* 8 bytes for manuf, device and exts */
+		out_be32(&ifc->ifc_nand.nand_fbcr, 8);
+		ifc_nand_ctrl->read_bytes = 8;
 
 		set_addr(mtd, 0, 0, 0);
 		fsl_ifc_run_command(mtd);
 		return;
-	}
 
 	/* ERASE1 stores the block and page address */
 	case NAND_CMD_ERASE1:
@@ -698,16 +682,15 @@ static int fsl_ifc_wait(struct mtd_info *mtd, struct nand_chip *chip)
 	return nand_fsr | NAND_STATUS_WP;
 }
 
-static int fsl_ifc_read_page(struct mtd_info *mtd, struct nand_chip *chip,
-			     uint8_t *buf, int oob_required, int page)
+static int fsl_ifc_read_page(struct mtd_info *mtd,
+			      struct nand_chip *chip,
+			      uint8_t *buf, int page)
 {
 	struct fsl_ifc_mtd *priv = chip->priv;
 	struct fsl_ifc_ctrl *ctrl = priv->ctrl;
-	struct fsl_ifc_nand_ctrl *nctrl = ifc_nand_ctrl;
 
 	fsl_ifc_read_buf(mtd, buf, mtd->writesize);
-	if (oob_required)
-		fsl_ifc_read_buf(mtd, chip->oob_poi, mtd->oobsize);
+	fsl_ifc_read_buf(mtd, chip->oob_poi, mtd->oobsize);
 
 	if (ctrl->nand_stat & IFC_NAND_EVTER_STAT_ECCER)
 		dev_err(priv->dev, "NAND Flash ECC Uncorrectable Error\n");
@@ -715,14 +698,15 @@ static int fsl_ifc_read_page(struct mtd_info *mtd, struct nand_chip *chip,
 	if (ctrl->nand_stat != IFC_NAND_EVTER_STAT_OPC)
 		mtd->ecc_stats.failed++;
 
-	return nctrl->max_bitflips;
+	return 0;
 }
 
 /* ECC will be calculated automatically, and errors will be detected in
  * waitfunc.
  */
-static void fsl_ifc_write_page(struct mtd_info *mtd, struct nand_chip *chip,
-			       const uint8_t *buf, int oob_required)
+static void fsl_ifc_write_page(struct mtd_info *mtd,
+				struct nand_chip *chip,
+				const uint8_t *buf)
 {
 	fsl_ifc_write_buf(mtd, buf, mtd->writesize);
 	fsl_ifc_write_buf(mtd, chip->oob_poi, mtd->oobsize);
@@ -805,7 +789,7 @@ static int fsl_ifc_chip_init(struct fsl_ifc_mtd *priv)
 	out_be32(&ifc->ifc_nand.ncfgr, 0x0);
 
 	/* set up nand options */
-	chip->options = NAND_NO_READRDY;
+	chip->options = NAND_NO_READRDY | NAND_NO_AUTOINCR;
 	chip->bbt_options = NAND_BBT_USE_FLASH;
 
 
@@ -827,7 +811,6 @@ static int fsl_ifc_chip_init(struct fsl_ifc_mtd *priv)
 	/* Hardware generates ECC per 512 Bytes */
 	chip->ecc.size = 512;
 	chip->ecc.bytes = 8;
-	chip->ecc.strength = 4;
 
 	switch (csor & CSOR_NAND_PGS_MASK) {
 	case CSOR_NAND_PGS_512:

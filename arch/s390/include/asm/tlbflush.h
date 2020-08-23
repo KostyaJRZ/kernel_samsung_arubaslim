@@ -27,12 +27,12 @@ static inline void __tlb_flush_global(void)
 	register unsigned long reg4 asm("4");
 	long dummy;
 
-#ifndef CONFIG_64BIT
+#ifndef __s390x__
 	if (!MACHINE_HAS_CSP) {
 		smp_ptlb_all();
 		return;
 	}
-#endif /* CONFIG_64BIT */
+#endif /* __s390x__ */
 
 	dummy = 0;
 	reg2 = reg3 = 0;
@@ -74,8 +74,6 @@ static inline void __tlb_flush_idte(unsigned long asce)
 
 static inline void __tlb_flush_mm(struct mm_struct * mm)
 {
-	if (unlikely(cpumask_empty(mm_cpumask(mm))))
-		return;
 	/*
 	 * If the machine has IDTE we prefer to do a per mm flush
 	 * on all cpus instead of doing a local flush if the mm

@@ -27,12 +27,7 @@
 #include <linux/types.h>
 #include <linux/slab.h>
 #include <linux/kernel.h>
-#include <linux/err.h>
 #include <linux/platform_device.h>
-#include <linux/of.h>
-#include <linux/of_irq.h>
-#include <linux/of_gpio.h>
-#include <linux/of_platform.h>
 #include <linux/gpio.h>
 #include <linux/delay.h>
 #include <linux/i2c.h>
@@ -40,24 +35,8 @@
 #include <linux/err.h>
 #include <linux/mfd/core.h>
 #include <linux/mfd/twl6040.h>
-#include <linux/regulator/consumer.h>
 
 #define VIBRACTRL_MEMBER(reg) ((reg == TWL6040_REG_VIBCTLL) ? 0 : 1)
-#define TWL6040_NUM_SUPPLIES	(2)
-
-static bool twl6040_has_vibra(struct twl6040_platform_data *pdata,
-			      struct device_node *node)
-{
-	if (pdata && pdata->vibra)
-		return true;
-
-#ifdef CONFIG_OF
-	if (of_find_node_by_name(node, "vibra"))
-		return true;
-#endif
-
-	return false;
-}
 
 int twl6040_reg_read(struct twl6040 *twl6040, unsigned int reg)
 {
@@ -523,18 +502,17 @@ static int __devinit twl6040_probe(struct i2c_client *client,
 				     const struct i2c_device_id *id)
 {
 	struct twl6040_platform_data *pdata = client->dev.platform_data;
-	struct device_node *node = client->dev.of_node;
 	struct twl6040 *twl6040;
 	struct mfd_cell *cell = NULL;
-	int irq, ret, children = 0;
+	int ret, children = 0;
 
-	if (!pdata && !node) {
+	if (!pdata) {
 		dev_err(&client->dev, "Platform data is missing\n");
 		return -EINVAL;
 	}
 
 	/* In order to operate correctly we need valid interrupt config */
-	if (!client->irq) {
+	if (!client->irq || !pdata->irq_base) {
 		dev_err(&client->dev, "Invalid IRQ configuration\n");
 		return -EINVAL;
 	}
@@ -546,7 +524,7 @@ static int __devinit twl6040_probe(struct i2c_client *client,
 		goto err;
 	}
 
-	twl6040->regmap = devm_regmap_init_i2c(client, &twl6040_regmap_config);
+	twl6040->regmap = regmap_init_i2c(client, &twl6040_regmap_config);
 	if (IS_ERR(twl6040->regmap)) {
 		ret = PTR_ERR(twl6040->regmap);
 		goto err;
@@ -554,23 +532,9 @@ static int __devinit twl6040_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, twl6040);
 
-	twl6040->supplies[0].supply = "vio";
-	twl6040->supplies[1].supply = "v2v1";
-	ret = regulator_bulk_get(&client->dev, TWL6040_NUM_SUPPLIES,
-				 twl6040->supplies);
-	if (ret != 0) {
-		dev_err(&client->dev, "Failed to get supplies: %d\n", ret);
-		goto regulator_get_err;
-	}
-
-	ret = regulator_bulk_enable(TWL6040_NUM_SUPPLIES, twl6040->supplies);
-	if (ret != 0) {
-		dev_err(&client->dev, "Failed to enable supplies: %d\n", ret);
-		goto power_err;
-	}
-
 	twl6040->dev = &client->dev;
 	twl6040->irq = client->irq;
+	twl6040->irq_base = pdata->irq_base;
 
 	mutex_init(&twl6040->mutex);
 	mutex_init(&twl6040->io_mutex);
@@ -579,26 +543,22 @@ static int __devinit twl6040_probe(struct i2c_client *client,
 	twl6040->rev = twl6040_reg_read(twl6040, TWL6040_REG_ASICREV);
 
 	/* ERRATA: Automatic power-up is not possible in ES1.0 */
-	if (twl6040_get_revid(twl6040) > TWL6040_REV_ES1_0) {
-		if (pdata)
-			twl6040->audpwron = pdata->audpwron_gpio;
-		else
-			twl6040->audpwron = of_get_named_gpio(node,
-						"ti,audpwron-gpio", 0);
-	} else
+	if (twl6040_get_revid(twl6040) > TWL6040_REV_ES1_0)
+		twl6040->audpwron = pdata->audpwron_gpio;
+	else
 		twl6040->audpwron = -EINVAL;
 
 	if (gpio_is_valid(twl6040->audpwron)) {
 		ret = gpio_request_one(twl6040->audpwron, GPIOF_OUT_INIT_LOW,
 				       "audpwron");
 		if (ret)
-			goto gpio_err;
+			goto gpio1_err;
 	}
 
 	/* codec interrupt */
 	ret = twl6040_irq_init(twl6040);
 	if (ret)
-		goto irq_init_err;
+		goto gpio2_err;
 
 	ret = request_threaded_irq(twl6040->irq_base + TWL6040_IRQ_READY,
 				   NULL, twl6040_naudint_handler, 0,
@@ -612,27 +572,22 @@ static int __devinit twl6040_probe(struct i2c_client *client,
 	/* dual-access registers controlled by I2C only */
 	twl6040_set_bits(twl6040, TWL6040_REG_ACCCTL, TWL6040_I2CSEL);
 
-	/*
-	 * The main functionality of twl6040 to provide audio on OMAP4+ systems.
-	 * We can add the ASoC codec child whenever this driver has been loaded.
-	 * The ASoC codec can work without pdata, pass the platform_data only if
-	 * it has been provided.
-	 */
-	irq = twl6040->irq_base + TWL6040_IRQ_PLUG;
-	cell = &twl6040->cells[children];
-	cell->name = "twl6040-codec";
-	twl6040_codec_rsrc[0].start = irq;
-	twl6040_codec_rsrc[0].end = irq;
-	cell->resources = twl6040_codec_rsrc;
-	cell->num_resources = ARRAY_SIZE(twl6040_codec_rsrc);
-	if (pdata && pdata->codec) {
+	if (pdata->codec) {
+		int irq = twl6040->irq_base + TWL6040_IRQ_PLUG;
+
+		cell = &twl6040->cells[children];
+		cell->name = "twl6040-codec";
+		twl6040_codec_rsrc[0].start = irq;
+		twl6040_codec_rsrc[0].end = irq;
+		cell->resources = twl6040_codec_rsrc;
+		cell->num_resources = ARRAY_SIZE(twl6040_codec_rsrc);
 		cell->platform_data = pdata->codec;
 		cell->pdata_size = sizeof(*pdata->codec);
+		children++;
 	}
-	children++;
 
-	if (twl6040_has_vibra(pdata, node)) {
-		irq = twl6040->irq_base + TWL6040_IRQ_VIB;
+	if (pdata->vibra) {
+		int irq = twl6040->irq_base + TWL6040_IRQ_VIB;
 
 		cell = &twl6040->cells[children];
 		cell->name = "twl6040-vibra";
@@ -641,17 +596,21 @@ static int __devinit twl6040_probe(struct i2c_client *client,
 		cell->resources = twl6040_vibra_rsrc;
 		cell->num_resources = ARRAY_SIZE(twl6040_vibra_rsrc);
 
-		if (pdata && pdata->vibra) {
-			cell->platform_data = pdata->vibra;
-			cell->pdata_size = sizeof(*pdata->vibra);
-		}
+		cell->platform_data = pdata->vibra;
+		cell->pdata_size = sizeof(*pdata->vibra);
 		children++;
 	}
 
-	ret = mfd_add_devices(&client->dev, -1, twl6040->cells, children,
-			      NULL, 0);
-	if (ret)
+	if (children) {
+		ret = mfd_add_devices(&client->dev, -1, twl6040->cells,
+				      children, NULL, 0);
+		if (ret)
+			goto mfd_err;
+	} else {
+		dev_err(&client->dev, "No platform data found for children\n");
+		ret = -ENODEV;
 		goto mfd_err;
+	}
 
 	return 0;
 
@@ -659,15 +618,12 @@ mfd_err:
 	free_irq(twl6040->irq_base + TWL6040_IRQ_READY, twl6040);
 irq_err:
 	twl6040_irq_exit(twl6040);
-irq_init_err:
+gpio2_err:
 	if (gpio_is_valid(twl6040->audpwron))
 		gpio_free(twl6040->audpwron);
-gpio_err:
-	regulator_bulk_disable(TWL6040_NUM_SUPPLIES, twl6040->supplies);
-power_err:
-	regulator_bulk_free(TWL6040_NUM_SUPPLIES, twl6040->supplies);
-regulator_get_err:
+gpio1_err:
 	i2c_set_clientdata(client, NULL);
+	regmap_exit(twl6040->regmap);
 err:
 	return ret;
 }
@@ -687,9 +643,7 @@ static int __devexit twl6040_remove(struct i2c_client *client)
 
 	mfd_remove_devices(&client->dev);
 	i2c_set_clientdata(client, NULL);
-
-	regulator_bulk_disable(TWL6040_NUM_SUPPLIES, twl6040->supplies);
-	regulator_bulk_free(TWL6040_NUM_SUPPLIES, twl6040->supplies);
+	regmap_exit(twl6040->regmap);
 
 	return 0;
 }

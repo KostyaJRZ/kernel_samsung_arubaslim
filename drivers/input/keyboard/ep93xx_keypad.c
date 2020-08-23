@@ -182,10 +182,16 @@ static void ep93xx_keypad_close(struct input_dev *pdev)
 }
 
 
-#ifdef CONFIG_PM_SLEEP
-static int ep93xx_keypad_suspend(struct device *dev)
+#ifdef CONFIG_PM
+/*
+ * NOTE: I don't know if this is correct, or will work on the ep93xx.
+ *
+ * None of the existing ep93xx drivers have power management support.
+ * But, this is basically what the pxa27x_keypad driver does.
+ */
+static int ep93xx_keypad_suspend(struct platform_device *pdev,
+				 pm_message_t state)
 {
-	struct platform_device *pdev = to_platform_device(dev);
 	struct ep93xx_keypad *keypad = platform_get_drvdata(pdev);
 	struct input_dev *input_dev = keypad->input_dev;
 
@@ -204,9 +210,8 @@ static int ep93xx_keypad_suspend(struct device *dev)
 	return 0;
 }
 
-static int ep93xx_keypad_resume(struct device *dev)
+static int ep93xx_keypad_resume(struct platform_device *pdev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
 	struct ep93xx_keypad *keypad = platform_get_drvdata(pdev);
 	struct input_dev *input_dev = keypad->input_dev;
 
@@ -227,10 +232,10 @@ static int ep93xx_keypad_resume(struct device *dev)
 
 	return 0;
 }
-#endif
-
-static SIMPLE_DEV_PM_OPS(ep93xx_keypad_pm_ops,
-			 ep93xx_keypad_suspend, ep93xx_keypad_resume);
+#else	/* !CONFIG_PM */
+#define ep93xx_keypad_suspend	NULL
+#define ep93xx_keypad_resume	NULL
+#endif	/* !CONFIG_PM */
 
 static int __devinit ep93xx_keypad_probe(struct platform_device *pdev)
 {
@@ -303,16 +308,19 @@ static int __devinit ep93xx_keypad_probe(struct platform_device *pdev)
 	input_dev->open = ep93xx_keypad_open;
 	input_dev->close = ep93xx_keypad_close;
 	input_dev->dev.parent = &pdev->dev;
+	input_dev->keycode = keypad->keycodes;
+	input_dev->keycodesize = sizeof(keypad->keycodes[0]);
+	input_dev->keycodemax = ARRAY_SIZE(keypad->keycodes);
 
-	err = matrix_keypad_build_keymap(keymap_data, NULL,
-					 EP93XX_MATRIX_ROWS, EP93XX_MATRIX_COLS,
-					 keypad->keycodes, input_dev);
-	if (err)
-		goto failed_free_dev;
-
-	if (keypad->pdata->flags & EP93XX_KEYPAD_AUTOREPEAT)
-		__set_bit(EV_REP, input_dev->evbit);
 	input_set_drvdata(input_dev, keypad);
+
+	input_dev->evbit[0] = BIT_MASK(EV_KEY);
+	if (keypad->pdata->flags & EP93XX_KEYPAD_AUTOREPEAT)
+		input_dev->evbit[0] |= BIT_MASK(EV_REP);
+
+	matrix_keypad_build_keymap(keymap_data, 3,
+				   input_dev->keycode, input_dev->keybit);
+	platform_set_drvdata(pdev, keypad);
 
 	err = request_irq(keypad->irq, ep93xx_keypad_irq_handler,
 			  0, pdev->name, keypad);
@@ -323,7 +331,6 @@ static int __devinit ep93xx_keypad_probe(struct platform_device *pdev)
 	if (err)
 		goto failed_free_irq;
 
-	platform_set_drvdata(pdev, keypad);
 	device_init_wakeup(&pdev->dev, 1);
 
 	return 0;
@@ -377,10 +384,11 @@ static struct platform_driver ep93xx_keypad_driver = {
 	.driver		= {
 		.name	= "ep93xx-keypad",
 		.owner	= THIS_MODULE,
-		.pm	= &ep93xx_keypad_pm_ops,
 	},
 	.probe		= ep93xx_keypad_probe,
 	.remove		= __devexit_p(ep93xx_keypad_remove),
+	.suspend	= ep93xx_keypad_suspend,
+	.resume		= ep93xx_keypad_resume,
 };
 module_platform_driver(ep93xx_keypad_driver);
 

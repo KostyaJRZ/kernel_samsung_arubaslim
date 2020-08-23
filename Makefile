@@ -162,7 +162,7 @@ export srctree objtree VPATH
 # SUBARCH tells the usermode build what the underlying arch is.  That is set
 # first, and if a usermode build is happening, the "ARCH=um" on the command
 # line overrides the setting of ARCH below.  If a native build is happening,
-# then ARCH is assigned, getting whatever value it gets normally, and 
+# then ARCH is assigned, getting whatever value it gets normally, and
 # SUBARCH is subsequently ignored.
 
 SUBARCH := $(shell uname -m | sed -e s/i.86/i386/ -e s/sun4u/sparc64/ \
@@ -192,8 +192,12 @@ SUBARCH := $(shell uname -m | sed -e s/i.86/i386/ -e s/sun4u/sparc64/ \
 # Default value for CROSS_COMPILE is not to prefix executables
 # Note: Some architectures assign CROSS_COMPILE in their arch/*/Makefile
 export KBUILD_BUILDHOST := $(SUBARCH)
-ARCH		?= $(SUBARCH)
-CROSS_COMPILE	?= $(CONFIG_CROSS_COMPILE:"%"=%)
+ifeq ($(CONFIG_ARM),y)
+	ARCH	:= arm
+else
+	ARCH	?= $(SUBARCH)
+endif
+CROSS_COMPILE	?=/opt/toolchains/arm-eabi-4.4.3/bin/arm-eabi-
 
 # Architecture as present in compile.h
 UTS_MACHINE 	:= $(ARCH)
@@ -239,8 +243,13 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 	  else if [ -x /bin/bash ]; then echo /bin/bash; \
 	  else echo sh; fi ; fi)
 
+ifdef CONFIG_CCACHE
+HOSTCC       = ccache gcc
+HOSTCXX      = ccache g++
+else
 HOSTCC       = gcc
 HOSTCXX      = g++
+endif
 HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer
 HOSTCXXFLAGS = -O2
 
@@ -285,7 +294,7 @@ export KBUILD_CHECKSRC KBUILD_SRC KBUILD_EXTMOD
 #         cmd_cc_o_c       = $(CC) $(c_flags) -c -o $@ $<
 #
 # If $(quiet) is empty, the whole command will be printed.
-# If it is set to "quiet_", only the short version will be printed. 
+# If it is set to "quiet_", only the short version will be printed.
 # If it is set to "silent_", nothing will be printed at all, since
 # the variable $(silent_cmd_cc_o_c) doesn't exist.
 #
@@ -326,7 +335,11 @@ include $(srctree)/scripts/Kbuild.include
 
 AS		= $(CROSS_COMPILE)as
 LD		= $(CROSS_COMPILE)ld
-CC		= $(CROSS_COMPILE)gcc
+ifdef CONFIG_CCACHE
+REAL_CC		= ccache $(CROSS_COMPILE)gcc
+else
+REAL_CC		= $(CROSS_COMPILE)gcc
+endif
 CPP		= $(CC) -E
 AR		= $(CROSS_COMPILE)ar
 NM		= $(CROSS_COMPILE)nm
@@ -340,15 +353,65 @@ DEPMOD		= /sbin/depmod
 PERL		= perl
 CHECK		= sparse
 
+
+#########################################################################
+# 			Custom CROSS_COMPILE FLAGS			#
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+#----------------------[ General Setup ]--------------------------------#
+ARM_ARCH	:= -march=armv7-a
+ARM_CPU		:= -mcpu=cortex-a5
+#ARM_MTUNE	:= -mtune=cortex-a5
+#ARM_FLOAT_ABI	:= -mfloat-abi=soft
+#ARM_FPU	:= -mfpu=vfp
+#----------------------[ Setup: GCC error handling ]--------------------#
+#ARM_CC_FLAGS	+= -Wno-maybe-uninitialized
+#ARM_CC_FLAGS	+= -Wno-array-bounds
+#ARM_CC_FLAGS	+= -Wno-sizeof-pointer-memaccess
+#ARM_CC_FLAGS	+= -Wno-sequence-point
+#----------------------[ Setup: GCC ]-----------------------------------#
+ARM_CC_FLAGS	+= -marm
+
+#ARM_CC_FLAGS	+= -fno-toplevel-reorder
+
+#ARM_CC_FLAGS	+= $(ARM_MTUNE)
+ARM_CC_FLAGS	+= $(ARM_ARCH)
+ARM_CC_FLAGS	+= $(ARM_CPU)
+#ARM_CC_FLAGS	+= $(ARM_FPU)
+#ARM_CC_FLAGS	+= $(ARM_FLOAT_ABI)
+
+ARM_CC_FLAGS	+= -Wa,$(ARM_ARCH)
+ARM_CC_FLAGS	+= -Wa,$(ARM_CPU)
+#ARM_CC_FLAGS	+= -Wa,$(ARM_FPU)
+#ARM_CC_FLAGS	+= -Wa,$(ARM_FLOAT_ABI)
+#----------------------[ Setup: ASSEMBLER ]-----------------------------#
+ARM_AS_FLAGS	 += $(ARM_ARCH)
+ARM_AS_FLAGS	 += $(ARM_CPU)
+#ARM_AS_FLAGS	 += $(ARM_FPU)
+#ARM_AS_FLAGS	 += $(ARM_FLOAT_ABI)
+#----------------------[ passing FLAGS ]--------------------------------#
+REAL_CC		+= $(ARM_CC_FLAGS)
+AS		+= $(ARM_AS_FLAGS)
+#-----------------------------------------------------------------------#
+export	ARM_ARCH ARM_CPU ARM_MTUNE ARM_FLOAT_ABI ARM_FPU
+export	ARM_CC_FLAGS ARM_AS_FLAGS
+#-----------------------------------------------------------------------#
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
+#		End of custom CROSS_COMPILE FLAGS			#
+#########################################################################
+
+# Use the wrapper for the compiler.  This wrapper scans for new
+# warnings and causes the build to stop upon encountering them.
+CC		= $(srctree)/scripts/gcc-wrapper.py $(REAL_CC)
+
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
 CFLAGS_MODULE   =
 AFLAGS_MODULE   =
-LDFLAGS_MODULE  =
+LDFLAGS_MODULE  = --strip-debug
 CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
-
+GRAPHITE_FLAGS  = -fgraphite -floop-parallelize-all -ftree-loop-linear -floop-interchange -floop-strip-mine -floop-block -floop-flatten
 
 # Use LINUXINCLUDE when you must reference the include/ directory.
 # Needed to be compatible with the O= option
@@ -363,12 +426,12 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-		   -fno-delete-null-pointer-checks
-KBUILD_AFLAGS_KERNEL :=
+		   -fno-delete-null-pointer-checks -Wno-array-bounds -Wno-maybe-uninitialized
+KBUILD_AFLAGS_KERNEL := -Wa,-mimplicit-it=thumb
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__
 KBUILD_AFLAGS_MODULE  := -DMODULE
-KBUILD_CFLAGS_MODULE  := -DMODULE
+KBUILD_CFLAGS_MODULE  := -DMODULE -fno-pic
 KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
 
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
@@ -585,6 +648,15 @@ endif
 # This warning generated too much noise in a regular build.
 # Use make W=1 to enable this warning (see scripts/Makefile.build)
 KBUILD_CFLAGS += $(call cc-disable-warning, unused-but-set-variable)
+# This fuckers will blow my mind 
+KBUILD_CFLAGS += $(call cc-disable-warning, unused-variable)
+KBUILD_CFLAGS += $(call cc-disable-warning, unused-value)
+KBUILD_CFLAGS += $(call cc-disable-warning, format)
+KBUILD_CFLAGS += $(call cc-disable-warning, return-type)
+KBUILD_CFLAGS += $(call cc-disable-warning, unused-function)
+KBUILD_CFLAGS += $(call cc-disable-warning, comment)
+KBUILD_CFLAGS += $(call cc-disable-warning, unused-label)
+KBUILD_CFLAGS += $(call cc-disable-warning, strict-prototypes)
 
 ifdef CONFIG_FRAME_POINTER
 KBUILD_CFLAGS	+= -fno-omit-frame-pointer -fno-optimize-sibling-calls
@@ -598,6 +670,8 @@ ifndef CONFIG_FUNCTION_TRACER
 KBUILD_CFLAGS	+= -fomit-frame-pointer
 endif
 endif
+
+KBUILD_CFLAGS   += $(call cc-option, -fno-var-tracking-assignments)
 
 ifdef CONFIG_DEBUG_INFO
 KBUILD_CFLAGS	+= -g
@@ -749,6 +823,7 @@ quiet_cmd_link-vmlinux = LINK    $@
 # Include targets which we want to
 # execute if the rest of the kernel build went well.
 vmlinux: scripts/link-vmlinux.sh $(vmlinux-deps) FORCE
+
 ifdef CONFIG_HEADERS_CHECK
 	$(Q)$(MAKE) -f $(srctree)/Makefile headers_check
 endif

@@ -42,8 +42,7 @@ EXPORT_SYMBOL(sysctl_local_reserved_ports);
 
 void inet_get_local_port_range(int *low, int *high)
 {
-	unsigned int seq;
-
+	unsigned seq;
 	do {
 		seq = read_seqbegin(&sysctl_local_ports.lock);
 
@@ -54,7 +53,7 @@ void inet_get_local_port_range(int *low, int *high)
 EXPORT_SYMBOL(inet_get_local_port_range);
 
 int inet_csk_bind_conflict(const struct sock *sk,
-			   const struct inet_bind_bucket *tb, bool relax)
+			   const struct inet_bind_bucket *tb)
 {
 	struct sock *sk2;
 	struct hlist_node *node;
@@ -76,14 +75,6 @@ int inet_csk_bind_conflict(const struct sock *sk,
 			if (!reuse || !sk2->sk_reuse ||
 			    sk2->sk_state == TCP_LISTEN) {
 				const __be32 sk2_rcv_saddr = sk_rcv_saddr(sk2);
-				if (!sk2_rcv_saddr || !sk_rcv_saddr(sk) ||
-				    sk2_rcv_saddr == sk_rcv_saddr(sk))
-					break;
-			}
-			if (!relax && reuse && sk2->sk_reuse &&
-			    sk2->sk_state != TCP_LISTEN) {
-				const __be32 sk2_rcv_saddr = sk_rcv_saddr(sk2);
-
 				if (!sk2_rcv_saddr || !sk_rcv_saddr(sk) ||
 				    sk2_rcv_saddr == sk_rcv_saddr(sk))
 					break;
@@ -131,13 +122,12 @@ again:
 					    (tb->num_owners < smallest_size || smallest_size == -1)) {
 						smallest_size = tb->num_owners;
 						smallest_rover = rover;
-						if (atomic_read(&hashinfo->bsockets) > (high - low) + 1 &&
-						    !inet_csk(sk)->icsk_af_ops->bind_conflict(sk, tb, false)) {
+						if (atomic_read(&hashinfo->bsockets) > (high - low) + 1) {
 							snum = smallest_rover;
 							goto tb_found;
 						}
 					}
-					if (!inet_csk(sk)->icsk_af_ops->bind_conflict(sk, tb, false)) {
+					if (!inet_csk(sk)->icsk_af_ops->bind_conflict(sk, tb)) {
 						snum = rover;
 						goto tb_found;
 					}
@@ -182,22 +172,18 @@ have_snum:
 	goto tb_not_found;
 tb_found:
 	if (!hlist_empty(&tb->owners)) {
-		if (sk->sk_reuse == SK_FORCE_REUSE)
-			goto success;
-
 		if (tb->fastreuse > 0 &&
 		    sk->sk_reuse && sk->sk_state != TCP_LISTEN &&
 		    smallest_size == -1) {
 			goto success;
 		} else {
 			ret = 1;
-			if (inet_csk(sk)->icsk_af_ops->bind_conflict(sk, tb, true)) {
+			if (inet_csk(sk)->icsk_af_ops->bind_conflict(sk, tb)) {
 				if (sk->sk_reuse && sk->sk_state != TCP_LISTEN &&
 				    smallest_size != -1 && --attempts >= 0) {
 					spin_unlock(&head->lock);
 					goto again;
 				}
-
 				goto fail_unlock;
 			}
 		}
@@ -377,10 +363,10 @@ struct dst_entry *inet_csk_route_req(struct sock *sk,
 
 	flowi4_init_output(fl4, sk->sk_bound_dev_if, sk->sk_mark,
 			   RT_CONN_FLAGS(sk), RT_SCOPE_UNIVERSE,
-			   sk->sk_protocol,
-			   inet_sk_flowi_flags(sk) & ~FLOWI_FLAG_PRECOW_METRICS,
+			   sk->sk_protocol, inet_sk_flowi_flags(sk),
 			   (opt && opt->opt.srr) ? opt->opt.faddr : ireq->rmt_addr,
-			   ireq->loc_addr, ireq->rmt_port, inet_sk(sk)->inet_sport);
+			   ireq->loc_addr, ireq->rmt_port, inet_sk(sk)->inet_sport,
+			   sock_i_uid(sk));
 	security_req_classify_flow(req, flowi4_to_flowi(fl4));
 	rt = ip_route_output_flow(net, fl4, sk);
 	if (IS_ERR(rt))
@@ -413,7 +399,8 @@ struct dst_entry *inet_csk_route_child_sock(struct sock *sk,
 			   RT_CONN_FLAGS(sk), RT_SCOPE_UNIVERSE,
 			   sk->sk_protocol, inet_sk_flowi_flags(sk),
 			   (opt && opt->opt.srr) ? opt->opt.faddr : ireq->rmt_addr,
-			   ireq->loc_addr, ireq->rmt_port, inet_sk(sk)->inet_sport);
+			   ireq->loc_addr, ireq->rmt_port, inet_sk(sk)->inet_sport,
+			   sock_i_uid(sk));
 	security_req_classify_flow(req, flowi4_to_flowi(fl4));
 	rt = ip_route_output_flow(net, fl4, sk);
 	if (IS_ERR(rt))
@@ -529,7 +516,7 @@ void inet_csk_reqsk_queue_prune(struct sock *parent,
 
 	/* Normally all the openreqs are young and become mature
 	 * (i.e. converted to established socket) for first timeout.
-	 * If synack was not acknowledged for 1 second, it means
+	 * If synack was not acknowledged for 3 seconds, it means
 	 * one of the following things: synack was lost, ack was lost,
 	 * rtt is high or nobody planned to ack (i.e. synflood).
 	 * When server is a bit loaded, queue is populated with old
@@ -570,7 +557,8 @@ void inet_csk_reqsk_queue_prune(struct sock *parent,
 				syn_ack_recalc(req, thresh, max_retries,
 					       queue->rskq_defer_accept,
 					       &expire, &resend);
-				req->rsk_ops->syn_ack_timeout(parent, req);
+				if (req->rsk_ops->syn_ack_timeout)
+					req->rsk_ops->syn_ack_timeout(parent, req);
 				if (!expire &&
 				    (!resend ||
 				     !req->rsk_ops->rtx_syn_ack(parent, req, NULL) ||
@@ -672,6 +660,22 @@ void inet_csk_destroy_sock(struct sock *sk)
 	sock_put(sk);
 }
 EXPORT_SYMBOL(inet_csk_destroy_sock);
+
+/* This function allows to force a closure of a socket after the call to
+ * tcp/dccp_create_openreq_child().
+ */
+void inet_csk_prepare_forced_close(struct sock *sk)
+{
+	/* sk_clone_lock locked the socket and set refcnt to 2 */
+	bh_unlock_sock(sk);
+	sock_put(sk);
+
+	/* The below has to be done to allow calling inet_csk_destroy_sock */
+	sock_set_flag(sk, SOCK_DEAD);
+	percpu_counter_inc(sk->sk_prot->orphan_count);
+	inet_sk(sk)->inet_num = 0;
+}
+EXPORT_SYMBOL(inet_csk_prepare_forced_close);
 
 int inet_csk_listen_start(struct sock *sk, const int nr_table_entries)
 {

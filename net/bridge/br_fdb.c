@@ -107,8 +107,8 @@ void br_fdb_changeaddr(struct net_bridge_port *p, const unsigned char *newaddr)
 				struct net_bridge_port *op;
 				list_for_each_entry(op, &br->port_list, list) {
 					if (op != p &&
-					    ether_addr_equal(op->dev->dev_addr,
-							     f->addr.addr)) {
+					    !compare_ether_addr(op->dev->dev_addr,
+								f->addr.addr)) {
 						f->dst = op;
 						goto insert;
 					}
@@ -214,8 +214,8 @@ void br_fdb_delete_by_port(struct net_bridge *br,
 				struct net_bridge_port *op;
 				list_for_each_entry(op, &br->port_list, list) {
 					if (op != p &&
-					    ether_addr_equal(op->dev->dev_addr,
-							     f->addr.addr)) {
+					    !compare_ether_addr(op->dev->dev_addr,
+								f->addr.addr)) {
 						f->dst = op;
 						goto skip_delete;
 					}
@@ -237,7 +237,7 @@ struct net_bridge_fdb_entry *__br_fdb_get(struct net_bridge *br,
 	struct net_bridge_fdb_entry *fdb;
 
 	hlist_for_each_entry_rcu(fdb, h, &br->hash[br_mac_hash(addr)], hlist) {
-		if (ether_addr_equal(fdb->addr.addr, addr)) {
+		if (!compare_ether_addr(fdb->addr.addr, addr)) {
 			if (unlikely(has_expired(br, fdb)))
 				break;
 			return fdb;
@@ -331,7 +331,7 @@ static struct net_bridge_fdb_entry *fdb_find(struct hlist_head *head,
 	struct net_bridge_fdb_entry *fdb;
 
 	hlist_for_each_entry(fdb, h, head, hlist) {
-		if (ether_addr_equal(fdb->addr.addr, addr))
+		if (!compare_ether_addr(fdb->addr.addr, addr))
 			return fdb;
 	}
 	return NULL;
@@ -344,7 +344,7 @@ static struct net_bridge_fdb_entry *fdb_find_rcu(struct hlist_head *head,
 	struct net_bridge_fdb_entry *fdb;
 
 	hlist_for_each_entry_rcu(fdb, h, head, hlist) {
-		if (ether_addr_equal(fdb->addr.addr, addr))
+		if (!compare_ether_addr(fdb->addr.addr, addr))
 			return fdb;
 	}
 	return NULL;
@@ -440,7 +440,7 @@ void br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
 			fdb->updated = jiffies;
 		}
 	} else {
-		spin_lock(&br->hash_lock);
+		spin_lock_bh(&br->hash_lock);
 		if (likely(!fdb_find(head, addr))) {
 			fdb = fdb_create(head, source, addr);
 			if (fdb)
@@ -449,7 +449,7 @@ void br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
 		/* else  we lose race and someone else inserts
 		 * it first, don't bother updating
 		 */
-		spin_unlock(&br->hash_lock);
+		spin_unlock_bh(&br->hash_lock);
 	}
 }
 
@@ -487,14 +487,14 @@ static int fdb_fill_info(struct sk_buff *skb, const struct net_bridge *br,
 	ndm->ndm_ifindex = fdb->dst ? fdb->dst->dev->ifindex : br->dev->ifindex;
 	ndm->ndm_state   = fdb_to_nud(fdb);
 
-	if (nla_put(skb, NDA_LLADDR, ETH_ALEN, &fdb->addr))
-		goto nla_put_failure;
+	NLA_PUT(skb, NDA_LLADDR, ETH_ALEN, &fdb->addr);
+
 	ci.ndm_used	 = jiffies_to_clock_t(now - fdb->used);
 	ci.ndm_confirmed = 0;
 	ci.ndm_updated	 = jiffies_to_clock_t(now - fdb->updated);
 	ci.ndm_refcnt	 = 0;
-	if (nla_put(skb, NDA_CACHEINFO, sizeof(ci), &ci))
-		goto nla_put_failure;
+	NLA_PUT(skb, NDA_CACHEINFO, sizeof(ci), &ci);
+
 	return nlmsg_end(skb, nlh);
 
 nla_put_failure:
@@ -535,38 +535,44 @@ errout:
 }
 
 /* Dump information about entries, in response to GETNEIGH */
-int br_fdb_dump(struct sk_buff *skb,
-		struct netlink_callback *cb,
-		struct net_device *dev,
-		int idx)
+int br_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb)
 {
-	struct net_bridge *br = netdev_priv(dev);
-	int i;
+	struct net *net = sock_net(skb->sk);
+	struct net_device *dev;
+	int idx = 0;
 
-	if (!(dev->priv_flags & IFF_EBRIDGE))
-		goto out;
+	rcu_read_lock();
+	for_each_netdev_rcu(net, dev) {
+		struct net_bridge *br = netdev_priv(dev);
+		int i;
 
-	for (i = 0; i < BR_HASH_SIZE; i++) {
-		struct hlist_node *h;
-		struct net_bridge_fdb_entry *f;
+		if (!(dev->priv_flags & IFF_EBRIDGE))
+			continue;
 
-		hlist_for_each_entry_rcu(f, h, &br->hash[i], hlist) {
-			if (idx < cb->args[0])
-				goto skip;
+		for (i = 0; i < BR_HASH_SIZE; i++) {
+			struct hlist_node *h;
+			struct net_bridge_fdb_entry *f;
 
-			if (fdb_fill_info(skb, br, f,
-					  NETLINK_CB(cb->skb).pid,
-					  cb->nlh->nlmsg_seq,
-					  RTM_NEWNEIGH,
-					  NLM_F_MULTI) < 0)
-				break;
+			hlist_for_each_entry_rcu(f, h, &br->hash[i], hlist) {
+				if (idx < cb->args[0])
+					goto skip;
+
+				if (fdb_fill_info(skb, br, f,
+						  NETLINK_CB(cb->skb).pid,
+						  cb->nlh->nlmsg_seq,
+						  RTM_NEWNEIGH,
+						  NLM_F_MULTI) < 0)
+					break;
 skip:
-			++idx;
+				++idx;
+			}
 		}
 	}
+	rcu_read_unlock();
 
-out:
-	return idx;
+	cb->args[0] = idx;
+
+	return skb->len;
 }
 
 /* Update (create or replace) forwarding database entry */
@@ -608,11 +614,43 @@ static int fdb_add_entry(struct net_bridge_port *source, const __u8 *addr,
 }
 
 /* Add new permanent fdb entry with RTM_NEWNEIGH */
-int br_fdb_add(struct ndmsg *ndm, struct net_device *dev,
-	       unsigned char *addr, u16 nlh_flags)
+int br_fdb_add(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg)
 {
+	struct net *net = sock_net(skb->sk);
+	struct ndmsg *ndm;
+	struct nlattr *tb[NDA_MAX+1];
+	struct net_device *dev;
 	struct net_bridge_port *p;
-	int err = 0;
+	const __u8 *addr;
+	int err;
+
+	ASSERT_RTNL();
+	err = nlmsg_parse(nlh, sizeof(*ndm), tb, NDA_MAX, NULL);
+	if (err < 0)
+		return err;
+
+	ndm = nlmsg_data(nlh);
+	if (ndm->ndm_ifindex == 0) {
+		pr_info("bridge: RTM_NEWNEIGH with invalid ifindex\n");
+		return -EINVAL;
+	}
+
+	dev = __dev_get_by_index(net, ndm->ndm_ifindex);
+	if (dev == NULL) {
+		pr_info("bridge: RTM_NEWNEIGH with unknown ifindex\n");
+		return -ENODEV;
+	}
+
+	if (!tb[NDA_LLADDR] || nla_len(tb[NDA_LLADDR]) != ETH_ALEN) {
+		pr_info("bridge: RTM_NEWNEIGH with invalid address\n");
+		return -EINVAL;
+	}
+
+	addr = nla_data(tb[NDA_LLADDR]);
+	if (!is_valid_ether_addr(addr)) {
+		pr_info("bridge: RTM_NEWNEIGH with invalid ether address\n");
+		return -EINVAL;
+	}
 
 	if (!(ndm->ndm_state & (NUD_PERMANENT|NUD_NOARP|NUD_REACHABLE))) {
 		pr_info("bridge: RTM_NEWNEIGH with invalid state %#x\n", ndm->ndm_state);
@@ -627,19 +665,21 @@ int br_fdb_add(struct ndmsg *ndm, struct net_device *dev,
 	}
 
 	if (ndm->ndm_flags & NTF_USE) {
+		local_bh_disable();
 		rcu_read_lock();
 		br_fdb_update(p->br, p, addr);
 		rcu_read_unlock();
+		local_bh_enable();
 	} else {
 		spin_lock_bh(&p->br->hash_lock);
-		err = fdb_add_entry(p, addr, ndm->ndm_state, nlh_flags);
+		err = fdb_add_entry(p, addr, ndm->ndm_state, nlh->nlmsg_flags);
 		spin_unlock_bh(&p->br->hash_lock);
 	}
 
 	return err;
 }
 
-static int fdb_delete_by_addr(struct net_bridge_port *p, u8 *addr)
+static int fdb_delete_by_addr(struct net_bridge_port *p, const u8 *addr)
 {
 	struct net_bridge *br = p->br;
 	struct hlist_head *head = &br->hash[br_mac_hash(addr)];
@@ -654,11 +694,39 @@ static int fdb_delete_by_addr(struct net_bridge_port *p, u8 *addr)
 }
 
 /* Remove neighbor entry with RTM_DELNEIGH */
-int br_fdb_delete(struct ndmsg *ndm, struct net_device *dev,
-		  unsigned char *addr)
+int br_fdb_delete(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg)
 {
+	struct net *net = sock_net(skb->sk);
+	struct ndmsg *ndm;
 	struct net_bridge_port *p;
+	struct nlattr *llattr;
+	const __u8 *addr;
+	struct net_device *dev;
 	int err;
+
+	ASSERT_RTNL();
+	if (nlmsg_len(nlh) < sizeof(*ndm))
+		return -EINVAL;
+
+	ndm = nlmsg_data(nlh);
+	if (ndm->ndm_ifindex == 0) {
+		pr_info("bridge: RTM_DELNEIGH with invalid ifindex\n");
+		return -EINVAL;
+	}
+
+	dev = __dev_get_by_index(net, ndm->ndm_ifindex);
+	if (dev == NULL) {
+		pr_info("bridge: RTM_DELNEIGH with unknown ifindex\n");
+		return -ENODEV;
+	}
+
+	llattr = nlmsg_find_attr(nlh, sizeof(*ndm), NDA_LLADDR);
+	if (llattr == NULL || nla_len(llattr) != ETH_ALEN) {
+		pr_info("bridge: RTM_DELNEIGH with invalid address\n");
+		return -EINVAL;
+	}
+
+	addr = nla_data(llattr);
 
 	p = br_port_get_rtnl(dev);
 	if (p == NULL) {

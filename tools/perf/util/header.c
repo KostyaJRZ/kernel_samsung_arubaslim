@@ -437,7 +437,7 @@ static bool perf_session__read_build_ids(struct perf_session *session, bool with
 	return ret;
 }
 
-static int write_tracing_data(int fd, struct perf_header *h __used,
+static int write_trace_info(int fd, struct perf_header *h __used,
 			    struct perf_evlist *evlist)
 {
 	return read_tracing_data(fd, &evlist->entries);
@@ -1055,25 +1055,19 @@ static void print_cpudesc(struct perf_header *ph, int fd, FILE *fp)
 static void print_nrcpus(struct perf_header *ph, int fd, FILE *fp)
 {
 	ssize_t ret;
-	u32 nr;
+	u32 nr[2];
 
 	ret = read(fd, &nr, sizeof(nr));
 	if (ret != (ssize_t)sizeof(nr))
-		nr = -1; /* interpreted as error */
+		nr[0] = nr[1] = -1; /* interpreted as error */
 
-	if (ph->needs_swap)
-		nr = bswap_32(nr);
+	if (ph->needs_swap) {
+		nr[0] = bswap_32(nr[0]);
+		nr[1] = bswap_32(nr[1]);
+	}
 
-	fprintf(fp, "# nrcpus online : %u\n", nr);
-
-	ret = read(fd, &nr, sizeof(nr));
-	if (ret != (ssize_t)sizeof(nr))
-		nr = -1; /* interpreted as error */
-
-	if (ph->needs_swap)
-		nr = bswap_32(nr);
-
-	fprintf(fp, "# nrcpus avail : %u\n", nr);
+	fprintf(fp, "# nrcpus online : %u\n", nr[1]);
+	fprintf(fp, "# nrcpus avail : %u\n", nr[0]);
 }
 
 static void print_version(struct perf_header *ph, int fd, FILE *fp)
@@ -1472,7 +1466,7 @@ out:
 	return err;
 }
 
-static int process_tracing_data(struct perf_file_section *section __unused,
+static int process_trace_info(struct perf_file_section *section __unused,
 			      struct perf_header *ph __unused,
 			      int feat __unused, int fd)
 {
@@ -1508,11 +1502,11 @@ struct feature_ops {
 		.full_only = true }
 
 /* feature_ops not implemented: */
-#define print_tracing_data	NULL
-#define print_build_id		NULL
+#define print_trace_info		NULL
+#define print_build_id			NULL
 
 static const struct feature_ops feat_ops[HEADER_LAST_FEATURE] = {
-	FEAT_OPP(HEADER_TRACING_DATA,	tracing_data),
+	FEAT_OPP(HEADER_TRACE_INFO,	trace_info),
 	FEAT_OPP(HEADER_BUILD_ID,	build_id),
 	FEAT_OPA(HEADER_HOSTNAME,	hostname),
 	FEAT_OPA(HEADER_OSRELEASE,	osrelease),
@@ -1942,6 +1936,7 @@ int perf_file_header__read(struct perf_file_header *header,
 		else
 			return -1;
 	} else if (ph->needs_swap) {
+		unsigned int i;
 		/*
 		 * feature bitmap is declared as an array of unsigned longs --
 		 * not good since its size can differ between the host that
@@ -1957,17 +1952,14 @@ int perf_file_header__read(struct perf_file_header *header,
 		 * file), punt and fallback to the original behavior --
 		 * clearing all feature bits and setting buildid.
 		 */
-		mem_bswap_64(&header->adds_features,
-			    BITS_TO_U64(HEADER_FEAT_BITS));
+		for (i = 0; i < BITS_TO_LONGS(HEADER_FEAT_BITS); ++i)
+			header->adds_features[i] = bswap_64(header->adds_features[i]);
 
 		if (!test_bit(HEADER_HOSTNAME, header->adds_features)) {
-			/* unswap as u64 */
-			mem_bswap_64(&header->adds_features,
-				    BITS_TO_U64(HEADER_FEAT_BITS));
-
-			/* unswap as u32 */
-			mem_bswap_32(&header->adds_features,
-				    BITS_TO_U32(HEADER_FEAT_BITS));
+			for (i = 0; i < BITS_TO_LONGS(HEADER_FEAT_BITS); ++i) {
+				header->adds_features[i] = bswap_64(header->adds_features[i]);
+				header->adds_features[i] = bswap_32(header->adds_features[i]);
+			}
 		}
 
 		if (!test_bit(HEADER_HOSTNAME, header->adds_features)) {
@@ -2093,35 +2085,6 @@ static int read_attr(int fd, struct perf_header *ph,
 	return ret <= 0 ? -1 : 0;
 }
 
-static int perf_evsel__set_tracepoint_name(struct perf_evsel *evsel)
-{
-	struct event_format *event = trace_find_event(evsel->attr.config);
-	char bf[128];
-
-	if (event == NULL)
-		return -1;
-
-	snprintf(bf, sizeof(bf), "%s:%s", event->system, event->name);
-	evsel->name = strdup(bf);
-	if (event->name == NULL)
-		return -1;
-
-	return 0;
-}
-
-static int perf_evlist__set_tracepoint_names(struct perf_evlist *evlist)
-{
-	struct perf_evsel *pos;
-
-	list_for_each_entry(pos, &evlist->entries, node) {
-		if (pos->attr.type == PERF_TYPE_TRACEPOINT &&
-		    perf_evsel__set_tracepoint_name(pos))
-			return -1;
-	}
-
-	return 0;
-}
-
 int perf_session__read_header(struct perf_session *session, int fd)
 {
 	struct perf_header *header = &session->header;
@@ -2202,9 +2165,6 @@ int perf_session__read_header(struct perf_session *session, int fd)
 				      perf_file_section__process);
 
 	lseek(fd, header->data_offset, SEEK_SET);
-
-	if (perf_evlist__set_tracepoint_names(session->evlist))
-		goto out_delete_evlist;
 
 	header->frozen = 1;
 	return 0;

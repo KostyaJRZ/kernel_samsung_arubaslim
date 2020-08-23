@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2012 Michael Hennerich, Analog Devices Inc.
+ * Copyright (C) 2010 Michael Hennerich, Analog Devices Inc.
  * Copyright (C) 2008-2010 Jonathan Cameron
  *
  * This program is free software; you can redistribute it and/or modify
@@ -16,10 +16,10 @@
 #include <linux/i2c.h>
 #include <linux/bitops.h>
 
-#include <linux/iio/iio.h>
-#include <linux/iio/buffer.h>
-#include <linux/iio/kfifo_buf.h>
-#include <linux/iio/trigger_consumer.h>
+#include "../iio.h"
+#include "../buffer.h"
+#include "../ring_sw.h"
+#include "../trigger_consumer.h"
 
 #include "ad799x.h"
 
@@ -32,7 +32,9 @@
  **/
 static int ad799x_ring_preenable(struct iio_dev *indio_dev)
 {
+	struct iio_buffer *ring = indio_dev->buffer;
 	struct ad799x_state *st = iio_priv(indio_dev);
+
 	/*
 	 * Need to figure out the current mode based upon the requested
 	 * scan mask in iio_dev
@@ -41,7 +43,21 @@ static int ad799x_ring_preenable(struct iio_dev *indio_dev)
 	if (st->id == ad7997 || st->id == ad7998)
 		ad7997_8_set_scan_mode(st, *indio_dev->active_scan_mask);
 
-	return iio_sw_buffer_preenable(indio_dev);
+	st->d_size = bitmap_weight(indio_dev->active_scan_mask,
+				   indio_dev->masklength) * 2;
+
+	if (ring->scan_timestamp) {
+		st->d_size += sizeof(s64);
+
+		if (st->d_size % sizeof(s64))
+			st->d_size += sizeof(s64) - (st->d_size % sizeof(s64));
+	}
+
+	if (indio_dev->buffer->access->set_bytes_per_datum)
+		indio_dev->buffer->access->
+			set_bytes_per_datum(indio_dev->buffer, st->d_size);
+
+	return 0;
 }
 
 /**
@@ -62,7 +78,7 @@ static irqreturn_t ad799x_trigger_handler(int irq, void *p)
 	int b_sent;
 	u8 cmd;
 
-	rxbuf = kmalloc(indio_dev->scan_bytes, GFP_KERNEL);
+	rxbuf = kmalloc(st->d_size, GFP_KERNEL);
 	if (rxbuf == NULL)
 		goto out;
 
@@ -95,8 +111,8 @@ static irqreturn_t ad799x_trigger_handler(int irq, void *p)
 
 	time_ns = iio_get_time_ns();
 
-	if (indio_dev->scan_timestamp)
-		memcpy(rxbuf + indio_dev->scan_bytes - sizeof(s64),
+	if (ring->scan_timestamp)
+		memcpy(rxbuf + st->d_size - sizeof(s64),
 			&time_ns, sizeof(time_ns));
 
 	ring->access->store_to(indio_dev->buffer, rxbuf, time_ns);
@@ -120,7 +136,7 @@ int ad799x_register_ring_funcs_and_init(struct iio_dev *indio_dev)
 {
 	int ret = 0;
 
-	indio_dev->buffer = iio_kfifo_allocate(indio_dev);
+	indio_dev->buffer = iio_sw_rb_allocate(indio_dev);
 	if (!indio_dev->buffer) {
 		ret = -ENOMEM;
 		goto error_ret;
@@ -134,7 +150,7 @@ int ad799x_register_ring_funcs_and_init(struct iio_dev *indio_dev)
 						 indio_dev->id);
 	if (indio_dev->pollfunc == NULL) {
 		ret = -ENOMEM;
-		goto error_deallocate_kfifo;
+		goto error_deallocate_sw_rb;
 	}
 
 	/* Ring buffer functions - here trigger setup related */
@@ -145,8 +161,8 @@ int ad799x_register_ring_funcs_and_init(struct iio_dev *indio_dev)
 	indio_dev->modes |= INDIO_BUFFER_TRIGGERED;
 	return 0;
 
-error_deallocate_kfifo:
-	iio_kfifo_free(indio_dev->buffer);
+error_deallocate_sw_rb:
+	iio_sw_rb_free(indio_dev->buffer);
 error_ret:
 	return ret;
 }
@@ -154,5 +170,5 @@ error_ret:
 void ad799x_ring_cleanup(struct iio_dev *indio_dev)
 {
 	iio_dealloc_pollfunc(indio_dev->pollfunc);
-	iio_kfifo_free(indio_dev->buffer);
+	iio_sw_rb_free(indio_dev->buffer);
 }

@@ -190,20 +190,6 @@ tcp_cookie_size - INTEGER
 tcp_dsack - BOOLEAN
 	Allows TCP to send "duplicate" SACKs.
 
-tcp_early_retrans - INTEGER
-	Enable Early Retransmit (ER), per RFC 5827. ER lowers the threshold
-	for triggering fast retransmit when the amount of outstanding data is
-	small and when no previously unsent data can be transmitted (such
-	that limited transmit could be used).
-	Possible values:
-		0 disables ER
-		1 enables ER
-		2 enables ER but delays fast recovery and fast retransmit
-		  by a fourth of RTT. This mitigates connection falsely
-		  recovers when network has a small degree of reordering
-		  (less than 3 packets).
-	Default: 2
-
 tcp_ecn - INTEGER
 	Enable Explicit Congestion Notification (ECN) in TCP. ECN is only
 	used when both ends of the TCP flow support it. It is useful to
@@ -550,6 +536,25 @@ tcp_thin_dupack - BOOLEAN
 	For more information on thin streams, see
 	Documentation/networking/tcp-thin.txt
 	Default: 0
+
+tcp_challenge_ack_limit - INTEGER
+	Limits number of Challenge ACK sent per second, as recommended
+	in RFC 5961 (Improving TCP's Robustness to Blind In-Window Attacks)
+	Default: 100
+
+tcp_limit_output_bytes - INTEGER
+	Controls TCP Small Queue limit per tcp socket.
+	TCP bulk sender tends to increase packets in flight until it
+	gets losses notifications. With SNDBUF autotuning, this can
+	result in a large amount of packets queued in qdisc/device
+	on the local machine, hurting latency of other flows, for
+	typical pfifo_fast qdiscs.
+	tcp_limit_output_bytes limits the number of bytes on qdisc
+	or device to reduce artificial RTT/cwnd and reduce bufferbloat.
+	Note: For GSO/TSO enabled flows, we try to have at least two
+	packets in flight. Reducing tcp_limit_output_bytes might also
+	reduce the size of individual GSO packet (64KB being the max)
+	Default: 131072
 
 UDP variables:
 
@@ -1053,8 +1058,14 @@ conf/all/forwarding - BOOLEAN
 
 	This referred to as global forwarding.
 
-proxy_ndp - BOOLEAN
+proxy_ndp - INTEGER
 	Do proxy ndp.
+
+	Possible values are:
+		0 Proxy NDP is disabled
+		1 Proxy NDP is enabled
+		2 NDP packets are sent to userspace, where a userspace proxy
+                  can be implemented
 
 conf/interface/*:
 	Change special settings per interface.
@@ -1301,22 +1312,13 @@ bridge-nf-call-ip6tables - BOOLEAN
 bridge-nf-filter-vlan-tagged - BOOLEAN
 	1 : pass bridged vlan-tagged ARP/IP/IPv6 traffic to {arp,ip,ip6}tables.
 	0 : disable this.
-	Default: 0
+	Default: 1
 
 bridge-nf-filter-pppoe-tagged - BOOLEAN
 	1 : pass bridged pppoe-tagged IP/IPv6 traffic to {ip,ip6}tables.
 	0 : disable this.
-	Default: 0
+	Default: 1
 
-bridge-nf-pass-vlan-input-dev - BOOLEAN
-	1: if bridge-nf-filter-vlan-tagged is enabled, try to find a vlan
-	interface on the bridge and set the netfilter input device to the vlan.
-	This allows use of e.g. "iptables -i br0.1" and makes the REDIRECT
-	target work with vlan-on-top-of-bridge interfaces.  When no matching
-	vlan interface is found, or this switch is off, the input device is
-	set to the bridge interface.
-	0: disable bridge netfilter vlan interface lookup.
-	Default: 0
 
 proc/sys/net/sctp/* Variables:
 
@@ -1507,8 +1509,11 @@ addr_scope_policy - INTEGER
 
 
 /proc/sys/net/core/*
-	Please see: Documentation/sysctl/net.txt for descriptions of these entries.
+dev_weight - INTEGER
+	The maximum number of packets that kernel can handle on a NAPI
+	interrupt, it's a Per-CPU variable.
 
+	Default: 64
 
 /proc/sys/net/unix/*
 max_dgram_qlen - INTEGER

@@ -18,8 +18,8 @@
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
 
-#include <linux/iio/iio.h>
-#include <linux/iio/sysfs.h>
+#include "../iio.h"
+#include "../sysfs.h"
 #include "dac.h"
 
 
@@ -85,8 +85,7 @@ enum ad5380_type {
 	.type = IIO_VOLTAGE,					\
 	.indexed = 1,						\
 	.output = 1,						\
-	.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |		\
-		IIO_CHAN_INFO_SCALE_SHARED_BIT |		\
+	.info_mask = IIO_CHAN_INFO_SCALE_SHARED_BIT |		\
 		IIO_CHAN_INFO_CALIBSCALE_SEPARATE_BIT |		\
 		IIO_CHAN_INFO_CALIBBIAS_SEPARATE_BIT,		\
 	.scan_type = IIO_ST('u', (_bits), 16, 14 - (_bits))	\
@@ -168,7 +167,7 @@ static const struct ad5380_chip_info ad5380_chip_info_tbl[] = {
 static ssize_t ad5380_read_dac_powerdown(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
+	struct iio_dev *indio_dev = dev_get_drvdata(dev);
 	struct ad5380_state *st = iio_priv(indio_dev);
 
 	return sprintf(buf, "%d\n", st->pwr_down);
@@ -177,7 +176,7 @@ static ssize_t ad5380_read_dac_powerdown(struct device *dev,
 static ssize_t ad5380_write_dac_powerdown(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t len)
 {
-	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
+	struct iio_dev *indio_dev = dev_get_drvdata(dev);
 	struct ad5380_state *st = iio_priv(indio_dev);
 	bool pwr_down;
 	int ret;
@@ -213,7 +212,7 @@ static const char ad5380_powerdown_modes[][15] = {
 static ssize_t ad5380_read_powerdown_mode(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
+	struct iio_dev *indio_dev = dev_get_drvdata(dev);
 	struct ad5380_state *st = iio_priv(indio_dev);
 	unsigned int mode;
 	int ret;
@@ -230,7 +229,7 @@ static ssize_t ad5380_read_powerdown_mode(struct device *dev,
 static ssize_t ad5380_write_powerdown_mode(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t len)
 {
-	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
+	struct iio_dev *indio_dev = dev_get_drvdata(dev);
 	struct ad5380_state *st = iio_priv(indio_dev);
 	unsigned int i;
 	int ret;
@@ -293,7 +292,7 @@ static int ad5380_write_raw(struct iio_dev *indio_dev,
 	struct ad5380_state *st = iio_priv(indio_dev);
 
 	switch (info) {
-	case IIO_CHAN_INFO_RAW:
+	case 0:
 	case IIO_CHAN_INFO_CALIBSCALE:
 		if (val >= max_val || val < 0)
 			return -EINVAL;
@@ -323,7 +322,7 @@ static int ad5380_read_raw(struct iio_dev *indio_dev,
 	int ret;
 
 	switch (info) {
-	case IIO_CHAN_INFO_RAW:
+	case 0:
 	case IIO_CHAN_INFO_CALIBSCALE:
 		ret = regmap_read(st->regmap, ad5380_info_to_reg(chan, info),
 					val);
@@ -389,7 +388,7 @@ static int __devinit ad5380_probe(struct device *dev, struct regmap *regmap,
 	unsigned int ctrl = 0;
 	int ret;
 
-	indio_dev = iio_device_alloc(sizeof(*st));
+	indio_dev = iio_allocate_device(sizeof(*st));
 	if (indio_dev == NULL) {
 		dev_err(dev, "Failed to allocate iio device\n");
 		ret = -ENOMEM;
@@ -455,7 +454,7 @@ error_free_reg:
 
 	kfree(indio_dev->channels);
 error_free:
-	iio_device_free(indio_dev);
+	iio_free_device(indio_dev);
 error_regmap_exit:
 	regmap_exit(regmap);
 
@@ -477,7 +476,7 @@ static int __devexit ad5380_remove(struct device *dev)
 	}
 
 	regmap_exit(st->regmap);
-	iio_device_free(indio_dev);
+	iio_free_device(indio_dev);
 
 	return 0;
 }

@@ -10,6 +10,4 @@ enum die_val {
 	DIE_SSTEP,
 };
 
-extern void printk_address(unsigned long address, int reliable);
-
 #endif /* __ASM_SH_KDEBUG_H */

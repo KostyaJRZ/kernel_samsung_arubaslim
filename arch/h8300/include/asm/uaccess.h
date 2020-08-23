@@ -100,6 +100,7 @@ extern int __put_user_bad(void);
 	break;							\
     default:							\
 	__gu_err = __get_user_bad();				\
+	__gu_val = 0;						\
 	break;							\
     }								\
     (x) = __gu_val;						\
@@ -157,7 +158,5 @@ clear_user(void *to, unsigned long n)
 	memset(to, 0, n);
 	return 0;
 }
-
-#define __clear_user	clear_user
 
 #endif /* _H8300_UACCESS_H */

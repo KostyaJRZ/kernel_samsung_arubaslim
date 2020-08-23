@@ -39,13 +39,10 @@ static struct regulator_desc dummy_desc = {
 
 static int __devinit dummy_regulator_probe(struct platform_device *pdev)
 {
-	struct regulator_config config = { };
 	int ret;
 
-	config.dev = &pdev->dev;
-	config.init_data = &dummy_initdata;
-
-	dummy_regulator_rdev = regulator_register(&dummy_desc, &config);
+	dummy_regulator_rdev = regulator_register(&dummy_desc, NULL,
+						  &dummy_initdata, NULL, NULL);
 	if (IS_ERR(dummy_regulator_rdev)) {
 		ret = PTR_ERR(dummy_regulator_rdev);
 		pr_err("Failed to register regulator: %d\n", ret);

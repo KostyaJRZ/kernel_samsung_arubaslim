@@ -16,7 +16,6 @@
 #include <linux/input.h>
 #include <linux/input/sh_keysc.h>
 #include <linux/smc91x.h>
-#include <linux/sh_intc.h>
 #include <mach-se/mach/se7722.h>
 #include <mach-se/mach/mrshpc.h>
 #include <asm/machvec.h>
@@ -115,7 +114,7 @@ static struct resource sh_keysc_resources[] = {
 		.flags  = IORESOURCE_MEM,
 	},
 	[1] = {
-		.start  = evt2irq(0xbe0),
+		.start  = 79,
 		.flags  = IORESOURCE_IRQ,
 	},
 };

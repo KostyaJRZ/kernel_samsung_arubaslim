@@ -427,6 +427,9 @@ static int __devinit yellowfin_init_one(struct pci_dev *pdev,
 	/* Reset the chip. */
 	iowrite32(0x80000000, ioaddr + DMACtrl);
 
+	dev->base_addr = (unsigned long)ioaddr;
+	dev->irq = irq;
+
 	pci_set_drvdata(pdev, dev);
 	spin_lock_init(&np->lock);
 
@@ -566,20 +569,25 @@ static void mdio_write(void __iomem *ioaddr, int phy_id, int location, int value
 static int yellowfin_open(struct net_device *dev)
 {
 	struct yellowfin_private *yp = netdev_priv(dev);
-	const int irq = yp->pci_dev->irq;
 	void __iomem *ioaddr = yp->base;
-	int i, rc;
+	int i, ret;
 
 	/* Reset the chip. */
 	iowrite32(0x80000000, ioaddr + DMACtrl);
 
-	rc = request_irq(irq, yellowfin_interrupt, IRQF_SHARED, dev->name, dev);
-	if (rc)
-		return rc;
+	ret = request_irq(dev->irq, yellowfin_interrupt, IRQF_SHARED, dev->name, dev);
+	if (ret)
+		return ret;
 
-	rc = yellowfin_init_ring(dev);
-	if (rc < 0)
-		goto err_free_irq;
+	if (yellowfin_debug > 1)
+		netdev_printk(KERN_DEBUG, dev, "%s() irq %d\n",
+			      __func__, dev->irq);
+
+	ret = yellowfin_init_ring(dev);
+	if (ret) {
+		free_irq(dev->irq, dev);
+		return ret;
+	}
 
 	iowrite32(yp->rx_ring_dma, ioaddr + RxPtr);
 	iowrite32(yp->tx_ring_dma, ioaddr + TxPtr);
@@ -639,12 +647,8 @@ static int yellowfin_open(struct net_device *dev)
 	yp->timer.data = (unsigned long)dev;
 	yp->timer.function = yellowfin_timer;				/* timer handler */
 	add_timer(&yp->timer);
-out:
-	return rc;
 
-err_free_irq:
-	free_irq(irq, dev);
-	goto out;
+	return 0;
 }
 
 static void yellowfin_timer(unsigned long data)
@@ -1247,7 +1251,7 @@ static int yellowfin_close(struct net_device *dev)
 	}
 #endif /* __i386__ debugging only */
 
-	free_irq(yp->pci_dev->irq, dev);
+	free_irq(dev->irq, dev);
 
 	/* Free all the skbuffs in the Rx queue. */
 	for (i = 0; i < RX_RING_SIZE; i++) {

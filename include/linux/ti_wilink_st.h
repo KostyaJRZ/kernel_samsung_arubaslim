@@ -25,8 +25,6 @@
 #ifndef TI_WILINK_ST_H
 #define TI_WILINK_ST_H
 
-#include <linux/skbuff.h>
-
 /**
  * enum proto-type - The protocol on WiLink chips which share a
  *	common physical interface like UART.

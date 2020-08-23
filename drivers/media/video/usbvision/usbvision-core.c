@@ -601,12 +601,13 @@ static int usbvision_decompress(struct usb_usbvision *usbvision, unsigned char *
 								unsigned char *decompressed, int *start_pos,
 								int *block_typestart_pos, int len)
 {
-	int rest_pixel, idx, pos, extra_pos, block_len, block_type_pos, block_type_len;
+	int rest_pixel, idx, max_pos, pos, extra_pos, block_len, block_type_pos, block_type_len;
 	unsigned char block_byte, block_code, block_type, block_type_byte, integrator;
 
 	integrator = 0;
 	pos = *start_pos;
 	block_type_pos = *block_typestart_pos;
+	max_pos = 396; /* pos + len; */
 	extra_pos = pos;
 	block_len = 0;
 	block_byte = 0;
@@ -701,7 +702,7 @@ static enum parse_state usbvision_parse_compress(struct usb_usbvision *usbvision
 	unsigned char strip_data[USBVISION_STRIP_LEN_MAX];
 	unsigned char strip_header[USBVISION_STRIP_HEADER_LEN];
 	int idx, idx_end, strip_len, strip_ptr, startblock_pos, block_pos, block_type_pos;
-	int clipmask_index;
+	int clipmask_index, bytes_per_pixel, rc;
 	int image_size;
 	unsigned char rv, gv, bv;
 	static unsigned char *Y, *U, *V;
@@ -768,6 +769,7 @@ static enum parse_state usbvision_parse_compress(struct usb_usbvision *usbvision
 		return parse_state_next_frame;
 	}
 
+	bytes_per_pixel = frame->v4l2_format.bytes_per_pixel;
 	clipmask_index = frame->curline * MAX_FRAME_WIDTH;
 
 	scratch_get(usbvision, strip_data, strip_len);
@@ -779,14 +781,14 @@ static enum parse_state usbvision_parse_compress(struct usb_usbvision *usbvision
 
 	usbvision->block_pos = block_pos;
 
-	usbvision_decompress(usbvision, strip_data, Y, &block_pos, &block_type_pos, idx_end);
+	rc = usbvision_decompress(usbvision, strip_data, Y, &block_pos, &block_type_pos, idx_end);
 	if (strip_len > usbvision->max_strip_len)
 		usbvision->max_strip_len = strip_len;
 
 	if (frame->curline % 2)
-		usbvision_decompress(usbvision, strip_data, V, &block_pos, &block_type_pos, idx_end / 2);
+		rc = usbvision_decompress(usbvision, strip_data, V, &block_pos, &block_type_pos, idx_end / 2);
 	else
-		usbvision_decompress(usbvision, strip_data, U, &block_pos, &block_type_pos, idx_end / 2);
+		rc = usbvision_decompress(usbvision, strip_data, U, &block_pos, &block_type_pos, idx_end / 2);
 
 	if (block_pos > usbvision->comprblock_pos)
 		usbvision->comprblock_pos = block_pos;

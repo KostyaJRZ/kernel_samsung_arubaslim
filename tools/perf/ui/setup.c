@@ -22,7 +22,6 @@ void setup_browser(bool fallback_to_pager)
 			break;
 		/* fall through */
 	default:
-		use_browser = 0;
 		if (fallback_to_pager)
 			setup_pager();
 		break;

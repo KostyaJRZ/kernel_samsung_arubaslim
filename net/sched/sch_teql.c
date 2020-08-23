@@ -88,7 +88,9 @@ teql_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 		return NET_XMIT_SUCCESS;
 	}
 
-	return qdisc_drop(skb, sch);
+	kfree_skb(skb);
+	sch->qstats.drops++;
+	return NET_XMIT_DROP;
 }
 
 static struct sk_buff *

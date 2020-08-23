@@ -434,7 +434,6 @@ static int epu_dma_done_irq(struct cx18 *cx, struct cx18_in_work_order *order)
 {
 	u32 handle, mdl_ack_offset, mdl_ack_count;
 	struct cx18_mailbox *mb;
-	int i;
 
 	mb = &order->mb;
 	handle = mb->args[0];
@@ -448,9 +447,8 @@ static int epu_dma_done_irq(struct cx18 *cx, struct cx18_in_work_order *order)
 		return -1;
 	}
 
-	for (i = 0; i < sizeof(struct cx18_mdl_ack) * mdl_ack_count; i += sizeof(u32))
-		((u32 *)order->mdl_ack)[i / sizeof(u32)] =
-			cx18_readl(cx, cx->enc_mem + mdl_ack_offset + i);
+	cx18_memcpy_fromio(cx, order->mdl_ack, cx->enc_mem + mdl_ack_offset,
+			   sizeof(struct cx18_mdl_ack) * mdl_ack_count);
 
 	if ((order->flags & CX18_F_EWO_MB_STALE) == 0)
 		mb_ack_irq(cx, order);
@@ -540,7 +538,6 @@ void cx18_api_epu_cmd_irq(struct cx18 *cx, int rpu)
 	struct cx18_mailbox *order_mb;
 	struct cx18_in_work_order *order;
 	int submit;
-	int i;
 
 	switch (rpu) {
 	case CPU:
@@ -565,12 +562,10 @@ void cx18_api_epu_cmd_irq(struct cx18 *cx, int rpu)
 	order_mb = &order->mb;
 
 	/* mb->cmd and mb->args[0] through mb->args[2] */
-	for (i = 0; i < 4; i++)
-		(&order_mb->cmd)[i] = cx18_readl(cx, &mb->cmd + i);
-
+	cx18_memcpy_fromio(cx, &order_mb->cmd, &mb->cmd, 4 * sizeof(u32));
 	/* mb->request and mb->ack.  N.B. we want to read mb->ack last */
-	for (i = 0; i < 2; i++)
-		(&order_mb->request)[i] = cx18_readl(cx, &mb->request + i);
+	cx18_memcpy_fromio(cx, &order_mb->request, &mb->request,
+			   2 * sizeof(u32));
 
 	if (order_mb->request == order_mb->ack) {
 		CX18_DEBUG_WARN("Possibly falling behind: %s self-ack'ed our "
@@ -600,8 +595,9 @@ void cx18_api_epu_cmd_irq(struct cx18 *cx, int rpu)
 static int cx18_api_call(struct cx18 *cx, u32 cmd, int args, u32 data[])
 {
 	const struct cx18_api_info *info = find_api_info(cmd);
-	u32 irq, req, ack, err;
+	u32 state, irq, req, ack, err;
 	struct cx18_mailbox __iomem *mb;
+	u32 __iomem *xpu_state;
 	wait_queue_head_t *waitq;
 	struct mutex *mb_lock;
 	unsigned long int t0, timeout, ret;
@@ -632,12 +628,14 @@ static int cx18_api_call(struct cx18 *cx, u32 cmd, int args, u32 data[])
 		mb_lock = &cx->epu2apu_mb_lock;
 		irq = IRQ_EPU_TO_APU;
 		mb = &cx->scb->epu2apu_mb;
+		xpu_state = &cx->scb->apu_state;
 		break;
 	case CPU:
 		waitq = &cx->mb_cpu_waitq;
 		mb_lock = &cx->epu2cpu_mb_lock;
 		irq = IRQ_EPU_TO_CPU;
 		mb = &cx->scb->epu2cpu_mb;
+		xpu_state = &cx->scb->cpu_state;
 		break;
 	default:
 		CX18_WARN("Unknown RPU (%d) for API call\n", info->rpu);
@@ -655,6 +653,7 @@ static int cx18_api_call(struct cx18 *cx, u32 cmd, int args, u32 data[])
 	 * by a signal, we may get here and find a busy mailbox.  After waiting,
 	 * mark it "not busy" from our end, if the XPU hasn't ack'ed it still.
 	 */
+	state = cx18_readl(cx, xpu_state);
 	req = cx18_readl(cx, &mb->request);
 	timeout = msecs_to_jiffies(10);
 	ret = wait_event_timeout(*waitq,

@@ -615,7 +615,9 @@ static inline void z2_spi_init(void) {}
 #if defined(CONFIG_REGULATOR_TPS65023) || \
 	defined(CONFIG_REGULATOR_TPS65023_MODULE)
 static struct regulator_consumer_supply z2_tps65021_consumers[] = {
-	REGULATOR_SUPPLY("vcc_core", NULL),
+	{
+		.supply	= "vcc_core",
+	}
 };
 
 static struct regulator_init_data z2_tps65021_info[] = {

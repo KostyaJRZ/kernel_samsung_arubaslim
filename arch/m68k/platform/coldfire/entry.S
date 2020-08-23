@@ -152,7 +152,7 @@ Lsignal_return:
 	subql	#4,%sp			/* dummy return address */
 	SAVE_SWITCH_STACK
 	pea	%sp@(SWITCH_STACK_SIZE)
-	jsr	do_notify_resume
+	jsr	do_signal
 	addql	#4,%sp
 	RESTORE_SWITCH_STACK
 	addql	#4,%sp

@@ -234,7 +234,7 @@ static const struct file_operations powergate_fops = {
 	.release	= single_release,
 };
 
-int __init tegra_powergate_debugfs_init(void)
+static int __init powergate_debugfs_init(void)
 {
 	struct dentry *d;
 	int err = -ENOMEM;
@@ -246,5 +246,7 @@ int __init tegra_powergate_debugfs_init(void)
 
 	return err;
 }
+
+late_initcall(powergate_debugfs_init);
 
 #endif

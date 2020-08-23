@@ -10,6 +10,7 @@
  * option) any later version.
  */
 
+#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/types.h>
@@ -19,8 +20,8 @@
 #include <linux/ctype.h>
 #include <linux/gpio.h>
 #include <linux/slab.h>
-#include <linux/vme.h>
 
+#include "../vme.h"
 #include "vme_pio2.h"
 
 

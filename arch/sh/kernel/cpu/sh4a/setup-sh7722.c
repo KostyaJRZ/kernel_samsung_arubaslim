@@ -13,7 +13,6 @@
 #include <linux/serial.h>
 #include <linux/serial_sci.h>
 #include <linux/sh_timer.h>
-#include <linux/sh_intc.h>
 #include <linux/uio_driver.h>
 #include <linux/usb/m66592.h>
 
@@ -148,20 +147,20 @@ static struct resource sh7722_dmae_resources[] = {
 	},
 	{
 		.name	= "error_irq",
-		.start	= evt2irq(0xbc0),
-		.end	= evt2irq(0xbc0),
+		.start	= 78,
+		.end	= 78,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
 		/* IRQ for channels 0-3 */
-		.start	= evt2irq(0x800),
-		.end	= evt2irq(0x860),
+		.start	= 48,
+		.end	= 51,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
 		/* IRQ for channels 4-5 */
-		.start	= evt2irq(0xb80),
-		.end	= evt2irq(0xba0),
+		.start	= 76,
+		.end	= 77,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -183,7 +182,7 @@ static struct plat_sci_port scif0_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type           = PORT_SCIF,
-	.irqs           = SCIx_IRQ_MUXED(evt2irq(0xc00)),
+	.irqs           = { 80, 80, 80, 80 },
 	.ops		= &sh7722_sci_port_ops,
 	.regtype	= SCIx_SH4_SCIF_NO_SCSPTR_REGTYPE,
 };
@@ -202,7 +201,7 @@ static struct plat_sci_port scif1_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type           = PORT_SCIF,
-	.irqs           = SCIx_IRQ_MUXED(evt2irq(0xc20)),
+	.irqs           = { 81, 81, 81, 81 },
 	.ops		= &sh7722_sci_port_ops,
 	.regtype	= SCIx_SH4_SCIF_NO_SCSPTR_REGTYPE,
 };
@@ -221,7 +220,7 @@ static struct plat_sci_port scif2_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type           = PORT_SCIF,
-	.irqs           = SCIx_IRQ_MUXED(evt2irq(0xc40)),
+	.irqs           = { 82, 82, 82, 82 },
 	.ops		= &sh7722_sci_port_ops,
 	.regtype	= SCIx_SH4_SCIF_NO_SCSPTR_REGTYPE,
 };
@@ -242,17 +241,17 @@ static struct resource rtc_resources[] = {
 	},
 	[1] = {
 		/* Period IRQ */
-		.start	= evt2irq(0x7a0),
+		.start	= 45,
 		.flags	= IORESOURCE_IRQ,
 	},
 	[2] = {
 		/* Carry IRQ */
-		.start	= evt2irq(0x7c0),
+		.start	= 46,
 		.flags	= IORESOURCE_IRQ,
 	},
 	[3] = {
 		/* Alarm IRQ */
-		.start	= evt2irq(0x780),
+		.start	= 44,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -276,8 +275,8 @@ static struct resource usbf_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xa20),
-		.end	= evt2irq(0xa20),
+		.start	= 65,
+		.end	= 65,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -302,8 +301,8 @@ static struct resource iic_resources[] = {
 		.flags  = IORESOURCE_MEM,
 	},
 	[1] = {
-		.start  = evt2irq(0xe00),
-		.end    = evt2irq(0xe60),
+		.start  = 96,
+		.end    = 99,
 		.flags  = IORESOURCE_IRQ,
        },
 };
@@ -318,7 +317,7 @@ static struct platform_device iic_device = {
 static struct uio_info vpu_platform_data = {
 	.name = "VPU4",
 	.version = "0",
-	.irq = evt2irq(0x980),
+	.irq = 60,
 };
 
 static struct resource vpu_resources[] = {
@@ -346,7 +345,7 @@ static struct platform_device vpu_device = {
 static struct uio_info veu_platform_data = {
 	.name = "VEU",
 	.version = "0",
-	.irq = evt2irq(0x8c0),
+	.irq = 54,
 };
 
 static struct resource veu_resources[] = {
@@ -374,7 +373,7 @@ static struct platform_device veu_device = {
 static struct uio_info jpu_platform_data = {
 	.name = "JPU",
 	.version = "0",
-	.irq = evt2irq(0x560),
+	.irq = 27,
 };
 
 static struct resource jpu_resources[] = {
@@ -413,7 +412,7 @@ static struct resource cmt_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xf00),
+		.start	= 104,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -441,7 +440,7 @@ static struct resource tmu0_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x400),
+		.start	= 16,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -469,7 +468,7 @@ static struct resource tmu1_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x420),
+		.start	= 17,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -526,7 +525,7 @@ static struct resource siu_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xf80),
+		.start	= 108,
 		.flags	= IORESOURCE_IRQ,
 	},
 };

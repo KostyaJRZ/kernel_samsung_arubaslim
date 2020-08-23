@@ -179,11 +179,10 @@ static int r82600_process_error_info(struct mem_ctl_info *mci,
 		error_found = 1;
 
 		if (handle_errors)
-			edac_mc_handle_error(HW_EVENT_ERR_CORRECTED, mci,
-					     page, 0, syndrome,
-					     edac_mc_find_csrow_by_page(mci, page),
-					     0, -1,
-					     mci->ctl_name, "", NULL);
+			edac_mc_handle_ce(mci, page, 0,	/* not avail */
+					syndrome,
+					edac_mc_find_csrow_by_page(mci, page),
+					0, mci->ctl_name);
 	}
 
 	if (info->eapr & BIT(1)) {	/* UE? */
@@ -191,11 +190,9 @@ static int r82600_process_error_info(struct mem_ctl_info *mci,
 
 		if (handle_errors)
 			/* 82600 doesn't give enough info */
-			edac_mc_handle_error(HW_EVENT_ERR_UNCORRECTED, mci,
-					     page, 0, 0,
-					     edac_mc_find_csrow_by_page(mci, page),
-					     0, -1,
-					     mci->ctl_name, "", NULL);
+			edac_mc_handle_ue(mci, page, 0,
+					edac_mc_find_csrow_by_page(mci, page),
+					mci->ctl_name);
 	}
 
 	return error_found;
@@ -219,7 +216,6 @@ static void r82600_init_csrows(struct mem_ctl_info *mci, struct pci_dev *pdev,
 			u8 dramcr)
 {
 	struct csrow_info *csrow;
-	struct dimm_info *dimm;
 	int index;
 	u8 drbar;		/* SDRAM Row Boundary Address Register */
 	u32 row_high_limit, row_high_limit_last;
@@ -231,7 +227,6 @@ static void r82600_init_csrows(struct mem_ctl_info *mci, struct pci_dev *pdev,
 
 	for (index = 0; index < mci->nr_csrows; index++) {
 		csrow = &mci->csrows[index];
-		dimm = csrow->channels[0].dimm;
 
 		/* find the DRAM Chip Select Base address and mask */
 		pci_read_config_byte(pdev, R82600_DRBA + index, &drbar);
@@ -252,17 +247,16 @@ static void r82600_init_csrows(struct mem_ctl_info *mci, struct pci_dev *pdev,
 
 		csrow->first_page = row_base >> PAGE_SHIFT;
 		csrow->last_page = (row_high_limit >> PAGE_SHIFT) - 1;
-
-		dimm->nr_pages = csrow->last_page - csrow->first_page + 1;
+		csrow->nr_pages = csrow->last_page - csrow->first_page + 1;
 		/* Error address is top 19 bits - so granularity is      *
 		 * 14 bits                                               */
-		dimm->grain = 1 << 14;
-		dimm->mtype = reg_sdram ? MEM_RDDR : MEM_DDR;
+		csrow->grain = 1 << 14;
+		csrow->mtype = reg_sdram ? MEM_RDDR : MEM_DDR;
 		/* FIXME - check that this is unknowable with this chipset */
-		dimm->dtype = DEV_UNKNOWN;
+		csrow->dtype = DEV_UNKNOWN;
 
 		/* Mode is global on 82600 */
-		dimm->edac_mode = ecc_on ? EDAC_SECDED : EDAC_NONE;
+		csrow->edac_mode = ecc_on ? EDAC_SECDED : EDAC_NONE;
 		row_high_limit_last = row_high_limit;
 	}
 }
@@ -270,7 +264,6 @@ static void r82600_init_csrows(struct mem_ctl_info *mci, struct pci_dev *pdev,
 static int r82600_probe1(struct pci_dev *pdev, int dev_idx)
 {
 	struct mem_ctl_info *mci;
-	struct edac_mc_layer layers[2];
 	u8 dramcr;
 	u32 eapr;
 	u32 scrub_disabled;
@@ -285,13 +278,8 @@ static int r82600_probe1(struct pci_dev *pdev, int dev_idx)
 	debugf2("%s(): sdram refresh rate = %#0x\n", __func__,
 		sdram_refresh_rate);
 	debugf2("%s(): DRAMC register = %#0x\n", __func__, dramcr);
-	layers[0].type = EDAC_MC_LAYER_CHIP_SELECT;
-	layers[0].size = R82600_NR_CSROWS;
-	layers[0].is_virt_csrow = true;
-	layers[1].type = EDAC_MC_LAYER_CHANNEL;
-	layers[1].size = R82600_NR_CHANS;
-	layers[1].is_virt_csrow = false;
-	mci = edac_mc_alloc(0, ARRAY_SIZE(layers), layers, 0);
+	mci = edac_mc_alloc(0, R82600_NR_CSROWS, R82600_NR_CHANS, 0);
+
 	if (mci == NULL)
 		return -ENOMEM;
 

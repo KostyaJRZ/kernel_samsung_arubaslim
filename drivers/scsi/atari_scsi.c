@@ -572,7 +572,7 @@ static void falcon_get_lock(void)
 }
 
 
-static int __init atari_scsi_detect(struct scsi_host_template *host)
+int __init atari_scsi_detect(struct scsi_host_template *host)
 {
 	static int called = 0;
 	struct Scsi_Host *instance;
@@ -724,7 +724,7 @@ static int __init atari_scsi_detect(struct scsi_host_template *host)
 	return 1;
 }
 
-static int atari_scsi_release(struct Scsi_Host *sh)
+int atari_scsi_release(struct Scsi_Host *sh)
 {
 	if (IS_A_TT())
 		free_irq(IRQ_TT_MFP_SCSI, sh);
@@ -734,21 +734,17 @@ static int atari_scsi_release(struct Scsi_Host *sh)
 	return 1;
 }
 
-#ifndef MODULE
-static int __init atari_scsi_setup(char *str)
+void __init atari_scsi_setup(char *str, int *ints)
 {
 	/* Format of atascsi parameter is:
 	 *   atascsi=<can_queue>,<cmd_per_lun>,<sg_tablesize>,<hostid>,<use_tags>
 	 * Defaults depend on TT or Falcon, hostid determined at run time.
 	 * Negative values mean don't change.
 	 */
-	int ints[6];
-
-	get_options(str, ARRAY_SIZE(ints), ints);
 
 	if (ints[0] < 1) {
 		printk("atari_scsi_setup: no arguments!\n");
-		return 0;
+		return;
 	}
 
 	if (ints[0] >= 1) {
@@ -781,14 +777,9 @@ static int __init atari_scsi_setup(char *str)
 			setup_use_tagged_queuing = !!ints[5];
 	}
 #endif
-
-	return 1;
 }
 
-__setup("atascsi=", atari_scsi_setup);
-#endif /* !MODULE */
-
-static int atari_scsi_bus_reset(Scsi_Cmnd *cmd)
+int atari_scsi_bus_reset(Scsi_Cmnd *cmd)
 {
 	int rv;
 	struct NCR5380_hostdata *hostdata =
@@ -861,7 +852,7 @@ static void __init atari_scsi_reset_boot(void)
 #endif
 
 
-static const char *atari_scsi_info(struct Scsi_Host *host)
+const char *atari_scsi_info(struct Scsi_Host *host)
 {
 	/* atari_scsi_detect() is verbose enough... */
 	static const char string[] = "Atari native SCSI";
@@ -871,9 +862,8 @@ static const char *atari_scsi_info(struct Scsi_Host *host)
 
 #if defined(REAL_DMA)
 
-static unsigned long atari_scsi_dma_setup(struct Scsi_Host *instance,
-					  void *data, unsigned long count,
-					  int dir)
+unsigned long atari_scsi_dma_setup(struct Scsi_Host *instance, void *data,
+				   unsigned long count, int dir)
 {
 	unsigned long addr = virt_to_phys(data);
 

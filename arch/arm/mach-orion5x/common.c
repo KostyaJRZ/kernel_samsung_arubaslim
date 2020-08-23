@@ -18,7 +18,6 @@
 #include <linux/mv643xx_i2c.h>
 #include <linux/ata_platform.h>
 #include <linux/delay.h>
-#include <linux/clk-provider.h>
 #include <net/dsa.h>
 #include <asm/page.h>
 #include <asm/setup.h>
@@ -71,19 +70,6 @@ void __init orion5x_map_io(void)
 
 
 /*****************************************************************************
- * CLK tree
- ****************************************************************************/
-static struct clk *tclk;
-
-static void __init clk_init(void)
-{
-	tclk = clk_register_fixed_rate(NULL, "tclk", NULL, CLK_IS_ROOT,
-				       orion5x_tclk);
-
-	orion_clkdev_init(tclk);
-}
-
-/*****************************************************************************
  * EHCI0
  ****************************************************************************/
 void __init orion5x_ehci0_init(void)
@@ -109,7 +95,8 @@ void __init orion5x_eth_init(struct mv643xx_eth_platform_data *eth_data)
 {
 	orion_ge00_init(eth_data,
 			ORION5X_ETH_PHYS_BASE, IRQ_ORION5X_ETH_SUM,
-			IRQ_ORION5X_ETH_ERR);
+			IRQ_ORION5X_ETH_ERR, orion5x_tclk,
+			MV643XX_TX_CSUM_DEFAULT_LIMIT);
 }
 
 
@@ -146,7 +133,7 @@ void __init orion5x_sata_init(struct mv_sata_platform_data *sata_data)
  ****************************************************************************/
 void __init orion5x_spi_init()
 {
-	orion_spi_init(SPI_PHYS_BASE);
+	orion_spi_init(SPI_PHYS_BASE, orion5x_tclk);
 }
 
 
@@ -156,7 +143,7 @@ void __init orion5x_spi_init()
 void __init orion5x_uart0_init(void)
 {
 	orion_uart0_init(UART0_VIRT_BASE, UART0_PHYS_BASE,
-			 IRQ_ORION5X_UART0, tclk);
+			 IRQ_ORION5X_UART0, orion5x_tclk);
 }
 
 /*****************************************************************************
@@ -165,7 +152,7 @@ void __init orion5x_uart0_init(void)
 void __init orion5x_uart1_init(void)
 {
 	orion_uart1_init(UART1_VIRT_BASE, UART1_PHYS_BASE,
-			 IRQ_ORION5X_UART1, tclk);
+			 IRQ_ORION5X_UART1, orion5x_tclk);
 }
 
 /*****************************************************************************
@@ -193,7 +180,7 @@ static void __init orion5x_crypto_init(void)
  ****************************************************************************/
 void __init orion5x_wdt_init(void)
 {
-	orion_wdt_init();
+	orion_wdt_init(orion5x_tclk);
 }
 
 
@@ -219,7 +206,7 @@ int __init orion5x_find_tclk(void)
 	return 166666667;
 }
 
-static void __init orion5x_timer_init(void)
+static void orion5x_timer_init(void)
 {
 	orion5x_tclk = orion5x_find_tclk();
 
@@ -289,9 +276,6 @@ void __init orion5x_init(void)
 	 * Setup Orion address map
 	 */
 	orion5x_setup_cpu_mbus_bridge();
-
-	/* Setup root of clk tree */
-	clk_init();
 
 	/*
 	 * Don't issue "Wait for Interrupt" instruction if we are

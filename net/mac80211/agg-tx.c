@@ -286,25 +286,25 @@ static inline int ieee80211_ac_from_tid(int tid)
  * a global "agg_queue_stop" refcount.
  */
 static void __acquires(agg_queue)
-ieee80211_stop_queue_agg(struct ieee80211_sub_if_data *sdata, int tid)
+ieee80211_stop_queue_agg(struct ieee80211_local *local, int tid)
 {
-	int queue = sdata->vif.hw_queue[ieee80211_ac_from_tid(tid)];
+	int queue = ieee80211_ac_from_tid(tid);
 
-	if (atomic_inc_return(&sdata->local->agg_queue_stop[queue]) == 1)
+	if (atomic_inc_return(&local->agg_queue_stop[queue]) == 1)
 		ieee80211_stop_queue_by_reason(
-			&sdata->local->hw, queue,
+			&local->hw, queue,
 			IEEE80211_QUEUE_STOP_REASON_AGGREGATION);
 	__acquire(agg_queue);
 }
 
 static void __releases(agg_queue)
-ieee80211_wake_queue_agg(struct ieee80211_sub_if_data *sdata, int tid)
+ieee80211_wake_queue_agg(struct ieee80211_local *local, int tid)
 {
-	int queue = sdata->vif.hw_queue[ieee80211_ac_from_tid(tid)];
+	int queue = ieee80211_ac_from_tid(tid);
 
-	if (atomic_dec_return(&sdata->local->agg_queue_stop[queue]) == 0)
+	if (atomic_dec_return(&local->agg_queue_stop[queue]) == 0)
 		ieee80211_wake_queue_by_reason(
-			&sdata->local->hw, queue,
+			&local->hw, queue,
 			IEEE80211_QUEUE_STOP_REASON_AGGREGATION);
 	__release(agg_queue);
 }
@@ -314,14 +314,13 @@ ieee80211_wake_queue_agg(struct ieee80211_sub_if_data *sdata, int tid)
  * requires a call to ieee80211_agg_splice_finish later
  */
 static void __acquires(agg_queue)
-ieee80211_agg_splice_packets(struct ieee80211_sub_if_data *sdata,
+ieee80211_agg_splice_packets(struct ieee80211_local *local,
 			     struct tid_ampdu_tx *tid_tx, u16 tid)
 {
-	struct ieee80211_local *local = sdata->local;
-	int queue = sdata->vif.hw_queue[ieee80211_ac_from_tid(tid)];
+	int queue = ieee80211_ac_from_tid(tid);
 	unsigned long flags;
 
-	ieee80211_stop_queue_agg(sdata, tid);
+	ieee80211_stop_queue_agg(local, tid);
 
 	if (WARN(!tid_tx, "TID %d gone but expected when splicing aggregates"
 			  " from the pending queue\n", tid))
@@ -337,9 +336,9 @@ ieee80211_agg_splice_packets(struct ieee80211_sub_if_data *sdata,
 }
 
 static void __releases(agg_queue)
-ieee80211_agg_splice_finish(struct ieee80211_sub_if_data *sdata, u16 tid)
+ieee80211_agg_splice_finish(struct ieee80211_local *local, u16 tid)
 {
-	ieee80211_wake_queue_agg(sdata, tid);
+	ieee80211_wake_queue_agg(local, tid);
 }
 
 void ieee80211_tx_ba_session_handle_start(struct sta_info *sta, int tid)
@@ -377,9 +376,9 @@ void ieee80211_tx_ba_session_handle_start(struct sta_info *sta, int tid)
 					" tid %d\n", tid);
 #endif
 		spin_lock_bh(&sta->lock);
-		ieee80211_agg_splice_packets(sdata, tid_tx, tid);
+		ieee80211_agg_splice_packets(local, tid_tx, tid);
 		ieee80211_assign_tid_tx(sta, tid, NULL);
-		ieee80211_agg_splice_finish(sdata, tid);
+		ieee80211_agg_splice_finish(local, tid);
 		spin_unlock_bh(&sta->lock);
 
 		kfree_rcu(tid_tx, rcu_head);
@@ -418,24 +417,6 @@ static void sta_tx_agg_session_timer_expired(unsigned long data)
 	u8 *timer_to_id = ptid - *ptid;
 	struct sta_info *sta = container_of(timer_to_id, struct sta_info,
 					 timer_to_tid[0]);
-	struct tid_ampdu_tx *tid_tx;
-	unsigned long timeout;
-
-	rcu_read_lock();
-	tid_tx = rcu_dereference(sta->ampdu_mlme.tid_tx[*ptid]);
-	if (!tid_tx || test_bit(HT_AGG_STATE_STOPPING, &tid_tx->state)) {
-		rcu_read_unlock();
-		return;
-	}
-
-	timeout = tid_tx->last_tx + TU_TO_JIFFIES(tid_tx->timeout);
-	if (time_is_after_jiffies(timeout)) {
-		mod_timer(&tid_tx->session_timer, timeout);
-		rcu_read_unlock();
-		return;
-	}
-
-	rcu_read_unlock();
 
 #ifdef CONFIG_MAC80211_HT_DEBUG
 	printk(KERN_DEBUG "tx session timer expired on tid %d\n", (u16)*ptid);
@@ -561,7 +542,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid,
 	/* tx timer */
 	tid_tx->session_timer.function = sta_tx_agg_session_timer_expired;
 	tid_tx->session_timer.data = (unsigned long)&sta->timer_to_tid[tid];
-	init_timer_deferrable(&tid_tx->session_timer);
+	init_timer(&tid_tx->session_timer);
 
 	/* assign a dialog token */
 	sta->ampdu_mlme.dialog_token_allocator++;
@@ -605,14 +586,14 @@ static void ieee80211_agg_tx_operational(struct ieee80211_local *local,
 	 */
 	spin_lock_bh(&sta->lock);
 
-	ieee80211_agg_splice_packets(sta->sdata, tid_tx, tid);
+	ieee80211_agg_splice_packets(local, tid_tx, tid);
 	/*
 	 * Now mark as operational. This will be visible
 	 * in the TX path, and lets it go lock-free in
 	 * the common case.
 	 */
 	set_bit(HT_AGG_STATE_OPERATIONAL, &tid_tx->state);
-	ieee80211_agg_splice_finish(sta->sdata, tid);
+	ieee80211_agg_splice_finish(local, tid);
 
 	spin_unlock_bh(&sta->lock);
 }
@@ -797,12 +778,12 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u8 tid)
 	 * more.
 	 */
 
-	ieee80211_agg_splice_packets(sta->sdata, tid_tx, tid);
+	ieee80211_agg_splice_packets(local, tid_tx, tid);
 
 	/* future packets must not find the tid_tx struct any more */
 	ieee80211_assign_tid_tx(sta, tid, NULL);
 
-	ieee80211_agg_splice_finish(sta->sdata, tid);
+	ieee80211_agg_splice_finish(local, tid);
 
 	kfree_rcu(tid_tx, rcu_head);
 
@@ -903,11 +884,9 @@ void ieee80211_process_addba_resp(struct ieee80211_local *local,
 
 		sta->ampdu_mlme.addba_req_num[tid] = 0;
 
-		if (tid_tx->timeout) {
+		if (tid_tx->timeout)
 			mod_timer(&tid_tx->session_timer,
 				  TU_TO_EXP_TIME(tid_tx->timeout));
-			tid_tx->last_tx = jiffies;
-		}
 
 	} else {
 		___ieee80211_stop_tx_ba_session(sta, tid, WLAN_BACK_INITIATOR,

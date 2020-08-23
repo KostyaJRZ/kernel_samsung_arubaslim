@@ -9,11 +9,11 @@
 
 struct pci_root_info {
 	struct acpi_device *bridge;
-	char name[16];
+	char *name;
 	unsigned int res_num;
 	struct resource *res;
+	struct list_head *resources;
 	int busnum;
-	struct pci_sysdata sd;
 };
 
 static bool pci_use_crs = true;
@@ -67,6 +67,17 @@ static const struct dmi_system_id pci_use_crs_table[] __initconst = {
 		.matches = {
 			DMI_MATCH(DMI_BOARD_VENDOR, "MICRO-STAR INTERNATIONAL CO., LTD"),
 			DMI_MATCH(DMI_BOARD_NAME, "MS-7253"),
+			DMI_MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies, LTD"),
+		},
+	},
+	/* https://bugs.launchpad.net/ubuntu/+source/alsa-driver/+bug/931368 */
+	/* https://bugs.launchpad.net/ubuntu/+source/alsa-driver/+bug/1033299 */
+	{
+		.callback = set_use_crs,
+		.ident = "Foxconn K8M890-8237A",
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "Foxconn"),
+			DMI_MATCH(DMI_BOARD_NAME, "K8M890-8237A"),
 			DMI_MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies, LTD"),
 		},
 	},
@@ -245,6 +256,13 @@ setup_resource(struct acpi_resource *acpi_res, void *data)
 	return AE_OK;
 }
 
+static bool resource_contains(struct resource *res, resource_size_t point)
+{
+	if (res->start <= point && point <= res->end)
+		return true;
+	return false;
+}
+
 static void coalesce_windows(struct pci_root_info *info, unsigned long type)
 {
 	int i, j;
@@ -265,7 +283,10 @@ static void coalesce_windows(struct pci_root_info *info, unsigned long type)
 			 * our resources no longer match the ACPI _CRS, but
 			 * the kernel resource tree doesn't allow overlaps.
 			 */
-			if (resource_overlaps(res1, res2)) {
+			if (resource_contains(res1, res2->start) ||
+			    resource_contains(res1, res2->end) ||
+			    resource_contains(res2, res1->start) ||
+			    resource_contains(res2, res1->end)) {
 				res1->start = min(res1->start, res2->start);
 				res1->end = max(res1->end, res2->end);
 				dev_info(&info->bridge->dev,
@@ -277,8 +298,7 @@ static void coalesce_windows(struct pci_root_info *info, unsigned long type)
 	}
 }
 
-static void add_resources(struct pci_root_info *info,
-			  struct list_head *resources)
+static void add_resources(struct pci_root_info *info)
 {
 	int i;
 	struct resource *res, *root, *conflict;
@@ -302,74 +322,53 @@ static void add_resources(struct pci_root_info *info,
 				 "ignoring host bridge window %pR (conflicts with %s %pR)\n",
 				 res, conflict->name, conflict);
 		else
-			pci_add_resource(resources, res);
+			pci_add_resource(info->resources, res);
 	}
-}
-
-static void free_pci_root_info_res(struct pci_root_info *info)
-{
-	kfree(info->res);
-	info->res = NULL;
-	info->res_num = 0;
-}
-
-static void __release_pci_root_info(struct pci_root_info *info)
-{
-	int i;
-	struct resource *res;
-
-	for (i = 0; i < info->res_num; i++) {
-		res = &info->res[i];
-
-		if (!res->parent)
-			continue;
-
-		if (!(res->flags & (IORESOURCE_MEM | IORESOURCE_IO)))
-			continue;
-
-		release_resource(res);
-	}
-
-	free_pci_root_info_res(info);
-
-	kfree(info);
-}
-static void release_pci_root_info(struct pci_host_bridge *bridge)
-{
-	struct pci_root_info *info = bridge->release_data;
-
-	__release_pci_root_info(info);
 }
 
 static void
-probe_pci_root_info(struct pci_root_info *info, struct acpi_device *device,
-		    int busnum, int domain)
+get_current_resources(struct acpi_device *device, int busnum,
+		      int domain, struct list_head *resources)
 {
+	struct pci_root_info info;
 	size_t size;
 
-	info->bridge = device;
-	info->res_num = 0;
+	info.bridge = device;
+	info.res_num = 0;
+	info.resources = resources;
 	acpi_walk_resources(device->handle, METHOD_NAME__CRS, count_resource,
-				info);
-	if (!info->res_num)
+				&info);
+	if (!info.res_num)
 		return;
 
-	size = sizeof(*info->res) * info->res_num;
-	info->res_num = 0;
-	info->res = kmalloc(size, GFP_KERNEL);
-	if (!info->res)
+	size = sizeof(*info.res) * info.res_num;
+	info.res = kmalloc(size, GFP_KERNEL);
+	if (!info.res)
 		return;
 
-	sprintf(info->name, "PCI Bus %04x:%02x", domain, busnum);
+	info.name = kasprintf(GFP_KERNEL, "PCI Bus %04x:%02x", domain, busnum);
+	if (!info.name)
+		goto name_alloc_fail;
 
+	info.res_num = 0;
 	acpi_walk_resources(device->handle, METHOD_NAME__CRS, setup_resource,
-				info);
+				&info);
+
+	if (pci_use_crs) {
+		add_resources(&info);
+
+		return;
+	}
+
+	kfree(info.name);
+
+name_alloc_fail:
+	kfree(info.res);
 }
 
 struct pci_bus * __devinit pci_acpi_scan_root(struct acpi_pci_root *root)
 {
 	struct acpi_device *device = root->device;
-	struct pci_root_info *info = NULL;
 	int domain = root->segment;
 	int busnum = root->secondary.start;
 	LIST_HEAD(resources);
@@ -401,14 +400,17 @@ struct pci_bus * __devinit pci_acpi_scan_root(struct acpi_pci_root *root)
 	if (node != -1 && !node_online(node))
 		node = -1;
 
-	info = kzalloc(sizeof(*info), GFP_KERNEL);
-	if (!info) {
+	/* Allocate per-root-bus (not per bus) arch-specific data.
+	 * TODO: leak; this memory is never freed.
+	 * It's arguable whether it's worth the trouble to care.
+	 */
+	sd = kzalloc(sizeof(*sd), GFP_KERNEL);
+	if (!sd) {
 		printk(KERN_WARNING "pci_bus %04x:%02x: "
 		       "ignored (out of memory)\n", domain, busnum);
 		return NULL;
 	}
 
-	sd = &info->sd;
 	sd->domain = domain;
 	sd->node = node;
 	/*
@@ -422,32 +424,22 @@ struct pci_bus * __devinit pci_acpi_scan_root(struct acpi_pci_root *root)
 		 * be replaced by sd.
 		 */
 		memcpy(bus->sysdata, sd, sizeof(*sd));
-		kfree(info);
+		kfree(sd);
 	} else {
-		probe_pci_root_info(info, device, busnum, domain);
+		get_current_resources(device, busnum, domain, &resources);
 
 		/*
 		 * _CRS with no apertures is normal, so only fall back to
 		 * defaults or native bridge info if we're ignoring _CRS.
 		 */
-		if (pci_use_crs)
-			add_resources(info, &resources);
-		else {
-			free_pci_root_info_res(info);
+		if (!pci_use_crs)
 			x86_pci_root_bus_resources(busnum, &resources);
-		}
-
 		bus = pci_create_root_bus(NULL, busnum, &pci_root_ops, sd,
 					  &resources);
-		if (bus) {
+		if (bus)
 			bus->subordinate = pci_scan_child_bus(bus);
-			pci_set_host_bridge_release(
-				to_pci_host_bridge(bus->bridge),
-				release_pci_root_info, info);
-		} else {
+		else
 			pci_free_resource_list(&resources);
-			__release_pci_root_info(info);
-		}
 	}
 
 	/* After the PCI-E bus has been walked and all devices discovered,
@@ -463,6 +455,9 @@ struct pci_bus * __devinit pci_acpi_scan_root(struct acpi_pci_root *root)
 			pcie_bus_configure_settings(child, self->pcie_mpss);
 		}
 	}
+
+	if (!bus)
+		kfree(sd);
 
 	if (bus && node != -1) {
 #ifdef CONFIG_ACPI_NUMA

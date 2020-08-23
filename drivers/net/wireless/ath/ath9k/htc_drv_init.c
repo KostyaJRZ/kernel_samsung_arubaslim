@@ -14,8 +14,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include "htc.h"
 
 MODULE_AUTHOR("Atheros Communications");
@@ -42,6 +40,8 @@ MODULE_PARM_DESC(nohwcrypt, "Disable hardware encryption");
 	.hw_value = (_idx), \
 	.max_power = 20, \
 }
+
+#define ATH_HTC_BTCOEX_PRODUCT_ID "wb193"
 
 static struct ieee80211_channel ath9k_2ghz_channels[] = {
 	CHAN2G(2412, 0), /* Channel 1 */
@@ -299,7 +299,8 @@ static unsigned int ath9k_regread(void *hw_priv, u32 reg_offset)
 			  (u8 *) &val, sizeof(val),
 			  100);
 	if (unlikely(r)) {
-		ath_dbg(common, WMI, "REGISTER READ FAILED: (0x%04x, %d)\n",
+		ath_dbg(common, ATH_DBG_WMI,
+			"REGISTER READ FAILED: (0x%04x, %d)\n",
 			reg_offset, r);
 		return -EIO;
 	}
@@ -326,7 +327,7 @@ static void ath9k_multi_regread(void *hw_priv, u32 *addr,
 			   (u8 *)tmpval, sizeof(u32) * count,
 			   100);
 	if (unlikely(ret)) {
-		ath_dbg(common, WMI,
+		ath_dbg(common, ATH_DBG_WMI,
 			"Multiple REGISTER READ FAILED (count: %d)\n", count);
 	}
 
@@ -351,7 +352,8 @@ static void ath9k_regwrite_single(void *hw_priv, u32 val, u32 reg_offset)
 			  (u8 *) &val, sizeof(val),
 			  100);
 	if (unlikely(r)) {
-		ath_dbg(common, WMI, "REGISTER WRITE FAILED:(0x%04x, %d)\n",
+		ath_dbg(common, ATH_DBG_WMI,
+			"REGISTER WRITE FAILED:(0x%04x, %d)\n",
 			reg_offset, r);
 	}
 }
@@ -382,7 +384,7 @@ static void ath9k_regwrite_buffer(void *hw_priv, u32 val, u32 reg_offset)
 			  (u8 *) &rsp_status, sizeof(rsp_status),
 			  100);
 		if (unlikely(r)) {
-			ath_dbg(common, WMI,
+			ath_dbg(common, ATH_DBG_WMI,
 				"REGISTER WRITE FAILED, multi len: %d\n",
 				priv->wmi->multi_write_idx);
 		}
@@ -432,7 +434,7 @@ static void ath9k_regwrite_flush(void *hw_priv)
 			  (u8 *) &rsp_status, sizeof(rsp_status),
 			  100);
 		if (unlikely(r)) {
-			ath_dbg(common, WMI,
+			ath_dbg(common, ATH_DBG_WMI,
 				"REGISTER WRITE FAILED, multi len: %d\n",
 				priv->wmi->multi_write_idx);
 		}
@@ -510,7 +512,8 @@ static void setup_ht_cap(struct ath9k_htc_priv *priv,
 	tx_streams = ath9k_cmn_count_streams(priv->ah->txchainmask, 2);
 	rx_streams = ath9k_cmn_count_streams(priv->ah->rxchainmask, 2);
 
-	ath_dbg(common, CONFIG, "TX streams %d, RX streams: %d\n",
+	ath_dbg(common, ATH_DBG_CONFIG,
+		"TX streams %d, RX streams: %d\n",
 		tx_streams, rx_streams);
 
 	if (tx_streams != rx_streams) {
@@ -603,6 +606,29 @@ static void ath9k_init_misc(struct ath9k_htc_priv *priv)
 	priv->ah->opmode = NL80211_IFTYPE_STATION;
 }
 
+static void ath9k_init_btcoex(struct ath9k_htc_priv *priv)
+{
+	int qnum;
+
+	switch (priv->ah->btcoex_hw.scheme) {
+	case ATH_BTCOEX_CFG_NONE:
+		break;
+	case ATH_BTCOEX_CFG_3WIRE:
+		priv->ah->btcoex_hw.btactive_gpio = 7;
+		priv->ah->btcoex_hw.btpriority_gpio = 6;
+		priv->ah->btcoex_hw.wlanactive_gpio = 8;
+		priv->btcoex.bt_stomp_type = ATH_BTCOEX_STOMP_LOW;
+		ath9k_hw_btcoex_init_3wire(priv->ah);
+		ath_htc_init_btcoex_work(priv);
+		qnum = priv->hwq_map[WME_AC_BE];
+		ath9k_hw_init_btcoex_hw(priv->ah, qnum);
+		break;
+	default:
+		WARN_ON(1);
+		break;
+	}
+}
+
 static int ath9k_init_priv(struct ath9k_htc_priv *priv,
 			   u16 devid, char *product,
 			   u32 drv_info)
@@ -675,7 +701,11 @@ static int ath9k_init_priv(struct ath9k_htc_priv *priv,
 	ath9k_cmn_init_crypto(ah);
 	ath9k_init_channels_rates(priv);
 	ath9k_init_misc(priv);
-	ath9k_htc_init_btcoex(priv, product);
+
+	if (product && strncmp(product, ATH_HTC_BTCOEX_PRODUCT_ID, 5) == 0) {
+		ah->btcoex_hw.scheme = ATH_BTCOEX_CFG_3WIRE;
+		ath9k_init_btcoex(priv);
+	}
 
 	return 0;
 
@@ -712,9 +742,6 @@ static void ath9k_set_hw_capab(struct ath9k_htc_priv *priv,
 		BIT(NL80211_IFTYPE_P2P_CLIENT);
 
 	hw->wiphy->flags &= ~WIPHY_FLAG_PS_ON_BY_DEFAULT;
-
-	hw->wiphy->flags |= WIPHY_FLAG_IBSS_RSN |
-			    WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL;
 
 	hw->queues = 4;
 	hw->channel_change_time = 5000;
@@ -774,7 +801,7 @@ static int ath9k_init_firmware_version(struct ath9k_htc_priv *priv)
 	 * required version.
 	 */
 	if (priv->fw_version_major != MAJOR_VERSION_REQ ||
-	    priv->fw_version_minor != MINOR_VERSION_REQ) {
+	    priv->fw_version_minor < MINOR_VERSION_REQ) {
 		dev_err(priv->dev, "ath9k_htc: Please upgrade to FW version %d.%d\n",
 			MAJOR_VERSION_REQ, MINOR_VERSION_REQ);
 		return -EINVAL;
@@ -824,6 +851,7 @@ static int ath9k_init_device(struct ath9k_htc_priv *priv,
 	if (error != 0)
 		goto err_rx;
 
+	ath9k_hw_disable(priv->ah);
 #ifdef CONFIG_MAC80211_LEDS
 	/* must be initialized before ieee80211_register_hw */
 	priv->led_cdev.default_trigger = ieee80211_create_tpt_led_trigger(priv->hw,
@@ -849,8 +877,9 @@ static int ath9k_init_device(struct ath9k_htc_priv *priv,
 		goto err_world;
 	}
 
-	ath_dbg(common, CONFIG,
-		"WMI:%d, BCN:%d, CAB:%d, UAPSD:%d, MGMT:%d, BE:%d, BK:%d, VI:%d, VO:%d\n",
+	ath_dbg(common, ATH_DBG_CONFIG,
+		"WMI:%d, BCN:%d, CAB:%d, UAPSD:%d, MGMT:%d, "
+		"BE:%d, BK:%d, VI:%d, VO:%d\n",
 		priv->wmi_cmd_ep,
 		priv->beacon_ep,
 		priv->cab_ep,
@@ -969,7 +998,9 @@ int ath9k_htc_resume(struct htc_target *htc_handle)
 static int __init ath9k_htc_init(void)
 {
 	if (ath9k_hif_usb_init() < 0) {
-		pr_err("No USB devices found, driver not installed\n");
+		printk(KERN_ERR
+			"ath9k_htc: No USB devices found,"
+			" driver not installed.\n");
 		return -ENODEV;
 	}
 
@@ -980,6 +1011,6 @@ module_init(ath9k_htc_init);
 static void __exit ath9k_htc_exit(void)
 {
 	ath9k_hif_usb_exit();
-	pr_info("Driver unloaded\n");
+	printk(KERN_INFO "ath9k_htc: Driver unloaded\n");
 }
 module_exit(ath9k_htc_exit);

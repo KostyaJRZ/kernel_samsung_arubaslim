@@ -338,18 +338,16 @@ static void catc_irq_done(struct urb *urb)
 		} else {
 			catc->rx_urb->dev = catc->usbdev;
 			if ((res = usb_submit_urb(catc->rx_urb, GFP_ATOMIC)) < 0) {
-				dev_err(&catc->usbdev->dev,
-					"submit(rx_urb) status %d\n", res);
+				err("submit(rx_urb) status %d", res);
 			}
 		} 
 	}
 resubmit:
 	res = usb_submit_urb (urb, GFP_ATOMIC);
 	if (res)
-		dev_err(&catc->usbdev->dev,
-			"can't resubmit intr, %s-%s, status %d\n",
-			catc->usbdev->bus->bus_name,
-			catc->usbdev->devpath, res);
+		err ("can't resubmit intr, %s-%s, status %d",
+				catc->usbdev->bus->bus_name,
+				catc->usbdev->devpath, res);
 }
 
 /*
@@ -368,8 +366,7 @@ static int catc_tx_run(struct catc *catc)
 	catc->tx_urb->dev = catc->usbdev;
 
 	if ((status = usb_submit_urb(catc->tx_urb, GFP_ATOMIC)) < 0)
-		dev_err(&catc->usbdev->dev, "submit(tx_urb), status %d\n",
-			status);
+		err("submit(tx_urb), status %d", status);
 
 	catc->tx_idx = !catc->tx_idx;
 	catc->tx_ptr = 0;
@@ -499,8 +496,7 @@ static void catc_ctrl_run(struct catc *catc)
 		memcpy(catc->ctrl_buf, q->buf, q->len);
 
 	if ((status = usb_submit_urb(catc->ctrl_urb, GFP_ATOMIC)))
-		dev_err(&catc->usbdev->dev, "submit(ctrl_urb) status %d\n",
-			status);
+		err("submit(ctrl_urb) status %d", status);
 }
 
 static void catc_ctrl_done(struct urb *urb)
@@ -559,7 +555,7 @@ static int catc_ctrl_async(struct catc *catc, u8 dir, u8 request, u16 value,
 	catc->ctrl_head = (catc->ctrl_head + 1) & (CTRL_QUEUE - 1);
 
 	if (catc->ctrl_head == catc->ctrl_tail) {
-		dev_err(&catc->usbdev->dev, "ctrl queue full\n");
+		err("ctrl queue full");
 		catc->ctrl_tail = (catc->ctrl_tail + 1) & (CTRL_QUEUE - 1);
 		retval = -1;
 	}
@@ -718,8 +714,7 @@ static int catc_open(struct net_device *netdev)
 
 	catc->irq_urb->dev = catc->usbdev;
 	if ((status = usb_submit_urb(catc->irq_urb, GFP_KERNEL)) < 0) {
-		dev_err(&catc->usbdev->dev, "submit(irq_urb) status %d\n",
-			status);
+		err("submit(irq_urb) status %d", status);
 		return -1;
 	}
 
@@ -774,7 +769,7 @@ static int catc_probe(struct usb_interface *intf, const struct usb_device_id *id
 
 	if (usb_set_interface(usbdev,
 			intf->altsetting->desc.bInterfaceNumber, 1)) {
-                dev_err(&intf->dev, "Can't set altsetting 1.\n");
+                err("Can't set altsetting 1.");
 		return -EIO;
 	}
 
@@ -804,7 +799,7 @@ static int catc_probe(struct usb_interface *intf, const struct usb_device_id *id
 	catc->irq_urb = usb_alloc_urb(0, GFP_KERNEL);
 	if ((!catc->ctrl_urb) || (!catc->tx_urb) || 
 	    (!catc->rx_urb) || (!catc->irq_urb)) {
-		dev_err(&intf->dev, "No free urbs available.\n");
+		err("No free urbs available.");
 		usb_free_urb(catc->ctrl_urb);
 		usb_free_urb(catc->tx_urb);
 		usb_free_urb(catc->rx_urb);
@@ -952,7 +947,6 @@ static struct usb_driver catc_driver = {
 	.probe =	catc_probe,
 	.disconnect =	catc_disconnect,
 	.id_table =	catc_id_table,
-	.disable_hub_initiated_lpm = 1,
 };
 
 module_usb_driver(catc_driver);

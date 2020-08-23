@@ -199,7 +199,7 @@ handle_diacr(struct kbd_data *kbd, unsigned int ch)
 	if (ch == ' ' || ch == d)
 		return d;
 
-	kbd_put_queue(kbd->port, d);
+	kbd_put_queue(kbd->tty, d);
 	return ch;
 }
 
@@ -221,7 +221,7 @@ k_self(struct kbd_data *kbd, unsigned char value)
 {
 	if (kbd->diacr)
 		value = handle_diacr(kbd, value);
-	kbd_put_queue(kbd->port, value);
+	kbd_put_queue(kbd->tty, value);
 }
 
 /*
@@ -239,7 +239,7 @@ static void
 k_fn(struct kbd_data *kbd, unsigned char value)
 {
 	if (kbd->func_table[value])
-		kbd_puts_queue(kbd->port, kbd->func_table[value]);
+		kbd_puts_queue(kbd->tty, kbd->func_table[value]);
 }
 
 static void
@@ -257,20 +257,20 @@ k_spec(struct kbd_data *kbd, unsigned char value)
  * but we need only 16 bits here
  */
 static void
-to_utf8(struct tty_port *port, ushort c)
+to_utf8(struct tty_struct *tty, ushort c) 
 {
 	if (c < 0x80)
 		/*  0******* */
-		kbd_put_queue(port, c);
+		kbd_put_queue(tty, c);
 	else if (c < 0x800) {
 		/* 110***** 10****** */
-		kbd_put_queue(port, 0xc0 | (c >> 6));
-		kbd_put_queue(port, 0x80 | (c & 0x3f));
+		kbd_put_queue(tty, 0xc0 | (c >> 6));
+		kbd_put_queue(tty, 0x80 | (c & 0x3f));
 	} else {
 		/* 1110**** 10****** 10****** */
-		kbd_put_queue(port, 0xe0 | (c >> 12));
-		kbd_put_queue(port, 0x80 | ((c >> 6) & 0x3f));
-		kbd_put_queue(port, 0x80 | (c & 0x3f));
+		kbd_put_queue(tty, 0xe0 | (c >> 12));
+		kbd_put_queue(tty, 0x80 | ((c >> 6) & 0x3f));
+		kbd_put_queue(tty, 0x80 | (c & 0x3f));
 	}
 }
 
@@ -283,7 +283,7 @@ kbd_keycode(struct kbd_data *kbd, unsigned int keycode)
 	unsigned short keysym;
 	unsigned char type, value;
 
-	if (!kbd)
+	if (!kbd || !kbd->tty)
 		return;
 
 	if (keycode >= 384)
@@ -323,7 +323,7 @@ kbd_keycode(struct kbd_data *kbd, unsigned int keycode)
 #endif
 		(*k_handler[type])(kbd, value);
 	} else
-		to_utf8(kbd->port, keysym);
+		to_utf8(kbd->tty, keysym);
 }
 
 /*
@@ -457,7 +457,6 @@ do_kdgkb_ioctl(struct kbd_data *kbd, struct kbsentry __user *u_kbs,
 
 int kbd_ioctl(struct kbd_data *kbd, unsigned int cmd, unsigned long arg)
 {
-	struct tty_struct *tty;
 	void __user *argp;
 	unsigned int ct;
 	int perm;
@@ -468,10 +467,7 @@ int kbd_ioctl(struct kbd_data *kbd, unsigned int cmd, unsigned long arg)
 	 * To have permissions to do most of the vt ioctls, we either have
 	 * to be the owner of the tty, or have CAP_SYS_TTY_CONFIG.
 	 */
-	tty = tty_port_tty_get(kbd->port);
-	/* FIXME this test is pretty racy */
-	perm = current->signal->tty == tty || capable(CAP_SYS_TTY_CONFIG);
-	tty_kref_put(tty);
+	perm = current->signal->tty == kbd->tty || capable(CAP_SYS_TTY_CONFIG);
 	switch (cmd) {
 	case KDGKBTYPE:
 		return put_user(KB_101, (char __user *)argp);

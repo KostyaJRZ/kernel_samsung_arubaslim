@@ -400,6 +400,9 @@ static int __devinit w840_probe1 (struct pci_dev *pdev,
 	   No hold time required! */
 	iowrite32(0x00000001, ioaddr + PCIBusCfg);
 
+	dev->base_addr = (unsigned long)ioaddr;
+	dev->irq = irq;
+
 	np = netdev_priv(dev);
 	np->pci_dev = pdev;
 	np->chip_id = chip_idx;
@@ -632,18 +635,17 @@ static int netdev_open(struct net_device *dev)
 {
 	struct netdev_private *np = netdev_priv(dev);
 	void __iomem *ioaddr = np->base_addr;
-	const int irq = np->pci_dev->irq;
 	int i;
 
 	iowrite32(0x00000001, ioaddr + PCIBusCfg);		/* Reset */
 
 	netif_device_detach(dev);
-	i = request_irq(irq, intr_handler, IRQF_SHARED, dev->name, dev);
+	i = request_irq(dev->irq, intr_handler, IRQF_SHARED, dev->name, dev);
 	if (i)
 		goto out_err;
 
 	if (debug > 1)
-		netdev_dbg(dev, "w89c840_open() irq %d\n", irq);
+		netdev_dbg(dev, "w89c840_open() irq %d\n", dev->irq);
 
 	if((i=alloc_ringdesc(dev)))
 		goto out_err;
@@ -930,7 +932,6 @@ static void tx_timeout(struct net_device *dev)
 {
 	struct netdev_private *np = netdev_priv(dev);
 	void __iomem *ioaddr = np->base_addr;
-	const int irq = np->pci_dev->irq;
 
 	dev_warn(&dev->dev, "Transmit timed out, status %08x, resetting...\n",
 		 ioread32(ioaddr + IntrStatus));
@@ -950,7 +951,7 @@ static void tx_timeout(struct net_device *dev)
 	       np->cur_tx, np->dirty_tx, np->tx_full, np->tx_q_bytes);
 	printk(KERN_DEBUG "Tx Descriptor addr %xh\n", ioread32(ioaddr+0x4C));
 
-	disable_irq(irq);
+	disable_irq(dev->irq);
 	spin_lock_irq(&np->lock);
 	/*
 	 * Under high load dirty_tx and the internal tx descriptor pointer
@@ -965,7 +966,7 @@ static void tx_timeout(struct net_device *dev)
 	init_rxtx_rings(dev);
 	init_registers(dev);
 	spin_unlock_irq(&np->lock);
-	enable_irq(irq);
+	enable_irq(dev->irq);
 
 	netif_wake_queue(dev);
 	dev->trans_start = jiffies; /* prevent tx timeout */
@@ -1499,7 +1500,7 @@ static int netdev_close(struct net_device *dev)
 	iowrite32(0x0000, ioaddr + IntrEnable);
 	spin_unlock_irq(&np->lock);
 
-	free_irq(np->pci_dev->irq, dev);
+	free_irq(dev->irq, dev);
 	wmb();
 	netif_device_attach(dev);
 
@@ -1588,7 +1589,7 @@ static int w840_suspend (struct pci_dev *pdev, pm_message_t state)
 		iowrite32(0, ioaddr + IntrEnable);
 		spin_unlock_irq(&np->lock);
 
-		synchronize_irq(np->pci_dev->irq);
+		synchronize_irq(dev->irq);
 		netif_tx_disable(dev);
 
 		np->stats.rx_missed_errors += ioread32(ioaddr + RxMissed) & 0xffff;

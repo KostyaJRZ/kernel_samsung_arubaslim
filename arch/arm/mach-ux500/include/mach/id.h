@@ -41,16 +41,6 @@ static inline bool __attribute_const__ cpu_is_u8500(void)
 	return dbx500_partnumber() == 0x8500;
 }
 
-static inline bool __attribute_const__ cpu_is_u9540(void)
-{
-	return dbx500_partnumber() == 0x9540;
-}
-
-static inline bool cpu_is_u8500_family(void)
-{
-	return cpu_is_u8500() || cpu_is_u9540();
-}
-
 static inline bool __attribute_const__ cpu_is_u5500(void)
 {
 	return dbx500_partnumber() == 0x5500;
@@ -121,12 +111,7 @@ static inline bool cpu_is_u8500v21(void)
 
 static inline bool cpu_is_u8500v20_or_later(void)
 {
-	/*
-	 * U9540 has so much in common with U8500 that is is considered a
-	 * U8500 variant.
-	 */
-	return cpu_is_u9540() ||
-		(cpu_is_u8500() && !cpu_is_u8500v10() && !cpu_is_u8500v11());
+	return cpu_is_u8500() && !cpu_is_u8500v10() && !cpu_is_u8500v11();
 }
 
 static inline bool ux500_is_svp(void)

@@ -75,6 +75,7 @@ struct clk;
 
 struct timer_regs {
 	u32 tidr;
+	u32 tiocp_cfg;
 	u32 tistat;
 	u32 tisr;
 	u32 tier;
@@ -258,7 +259,7 @@ struct omap_dm_timer {
 	unsigned long phys_base;
 	int id;
 	int irq;
-	struct clk *fclk;
+	struct clk *iclk, *fclk;
 
 	void __iomem	*io_base;
 	void __iomem	*sys_stat;	/* TISTAT timer status */
@@ -315,12 +316,12 @@ static inline void __omap_dm_timer_init_regs(struct omap_dm_timer *timer)
 				OMAP_TIMER_V1_SYS_STAT_OFFSET;
 		timer->irq_stat = timer->io_base + OMAP_TIMER_V1_STAT_OFFSET;
 		timer->irq_ena = timer->io_base + OMAP_TIMER_V1_INT_EN_OFFSET;
-		timer->irq_dis = NULL;
+		timer->irq_dis = 0;
 		timer->pend = timer->io_base + _OMAP_TIMER_WRITE_PEND_OFFSET;
 		timer->func_base = timer->io_base;
 	} else {
 		timer->revision = 2;
-		timer->sys_stat = NULL;
+		timer->sys_stat = 0;
 		timer->irq_stat = timer->io_base + OMAP_TIMER_V2_IRQSTATUS;
 		timer->irq_ena = timer->io_base + OMAP_TIMER_V2_IRQENABLE_SET;
 		timer->irq_dis = timer->io_base + OMAP_TIMER_V2_IRQENABLE_CLR;

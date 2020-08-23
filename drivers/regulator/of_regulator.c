@@ -13,8 +13,8 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/of.h>
+#include <linux/string.h>
 #include <linux/regulator/machine.h>
-#include <linux/regulator/of_regulator.h>
 
 static void of_get_regulation_constraints(struct device_node *np,
 					struct regulator_init_data **init_data)
@@ -62,6 +62,71 @@ static void of_get_regulation_constraints(struct device_node *np,
 		constraints->valid_ops_mask |= REGULATOR_CHANGE_STATUS;
 }
 
+static const char *consumer_supply_prop_name = "qcom,consumer-supplies";
+#define MAX_DEV_NAME_LEN 256
+/*
+ * Fill in regulator init_data based on qcom legacy requirements.
+ */
+static int of_get_qcom_regulator_init_data(struct device *dev,
+					struct regulator_init_data **init_data)
+{
+	struct device_node *node = dev->of_node;
+	struct regulator_consumer_supply *consumer_supplies;
+	int i, rc, num_consumer_supplies, array_len;
+
+	array_len = of_property_count_strings(node, consumer_supply_prop_name);
+	if (array_len > 0) {
+		/* Array length must be divisible by 2. */
+		if (array_len & 1) {
+			dev_err(dev, "error: %s device node property value "
+				"contains an odd number of elements: %d\n",
+				consumer_supply_prop_name, array_len);
+			return -EINVAL;
+		}
+		num_consumer_supplies = array_len / 2;
+
+		consumer_supplies = devm_kzalloc(dev,
+			sizeof(struct regulator_consumer_supply)
+			* num_consumer_supplies, GFP_KERNEL);
+		if (consumer_supplies == NULL) {
+			dev_err(dev, "devm_kzalloc failed\n");
+			return -ENOMEM;
+		}
+
+		for (i = 0; i < num_consumer_supplies; i++) {
+			rc = of_property_read_string_index(node,
+				consumer_supply_prop_name, i * 2,
+				&consumer_supplies[i].supply);
+			if (rc) {
+				dev_err(dev, "of_property_read_string_index "
+					"failed, rc=%d\n", rc);
+				devm_kfree(dev, consumer_supplies);
+				return rc;
+			}
+
+			rc = of_property_read_string_index(node,
+				consumer_supply_prop_name, (i * 2) + 1,
+				&consumer_supplies[i].dev_name);
+			if (rc) {
+				dev_err(dev, "of_property_read_string_index "
+					"failed, rc=%d\n", rc);
+				devm_kfree(dev, consumer_supplies);
+				return rc;
+			}
+
+			/* Treat dev_name = "" as a wildcard. */
+			if (strnlen(consumer_supplies[i].dev_name,
+					MAX_DEV_NAME_LEN) == 0)
+				consumer_supplies[i].dev_name = NULL;
+		}
+
+		(*init_data)->consumer_supplies = consumer_supplies;
+		(*init_data)->num_consumer_supplies = num_consumer_supplies;
+	}
+
+	return 0;
+}
+
 /**
  * of_get_regulator_init_data - extract regulator_init_data structure info
  * @dev: device requesting for regulator_init_data
@@ -74,6 +139,7 @@ struct regulator_init_data *of_get_regulator_init_data(struct device *dev,
 						struct device_node *node)
 {
 	struct regulator_init_data *init_data;
+	int rc;
 
 	if (!node)
 		return NULL;
@@ -83,52 +149,12 @@ struct regulator_init_data *of_get_regulator_init_data(struct device *dev,
 		return NULL; /* Out of memory? */
 
 	of_get_regulation_constraints(node, &init_data);
+	rc = of_get_qcom_regulator_init_data(dev, &init_data);
+	if (rc) {
+		devm_kfree(dev, init_data);
+		return NULL;
+	}
+
 	return init_data;
 }
 EXPORT_SYMBOL_GPL(of_get_regulator_init_data);
-
-/**
- * of_regulator_match - extract regulator init data
- * @dev: device requesting the data
- * @node: parent device node of the regulators
- * @matches: match table for the regulators
- * @num_matches: number of entries in match table
- *
- * This function uses a match table specified by the regulator driver and
- * looks up the corresponding init data in the device tree. Note that the
- * match table is modified in place.
- *
- * Returns the number of matches found or a negative error code on failure.
- */
-int of_regulator_match(struct device *dev, struct device_node *node,
-		       struct of_regulator_match *matches,
-		       unsigned int num_matches)
-{
-	unsigned int count = 0;
-	unsigned int i;
-
-	if (!dev || !node)
-		return -EINVAL;
-
-	for (i = 0; i < num_matches; i++) {
-		struct of_regulator_match *match = &matches[i];
-		struct device_node *child;
-
-		child = of_find_node_by_name(node, match->name);
-		if (!child)
-			continue;
-
-		match->init_data = of_get_regulator_init_data(dev, child);
-		if (!match->init_data) {
-			dev_err(dev, "failed to parse DT for regulator %s\n",
-				child->name);
-			return -EINVAL;
-		}
-
-		match->of_node = child;
-		count++;
-	}
-
-	return count;
-}
-EXPORT_SYMBOL_GPL(of_regulator_match);

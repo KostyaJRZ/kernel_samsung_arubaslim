@@ -28,7 +28,7 @@
 #include <net/inet6_connection_sock.h>
 
 int inet6_csk_bind_conflict(const struct sock *sk,
-			    const struct inet_bind_bucket *tb, bool relax)
+			    const struct inet_bind_bucket *tb)
 {
 	const struct sock *sk2;
 	const struct hlist_node *node;
@@ -72,6 +72,7 @@ struct dst_entry *inet6_csk_route_req(struct sock *sk,
 	fl6.flowi6_mark = sk->sk_mark;
 	fl6.fl6_dport = inet_rsk(req)->rmt_port;
 	fl6.fl6_sport = inet_rsk(req)->loc_port;
+	fl6.flowi6_uid = sock_i_uid(sk);
 	security_req_classify_flow(req, flowi6_to_flowi(&fl6));
 
 	dst = ip6_dst_lookup_flow(sk, &fl6, final_p, false);
@@ -223,6 +224,7 @@ int inet6_csk_xmit(struct sk_buff *skb, struct flowi *fl_unused)
 	fl6.flowi6_mark = sk->sk_mark;
 	fl6.fl6_sport = inet->inet_sport;
 	fl6.fl6_dport = inet->inet_dport;
+	fl6.flowi6_uid = sock_i_uid(sk);
 	security_sk_classify_flow(sk, flowi6_to_flowi(&fl6));
 
 	final_p = fl6_update_dst(&fl6, np->opt, &final);

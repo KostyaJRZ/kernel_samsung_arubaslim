@@ -311,15 +311,7 @@ static void pxa27x_keypad_scan_direct(struct pxa27x_keypad *keypad)
 	if (pdata->enable_rotary0 || pdata->enable_rotary1)
 		pxa27x_keypad_scan_rotary(keypad);
 
-	/*
-	 * The KPDR_DK only output the key pin level, so it relates to board,
-	 * and low level may be active.
-	 */
-	if (pdata->direct_key_low_active)
-		new_state = ~KPDK_DK(kpdk) & keypad->direct_key_mask;
-	else
-		new_state = KPDK_DK(kpdk) & keypad->direct_key_mask;
-
+	new_state = KPDK_DK(kpdk) & keypad->direct_key_mask;
 	bits_changed = keypad->direct_key_state ^ new_state;
 
 	if (bits_changed == 0)
@@ -391,14 +383,7 @@ static void pxa27x_keypad_config(struct pxa27x_keypad *keypad)
 	if (pdata->direct_key_num > direct_key_num)
 		direct_key_num = pdata->direct_key_num;
 
-	/*
-	 * Direct keys usage may not start from KP_DKIN0, check the platfrom
-	 * mask data to config the specific.
-	 */
-	if (pdata->direct_key_mask)
-		keypad->direct_key_mask = pdata->direct_key_mask;
-	else
-		keypad->direct_key_mask = ((1 << direct_key_num) - 1) & ~mask;
+	keypad->direct_key_mask = ((2 << direct_key_num) - 1) & ~mask;
 
 	/* enable direct key */
 	if (direct_key_num)
@@ -414,7 +399,7 @@ static int pxa27x_keypad_open(struct input_dev *dev)
 	struct pxa27x_keypad *keypad = input_get_drvdata(dev);
 
 	/* Enable unit clock */
-	clk_prepare_enable(keypad->clk);
+	clk_enable(keypad->clk);
 	pxa27x_keypad_config(keypad);
 
 	return 0;
@@ -425,7 +410,7 @@ static void pxa27x_keypad_close(struct input_dev *dev)
 	struct pxa27x_keypad *keypad = input_get_drvdata(dev);
 
 	/* Disable clock unit */
-	clk_disable_unprepare(keypad->clk);
+	clk_disable(keypad->clk);
 }
 
 #ifdef CONFIG_PM
@@ -434,14 +419,10 @@ static int pxa27x_keypad_suspend(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct pxa27x_keypad *keypad = platform_get_drvdata(pdev);
 
-	/*
-	 * If the keypad is used a wake up source, clock can not be disabled.
-	 * Or it can not detect the key pressing.
-	 */
+	clk_disable(keypad->clk);
+
 	if (device_may_wakeup(&pdev->dev))
 		enable_irq_wake(keypad->irq);
-	else
-		clk_disable_unprepare(keypad->clk);
 
 	return 0;
 }
@@ -452,23 +433,18 @@ static int pxa27x_keypad_resume(struct device *dev)
 	struct pxa27x_keypad *keypad = platform_get_drvdata(pdev);
 	struct input_dev *input_dev = keypad->input_dev;
 
-	/*
-	 * If the keypad is used as wake up source, the clock is not turned
-	 * off. So do not need configure it again.
-	 */
-	if (device_may_wakeup(&pdev->dev)) {
+	if (device_may_wakeup(&pdev->dev))
 		disable_irq_wake(keypad->irq);
-	} else {
-		mutex_lock(&input_dev->mutex);
 
-		if (input_dev->users) {
-			/* Enable unit clock */
-			clk_prepare_enable(keypad->clk);
-			pxa27x_keypad_config(keypad);
-		}
+	mutex_lock(&input_dev->mutex);
 
-		mutex_unlock(&input_dev->mutex);
+	if (input_dev->users) {
+		/* Enable unit clock */
+		clk_enable(keypad->clk);
+		pxa27x_keypad_config(keypad);
 	}
+
+	mutex_unlock(&input_dev->mutex);
 
 	return 0;
 }

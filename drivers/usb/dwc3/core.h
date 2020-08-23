@@ -50,12 +50,13 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 
+#include "dwc3_otg.h"
+
 /* Global constants */
-#define DWC3_EP0_BOUNCE_SIZE	512
 #define DWC3_ENDPOINTS_NUM	32
 #define DWC3_XHCI_RESOURCES_NUM	2
 
-#define DWC3_EVENT_BUFFERS_SIZE	PAGE_SIZE
+#define DWC3_EVENT_BUFFERS_SIZE	(2 * PAGE_SIZE)
 #define DWC3_EVENT_TYPE_MASK	0xfe
 
 #define DWC3_EVENT_TYPE_DEV	0
@@ -72,6 +73,7 @@
 #define DWC3_DEVICE_EVENT_ERRATIC_ERROR		9
 #define DWC3_DEVICE_EVENT_CMD_CMPL		10
 #define DWC3_DEVICE_EVENT_OVERFLOW		11
+#define DWC3_DEVICE_EVENT_VENDOR_DEV_TEST_LMP	12
 
 #define DWC3_GEVNTCOUNT_MASK	0xfffc
 #define DWC3_GSNPSID_MASK	0xffff0000
@@ -151,8 +153,9 @@
 /* OTG Registers */
 #define DWC3_OCFG		0xcc00
 #define DWC3_OCTL		0xcc04
-#define DWC3_OEVTEN		0xcc08
-#define DWC3_OSTS		0xcc0C
+#define DWC3_OEVT		0xcc08
+#define DWC3_OEVTEN		0xcc0c
+#define DWC3_OSTS		0xcc10
 
 /* Bit fields */
 
@@ -184,6 +187,7 @@
 /* Global USB3 PIPE Control Register */
 #define DWC3_GUSB3PIPECTL_PHYSOFTRST (1 << 31)
 #define DWC3_GUSB3PIPECTL_SUSPHY (1 << 17)
+#define DWC3_GUSB3PIPECTL_DELAY_P1P2P3 (7 << 19)
 
 /* Global TX Fifo Size Register */
 #define DWC3_GTXFIFOSIZ_TXFDEF(n) ((n) & 0xffff)
@@ -194,8 +198,10 @@
 #define DWC3_GHWPARAMS1_EN_PWROPT_NO	0
 #define DWC3_GHWPARAMS1_EN_PWROPT_CLK	1
 
+/* Global HWPARAMS6 Register */
+#define DWC3_GHWPARAMS6_SRP_SUPPORT	(1 << 10)
+
 /* Device Configuration Register */
-#define DWC3_DCFG_LPM_CAP	(1 << 22)
 #define DWC3_DCFG_DEVADDR(addr)	((addr) << 3)
 #define DWC3_DCFG_DEVADDR_MASK	DWC3_DCFG_DEVADDR(0x7f)
 
@@ -285,14 +291,12 @@
 #define DWC3_DGCMD_SET_ENDPOINT_NRDY	0x0c
 #define DWC3_DGCMD_RUN_SOC_BUS_LOOPBACK	0x10
 
-#define DWC3_DGCMD_STATUS(n)		(((n) >> 15) & 1)
-#define DWC3_DGCMD_CMDACT		(1 << 10)
-
 /* Device Endpoint Command Register */
 #define DWC3_DEPCMD_PARAM_SHIFT		16
 #define DWC3_DEPCMD_PARAM(x)		((x) << DWC3_DEPCMD_PARAM_SHIFT)
 #define DWC3_DEPCMD_GET_RSC_IDX(x)     (((x) >> DWC3_DEPCMD_PARAM_SHIFT) & 0x7f)
-#define DWC3_DEPCMD_STATUS(x)		(((x) >> 15) & 1)
+#define DWC3_DEPCMD_STATUS_MASK		(0x0f << 12)
+#define DWC3_DEPCMD_STATUS(x)		(((x) & DWC3_DEPCMD_STATUS_MASK) >> 12)
 #define DWC3_DEPCMD_HIPRI_FORCERM	(1 << 11)
 #define DWC3_DEPCMD_CMDACT		(1 << 10)
 #define DWC3_DEPCMD_CMDIOC		(1 << 8)
@@ -314,6 +318,37 @@
 #define DWC3_DEPCMD_TYPE_ISOC		1
 #define DWC3_DEPCMD_TYPE_BULK		2
 #define DWC3_DEPCMD_TYPE_INTR		3
+
+/* OTG Events Register */
+#define DWC3_OEVT_DEVICEMODE			(1 << 31)
+#define DWC3_OEVTEN_OTGCONIDSTSCHNGEVNT		(1 << 24)
+#define DWC3_OEVTEN_OTGADEVBHOSTENDEVNT		(1 << 20)
+#define DWC3_OEVTEN_OTGADEVHOSTEVNT		(1 << 19)
+#define DWC3_OEVTEN_OTGADEVHNPCHNGEVNT		(1 << 18)
+#define DWC3_OEVTEN_OTGADEVSRPDETEVNT		(1 << 17)
+#define DWC3_OEVTEN_OTGADEVSESSENDDETEVNT	(1 << 16)
+#define DWC3_OEVTEN_OTGBDEVBHOSTENDEVNT		(1 << 11)
+#define DWC3_OEVTEN_OTGBDEVHNPCHNGEVNT		(1 << 10)
+#define DWC3_OEVTEN_OTGBDEVSESSVLDDETEVNT	(1 << 9)
+#define DWC3_OEVTEN_OTGBDEVVBUSCHNGEVNT		(1 << 8)
+
+/* OTG OSTS register */
+#define DWC3_OTG_OSTS_OTGSTATE_SHIFT	(8)
+#define DWC3_OTG_OSTS_OTGSTATE		(0xF << DWC3_OTG_OSTS_OTGSTATE_SHIFT)
+#define DWC3_OTG_OSTS_PERIPHERALSTATE	(1 << 4)
+#define DWC3_OTG_OSTS_XHCIPRTPOWER	(1 << 3)
+#define DWC3_OTG_OSTS_BSESVALID		(1 << 2)
+#define DWC3_OTG_OSTS_VBUSVALID		(1 << 1)
+#define DWC3_OTG_OSTS_CONIDSTS		(1 << 0)
+
+/* OTG OSTS register */
+#define DWC3_OTG_OCTL_PERIMODE		(1 << 6)
+#define DWC3_OTG_OCTL_PRTPWRCTL		(1 << 5)
+#define DWC3_OTG_OCTL_HNPREQ		(1 << 4)
+#define DWC3_OTG_OCTL_SESREQ		(1 << 3)
+#define DWC3_OTG_OCTL_TERMSELDLPULSE	(1 << 2)
+#define DWC3_OTG_OCTL_DEVSETHNPEN	(1 << 1)
+#define DWC3_OTG_OCTL_HSTSETHNPEN	(1 << 0)
 
 /* Structures */
 
@@ -376,6 +411,7 @@ struct dwc3_ep {
 	dma_addr_t		trb_pool_dma;
 	u32			free_slot;
 	u32			busy_slot;
+	const struct usb_endpoint_descriptor *desc;
 	const struct usb_ss_ep_comp_descriptor *comp_desc;
 	struct dwc3		*dwc;
 
@@ -575,11 +611,6 @@ struct dwc3_request {
  * @setup_packet_pending: true when there's a Setup Packet in FIFO. Workaround
  * @needs_fifo_resize: not all users might want fifo resizing, flag it
  * @resize_fifos: tells us it's ok to reconfigure our TxFIFO sizes.
- * @isoch_delay: wValue from Set Isochronous Delay request;
- * @u2sel: parameter from Set SEL request.
- * @u2pel: parameter from Set SEL request.
- * @u1sel: parameter from Set SEL request.
- * @u1pel: parameter from Set SEL request.
  * @ep0_next_event: hold the next expected event
  * @ep0state: state of endpoint zero
  * @link_state: link state
@@ -601,6 +632,7 @@ struct dwc3 {
 	spinlock_t		lock;
 	struct device		*dev;
 
+	struct dwc3_otg		*dotg;
 	struct platform_device	*xhci;
 	struct resource		xhci_resources[DWC3_XHCI_RESOURCES_NUM];
 
@@ -626,16 +658,12 @@ struct dwc3 {
 #define DWC3_REVISION_185A	0x5533185a
 #define DWC3_REVISION_188A	0x5533188a
 #define DWC3_REVISION_190A	0x5533190a
-#define DWC3_REVISION_200A	0x5533200a
-#define DWC3_REVISION_202A	0x5533202a
-#define DWC3_REVISION_210A	0x5533210a
-#define DWC3_REVISION_220A	0x5533220a
+#define DWC3_REVISION_230A	0x5533230a
 
 	unsigned		is_selfpowered:1;
 	unsigned		three_stage_setup:1;
 	unsigned		ep0_bounced:1;
 	unsigned		ep0_expect_in:1;
-	unsigned		start_config_issued:1;
 	unsigned		setup_packet_pending:1;
 	unsigned		delayed_status:1;
 	unsigned		needs_fifo_resize:1;
@@ -646,14 +674,7 @@ struct dwc3 {
 	enum dwc3_link_state	link_state;
 	enum dwc3_device_state	dev_state;
 
-	u16			isoch_delay;
-	u16			u2sel;
-	u16			u2pel;
-	u8			u1sel;
-	u8			u1pel;
-
 	u8			speed;
-
 	void			*mem;
 
 	struct dwc3_hwparams	hwparams;
@@ -661,6 +682,12 @@ struct dwc3 {
 
 	u8			test_mode;
 	u8			test_mode_nr;
+
+	/* Indicate if the gadget was powered by the otg driver */
+	bool			vbus_active;
+
+	/* Indicate if software connect was issued by the usb_gadget_driver */
+	bool			softconnect;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -669,8 +696,8 @@ struct dwc3 {
 
 struct dwc3_event_type {
 	u32	is_devspec:1;
-	u32	type:6;
-	u32	reserved8_31:25;
+	u32	type:7;
+	u32	reserved8_31:24;
 } __packed;
 
 #define DWC3_DEPEVT_XFERCOMPLETE	0x01
@@ -747,15 +774,15 @@ struct dwc3_event_depevt {
  *	12	- VndrDevTstRcved
  * @reserved15_12: Reserved, not used
  * @event_info: Information about this event
- * @reserved31_24: Reserved, not used
+ * @reserved31_25: Reserved, not used
  */
 struct dwc3_event_devt {
 	u32	one_bit:1;
 	u32	device_event:7;
 	u32	type:4;
 	u32	reserved15_12:4;
-	u32	event_info:8;
-	u32	reserved31_24:8;
+	u32	event_info:9;
+	u32	reserved31_25:7;
 } __packed;
 
 /**
@@ -799,6 +826,9 @@ union dwc3_event {
 /* prototypes */
 void dwc3_set_mode(struct dwc3 *dwc, u32 mode);
 int dwc3_gadget_resize_tx_fifos(struct dwc3 *dwc);
+
+int dwc3_otg_init(struct dwc3 *dwc);
+void dwc3_otg_exit(struct dwc3 *dwc);
 
 int dwc3_host_init(struct dwc3 *dwc);
 void dwc3_host_exit(struct dwc3 *dwc);

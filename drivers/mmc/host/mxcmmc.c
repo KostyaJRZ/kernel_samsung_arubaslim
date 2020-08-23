@@ -136,8 +136,7 @@ struct mxcmci_host {
 	u16			rev_no;
 	unsigned int		cmdat;
 
-	struct clk		*clk_ipg;
-	struct clk		*clk_per;
+	struct clk		*clk;
 
 	int			clock;
 
@@ -673,7 +672,7 @@ static void mxcmci_set_clk_rate(struct mxcmci_host *host, unsigned int clk_ios)
 {
 	unsigned int divider;
 	int prescaler = 0;
-	unsigned int clk_in = clk_get_rate(host->clk_per);
+	unsigned int clk_in = clk_get_rate(host->clk);
 
 	while (prescaler <= 0x800) {
 		for (divider = 1; divider <= 0xF; divider++) {
@@ -901,20 +900,12 @@ static int mxcmci_probe(struct platform_device *pdev)
 	host->res = r;
 	host->irq = irq;
 
-	host->clk_ipg = devm_clk_get(&pdev->dev, "ipg");
-	if (IS_ERR(host->clk_ipg)) {
-		ret = PTR_ERR(host->clk_ipg);
+	host->clk = clk_get(&pdev->dev, NULL);
+	if (IS_ERR(host->clk)) {
+		ret = PTR_ERR(host->clk);
 		goto out_iounmap;
 	}
-
-	host->clk_per = devm_clk_get(&pdev->dev, "per");
-	if (IS_ERR(host->clk_per)) {
-		ret = PTR_ERR(host->clk_per);
-		goto out_iounmap;
-	}
-
-	clk_prepare_enable(host->clk_per);
-	clk_prepare_enable(host->clk_ipg);
+	clk_enable(host->clk);
 
 	mxcmci_softreset(host);
 
@@ -926,8 +917,8 @@ static int mxcmci_probe(struct platform_device *pdev)
 		goto out_clk_put;
 	}
 
-	mmc->f_min = clk_get_rate(host->clk_per) >> 16;
-	mmc->f_max = clk_get_rate(host->clk_per) >> 1;
+	mmc->f_min = clk_get_rate(host->clk) >> 16;
+	mmc->f_max = clk_get_rate(host->clk) >> 1;
 
 	/* recommended in data sheet */
 	writew(0x2db4, host->base + MMC_REG_READ_TO);
@@ -976,8 +967,8 @@ out_free_dma:
 	if (host->dma)
 		dma_release_channel(host->dma);
 out_clk_put:
-	clk_disable_unprepare(host->clk_per);
-	clk_disable_unprepare(host->clk_ipg);
+	clk_disable(host->clk);
+	clk_put(host->clk);
 out_iounmap:
 	iounmap(host->base);
 out_free:
@@ -1008,8 +999,8 @@ static int mxcmci_remove(struct platform_device *pdev)
 	if (host->dma)
 		dma_release_channel(host->dma);
 
-	clk_disable_unprepare(host->clk_per);
-	clk_disable_unprepare(host->clk_ipg);
+	clk_disable(host->clk);
+	clk_put(host->clk);
 
 	release_mem_region(host->res->start, resource_size(host->res));
 
@@ -1027,8 +1018,7 @@ static int mxcmci_suspend(struct device *dev)
 
 	if (mmc)
 		ret = mmc_suspend_host(mmc);
-	clk_disable_unprepare(host->clk_per);
-	clk_disable_unprepare(host->clk_ipg);
+	clk_disable(host->clk);
 
 	return ret;
 }
@@ -1039,8 +1029,7 @@ static int mxcmci_resume(struct device *dev)
 	struct mxcmci_host *host = mmc_priv(mmc);
 	int ret = 0;
 
-	clk_prepare_enable(host->clk_per);
-	clk_prepare_enable(host->clk_ipg);
+	clk_enable(host->clk);
 	if (mmc)
 		ret = mmc_resume_host(mmc);
 

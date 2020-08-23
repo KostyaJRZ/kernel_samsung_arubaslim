@@ -42,13 +42,13 @@ struct edac_pci_ctl_info *edac_pci_alloc_ctl_info(unsigned int sz_pvt,
 						const char *edac_pci_name)
 {
 	struct edac_pci_ctl_info *pci;
-	void *p = NULL, *pvt;
+	void *pvt;
 	unsigned int size;
 
 	debugf1("%s()\n", __func__);
 
-	pci = edac_align_ptr(&p, sizeof(*pci), 1);
-	pvt = edac_align_ptr(&p, 1, sz_pvt);
+	pci = (struct edac_pci_ctl_info *)0;
+	pvt = edac_align_ptr(&pci[1], sz_pvt);
 	size = ((unsigned long)pvt) + sz_pvt;
 
 	/* Alloc the needed control struct memory */

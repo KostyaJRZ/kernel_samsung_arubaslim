@@ -144,8 +144,7 @@ static void wait_for_interrupt(struct vdev_info *dev)
 		}
 }
 
-static void run_test(struct vdev_info *dev, struct vq_info *vq,
-		     bool delayed, int bufs)
+static void run_test(struct vdev_info *dev, struct vq_info *vq, int bufs)
 {
 	struct scatterlist sl;
 	long started = 0, completed = 0;
@@ -184,12 +183,8 @@ static void run_test(struct vdev_info *dev, struct vq_info *vq,
 		assert(started <= bufs);
 		if (completed == bufs)
 			break;
-		if (delayed) {
-			if (virtqueue_enable_cb_delayed(vq->vq))
-				wait_for_interrupt(dev);
-		} else {
-			if (virtqueue_enable_cb(vq->vq))
-				wait_for_interrupt(dev);
+		if (virtqueue_enable_cb(vq->vq)) {
+			wait_for_interrupt(dev);
 		}
 	}
 	test = 0;
@@ -221,14 +216,6 @@ const struct option longopts[] = {
 		.val = 'i',
 	},
 	{
-		.name = "delayed-interrupt",
-		.val = 'D',
-	},
-	{
-		.name = "no-delayed-interrupt",
-		.val = 'd',
-	},
-	{
 	}
 };
 
@@ -237,7 +224,6 @@ static void help()
 	fprintf(stderr, "Usage: virtio_test [--help]"
 		" [--no-indirect]"
 		" [--no-event-idx]"
-		" [--delayed-interrupt]"
 		"\n");
 }
 
@@ -247,7 +233,6 @@ int main(int argc, char **argv)
 	unsigned long long features = (1ULL << VIRTIO_RING_F_INDIRECT_DESC) |
 		(1ULL << VIRTIO_RING_F_EVENT_IDX);
 	int o;
-	bool delayed = false;
 
 	for (;;) {
 		o = getopt_long(argc, argv, optstring, longopts, NULL);
@@ -266,9 +251,6 @@ int main(int argc, char **argv)
 		case 'i':
 			features &= ~(1ULL << VIRTIO_RING_F_INDIRECT_DESC);
 			break;
-		case 'D':
-			delayed = true;
-			break;
 		default:
 			assert(0);
 			break;
@@ -278,6 +260,6 @@ int main(int argc, char **argv)
 done:
 	vdev_info_init(&dev, features);
 	vq_info_add(&dev, 256);
-	run_test(&dev, &dev.vqs[0], delayed, 0x100000);
+	run_test(&dev, &dev.vqs[0], 0x100000);
 	return 0;
 }

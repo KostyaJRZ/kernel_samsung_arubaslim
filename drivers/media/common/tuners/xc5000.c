@@ -54,7 +54,7 @@ struct xc5000_priv {
 	struct list_head hybrid_tuner_instance_list;
 
 	u32 if_khz;
-	u16 xtal_khz;
+	u32 xtal_khz;
 	u32 freq_hz;
 	u32 bandwidth;
 	u8  video_standard;
@@ -631,10 +631,7 @@ static int xc5000_fwupload(struct dvb_frontend *fe)
 		ret = xc_load_i2c_sequence(fe,  fw->data);
 		if (XC_RESULT_SUCCESS == ret)
 			ret = xc_set_xtal(fe);
-		if (XC_RESULT_SUCCESS == ret)
-			printk(KERN_INFO "xc5000: firmware upload complete...\n");
-		else
-			printk(KERN_ERR "xc5000: firmware upload failed...\n");
+		printk(KERN_INFO "xc5000: firmware upload complete...\n");
 	}
 
 out:
@@ -644,12 +641,12 @@ out:
 
 static void xc_debug_dump(struct xc5000_priv *priv)
 {
-	u16 adc_envelope;
+	u16 adc_envelope = 0;
 	u32 freq_error_hz = 0;
-	u16 lock_status;
+	u16 lock_status = 0;
 	u32 hsync_freq_hz = 0;
-	u16 frame_lines;
-	u16 quality;
+	u16 frame_lines = 0;
+	u16 quality = 0;
 	u8 hw_majorversion = 0, hw_minorversion = 0;
 	u8 fw_majorversion = 0, fw_minorversion = 0;
 	u16 fw_buildversion = 0;

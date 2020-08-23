@@ -2054,7 +2054,7 @@ void do_fpieee(struct pt_regs *regs)
 	do_fpe_common(regs);
 }
 
-extern int do_mathemu(struct pt_regs *, struct fpustate *, bool);
+extern int do_mathemu(struct pt_regs *, struct fpustate *);
 
 void do_fpother(struct pt_regs *regs)
 {
@@ -2068,7 +2068,7 @@ void do_fpother(struct pt_regs *regs)
 	switch ((current_thread_info()->xfsr[0] & 0x1c000)) {
 	case (2 << 14): /* unfinished_FPop */
 	case (3 << 14): /* unimplemented_FPop */
-		ret = do_mathemu(regs, f, false);
+		ret = do_mathemu(regs, f);
 		break;
 	}
 	if (ret)
@@ -2308,12 +2308,10 @@ void do_illegal_instruction(struct pt_regs *regs)
 			} else {
 				struct fpustate *f = FPUSTATE;
 
-				/* On UltraSPARC T2 and later, FPU insns which
-				 * are not implemented in HW signal an illegal
-				 * instruction trap and do not set the FP Trap
-				 * Trap in the %fsr to unimplemented_FPop.
+				/* XXX maybe verify XFSR bits like
+				 * XXX do_fpother() does?
 				 */
-				if (do_mathemu(regs, f, true))
+				if (do_mathemu(regs, f))
 					return;
 			}
 		}

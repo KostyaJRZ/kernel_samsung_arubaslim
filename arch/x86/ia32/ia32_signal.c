@@ -131,8 +131,18 @@ int copy_siginfo_from_user32(siginfo_t *to, compat_siginfo_t __user *from)
 asmlinkage long sys32_sigsuspend(int history0, int history1, old_sigset_t mask)
 {
 	sigset_t blocked;
+
+	current->saved_sigmask = current->blocked;
+
+	mask &= _BLOCKABLE;
 	siginitset(&blocked, mask);
-	return sigsuspend(&blocked);
+	set_current_blocked(&blocked);
+
+	current->state = TASK_INTERRUPTIBLE;
+	schedule();
+
+	set_restore_sigmask();
+	return -ERESTARTNOHAND;
 }
 
 asmlinkage long sys32_sigaltstack(const stack_ia32_t __user *uss_ptr,
@@ -273,6 +283,7 @@ asmlinkage long sys32_sigreturn(struct pt_regs *regs)
 				    sizeof(frame->extramask))))
 		goto badframe;
 
+	sigdelsetmask(&set, ~_BLOCKABLE);
 	set_current_blocked(&set);
 
 	if (ia32_restore_sigcontext(regs, &frame->sc, &ax))
@@ -298,6 +309,7 @@ asmlinkage long sys32_rt_sigreturn(struct pt_regs *regs)
 	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
 		goto badframe;
 
+	sigdelsetmask(&set, ~_BLOCKABLE);
 	set_current_blocked(&set);
 
 	if (ia32_restore_sigcontext(regs, &frame->uc.uc_mcontext, &ax))

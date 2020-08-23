@@ -39,6 +39,13 @@
 #include <linux/backing-dev.h>
 #include <linux/ecryptfs.h>
 
+#ifdef CONFIG_WTL_ENCRYPTION_FILTER
+#define ENC_NAME_FILTER_MAX_INSTANCE 5
+#define ENC_NAME_FILTER_MAX_LEN (256*5)
+#define ENC_EXT_FILTER_MAX_INSTANCE 60
+#define ENC_EXT_FILTER_MAX_LEN 16
+#endif
+
 #define ECRYPTFS_DEFAULT_IV_BYTES 16
 #define ECRYPTFS_DEFAULT_EXTENT_SIZE 4096
 #define ECRYPTFS_MINIMUM_HEADER_EXTENT_SIZE 8192
@@ -211,6 +218,10 @@ struct ecryptfs_crypt_stat {
 #define ECRYPTFS_ENCFN_USE_FEK        0x00001000
 #define ECRYPTFS_UNLINK_SIGS          0x00002000
 #define ECRYPTFS_I_SIZE_INITIALIZED   0x00004000
+#ifdef CONFIG_WTL_ENCRYPTION_FILTER
+#define ECRYPTFS_ENCRYPTED_OTHER_DEVICE 0x00008000
+#endif
+
 	u32 flags;
 	unsigned int file_version;
 	size_t iv_bytes;
@@ -318,6 +329,10 @@ struct ecryptfs_mount_crypt_stat {
 #define ECRYPTFS_GLOBAL_ENCFN_USE_MOUNT_FNEK   0x00000020
 #define ECRYPTFS_GLOBAL_ENCFN_USE_FEK          0x00000040
 #define ECRYPTFS_GLOBAL_MOUNT_AUTH_TOK_ONLY    0x00000080
+#ifdef CONFIG_WTL_ENCRYPTION_FILTER
+#define ECRYPTFS_ENABLE_FILTERING              0x00000100
+#define ECRYPTFS_ENABLE_NEW_PASSTHROUGH        0x00000200
+#endif
 	u32 flags;
 	struct list_head global_auth_tok_list;
 	struct mutex global_auth_tok_list_mutex;
@@ -328,6 +343,14 @@ struct ecryptfs_mount_crypt_stat {
 	unsigned char global_default_fn_cipher_name[
 		ECRYPTFS_MAX_CIPHER_NAME_SIZE + 1];
 	char global_default_fnek_sig[ECRYPTFS_SIG_SIZE_HEX + 1];
+#ifdef CONFIG_WTL_ENCRYPTION_FILTER
+	int max_name_filter_len;
+	char enc_filter_name[ENC_NAME_FILTER_MAX_INSTANCE]
+				[ENC_NAME_FILTER_MAX_LEN];
+	char enc_filter_ext[ENC_EXT_FILTER_MAX_INSTANCE]
+				[ENC_EXT_FILTER_MAX_LEN];
+#endif
+
 };
 
 /* superblock private data. */
@@ -568,6 +591,8 @@ struct ecryptfs_open_req {
 struct inode *ecryptfs_get_inode(struct inode *lower_inode,
 				 struct super_block *sb);
 void ecryptfs_i_size_init(const char *page_virt, struct inode *inode);
+int ecryptfs_initialize_file(struct dentry *ecryptfs_dentry,
+			     struct inode *ecryptfs_inode);
 int ecryptfs_decode_and_decrypt_filename(char **decrypted_name,
 					 size_t *decrypted_name_size,
 					 struct dentry *ecryptfs_dentry,
@@ -709,5 +734,12 @@ int ecryptfs_set_f_namelen(long *namelen, long lower_namelen,
 			   struct ecryptfs_mount_crypt_stat *mount_crypt_stat);
 int ecryptfs_derive_iv(char *iv, struct ecryptfs_crypt_stat *crypt_stat,
 		       loff_t offset);
+
+#ifdef CONFIG_WTL_ENCRYPTION_FILTER
+extern int is_file_name_match(struct ecryptfs_mount_crypt_stat *mcs,
+	struct dentry *fp_dentry);
+extern int is_file_ext_match(struct ecryptfs_mount_crypt_stat *mcs,
+	char *str);
+#endif
 
 #endif /* #ifndef ECRYPTFS_KERNEL_H */

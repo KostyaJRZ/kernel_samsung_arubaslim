@@ -71,6 +71,7 @@
 #include <net/netlink.h>
 
 #include "iwl-dev.h"
+#include "iwl-core.h"
 #include "iwl-debug.h"
 #include "iwl-io.h"
 #include "iwl-agn.h"
@@ -183,10 +184,9 @@ static void iwl_testmode_ucode_rx_pkt(struct iwl_priv *priv,
 			 "Run out of memory for messages to user space ?\n");
 		return;
 	}
-	if (nla_put_u32(skb, IWL_TM_ATTR_COMMAND, IWL_TM_CMD_DEV2APP_UCODE_RX_PKT) ||
-	    /* the length doesn't include len_n_flags field, so add it manually */
-	    nla_put(skb, IWL_TM_ATTR_UCODE_RX_PKT, length + sizeof(__le32), data))
-		goto nla_put_failure;
+	NLA_PUT_U32(skb, IWL_TM_ATTR_COMMAND, IWL_TM_CMD_DEV2APP_UCODE_RX_PKT);
+	/* the length doesn't include len_n_flags field, so add it manually */
+	NLA_PUT(skb, IWL_TM_ATTR_UCODE_RX_PKT, length + sizeof(__le32), data);
 	cfg80211_testmode_event(skb, GFP_ATOMIC);
 	return;
 
@@ -218,7 +218,7 @@ static void iwl_trace_cleanup(struct iwl_priv *priv)
 	if (priv->testmode_trace.trace_enabled) {
 		if (priv->testmode_trace.cpu_addr &&
 		    priv->testmode_trace.dma_addr)
-			dma_free_coherent(priv->trans->dev,
+			dma_free_coherent(trans(priv)->dev,
 					priv->testmode_trace.total_size,
 					priv->testmode_trace.cpu_addr,
 					priv->testmode_trace.dma_addr);
@@ -314,9 +314,8 @@ static int iwl_testmode_ucode(struct ieee80211_hw *hw, struct nlattr **tb)
 	memcpy(reply_buf, &(pkt->hdr), reply_len);
 	iwl_free_resp(&cmd);
 
-	if (nla_put_u32(skb, IWL_TM_ATTR_COMMAND, IWL_TM_CMD_DEV2APP_UCODE_RX_PKT) ||
-	    nla_put(skb, IWL_TM_ATTR_UCODE_RX_PKT, reply_len, reply_buf))
-		goto nla_put_failure;
+	NLA_PUT_U32(skb, IWL_TM_ATTR_COMMAND, IWL_TM_CMD_DEV2APP_UCODE_RX_PKT);
+	NLA_PUT(skb, IWL_TM_ATTR_UCODE_RX_PKT, reply_len, reply_buf);
 	return cfg80211_testmode_reply(skb);
 
 nla_put_failure:
@@ -372,7 +371,7 @@ static int iwl_testmode_reg(struct ieee80211_hw *hw, struct nlattr **tb)
 
 	switch (cmd) {
 	case IWL_TM_CMD_APP2DEV_DIRECT_REG_READ32:
-		val32 = iwl_read_direct32(priv->trans, ofs);
+		val32 = iwl_read_direct32(trans(priv), ofs);
 		IWL_INFO(priv, "32bit value to read 0x%x\n", val32);
 
 		skb = cfg80211_testmode_alloc_reply_skb(hw->wiphy, 20);
@@ -380,8 +379,7 @@ static int iwl_testmode_reg(struct ieee80211_hw *hw, struct nlattr **tb)
 			IWL_ERR(priv, "Memory allocation fail\n");
 			return -ENOMEM;
 		}
-		if (nla_put_u32(skb, IWL_TM_ATTR_REG_VALUE32, val32))
-			goto nla_put_failure;
+		NLA_PUT_U32(skb, IWL_TM_ATTR_REG_VALUE32, val32);
 		status = cfg80211_testmode_reply(skb);
 		if (status < 0)
 			IWL_ERR(priv, "Error sending msg : %d\n", status);
@@ -393,7 +391,7 @@ static int iwl_testmode_reg(struct ieee80211_hw *hw, struct nlattr **tb)
 		} else {
 			val32 = nla_get_u32(tb[IWL_TM_ATTR_REG_VALUE32]);
 			IWL_INFO(priv, "32bit value to write 0x%x\n", val32);
-			iwl_write_direct32(priv->trans, ofs, val32);
+			iwl_write_direct32(trans(priv), ofs, val32);
 		}
 		break;
 	case IWL_TM_CMD_APP2DEV_DIRECT_REG_WRITE8:
@@ -403,7 +401,7 @@ static int iwl_testmode_reg(struct ieee80211_hw *hw, struct nlattr **tb)
 		} else {
 			val8 = nla_get_u8(tb[IWL_TM_ATTR_REG_VALUE8]);
 			IWL_INFO(priv, "8bit value to write 0x%x\n", val8);
-			iwl_write8(priv->trans, ofs, val8);
+			iwl_write8(trans(priv), ofs, val8);
 		}
 		break;
 	default:
@@ -422,13 +420,10 @@ nla_put_failure:
 static int iwl_testmode_cfg_init_calib(struct iwl_priv *priv)
 {
 	struct iwl_notification_wait calib_wait;
-	static const u8 calib_complete[] = {
-		CALIBRATION_COMPLETE_NOTIFICATION
-	};
 	int ret;
 
 	iwl_init_notification_wait(&priv->notif_wait, &calib_wait,
-				   calib_complete, ARRAY_SIZE(calib_complete),
+				   CALIBRATION_COMPLETE_NOTIFICATION,
 				   NULL, NULL);
 	ret = iwl_init_alive_start(priv);
 	if (ret) {
@@ -466,7 +461,7 @@ cfg_init_calib_error:
 static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 {
 	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
-	struct iwl_trans *trans = priv->trans;
+	struct iwl_trans *trans = trans(priv);
 	struct sk_buff *skb;
 	unsigned char *rsp_data_ptr = NULL;
 	int status = 0, rsp_data_len = 0;
@@ -475,19 +470,18 @@ static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 
 	switch (nla_get_u32(tb[IWL_TM_ATTR_COMMAND])) {
 	case IWL_TM_CMD_APP2DEV_GET_DEVICENAME:
-		rsp_data_ptr = (unsigned char *)priv->cfg->name;
-		rsp_data_len = strlen(priv->cfg->name);
+		rsp_data_ptr = (unsigned char *)cfg(priv)->name;
+		rsp_data_len = strlen(cfg(priv)->name);
 		skb = cfg80211_testmode_alloc_reply_skb(hw->wiphy,
 							rsp_data_len + 20);
 		if (!skb) {
 			IWL_ERR(priv, "Memory allocation fail\n");
 			return -ENOMEM;
 		}
-		if (nla_put_u32(skb, IWL_TM_ATTR_COMMAND,
-				IWL_TM_CMD_DEV2APP_SYNC_RSP) ||
-		    nla_put(skb, IWL_TM_ATTR_SYNC_RSP,
-			    rsp_data_len, rsp_data_ptr))
-			goto nla_put_failure;
+		NLA_PUT_U32(skb, IWL_TM_ATTR_COMMAND,
+			    IWL_TM_CMD_DEV2APP_SYNC_RSP);
+		NLA_PUT(skb, IWL_TM_ATTR_SYNC_RSP,
+			rsp_data_len, rsp_data_ptr);
 		status = cfg80211_testmode_reply(skb);
 		if (status < 0)
 			IWL_ERR(priv, "Error sending msg : %d\n", status);
@@ -535,19 +529,18 @@ static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 		break;
 
 	case IWL_TM_CMD_APP2DEV_GET_EEPROM:
-		if (priv->eeprom) {
+		if (priv->shrd->eeprom) {
 			skb = cfg80211_testmode_alloc_reply_skb(hw->wiphy,
-				priv->cfg->base_params->eeprom_size + 20);
+				cfg(priv)->base_params->eeprom_size + 20);
 			if (!skb) {
 				IWL_ERR(priv, "Memory allocation fail\n");
 				return -ENOMEM;
 			}
-			if (nla_put_u32(skb, IWL_TM_ATTR_COMMAND,
-					IWL_TM_CMD_DEV2APP_EEPROM_RSP) ||
-			    nla_put(skb, IWL_TM_ATTR_EEPROM,
-				    priv->cfg->base_params->eeprom_size,
-				    priv->eeprom))
-				goto nla_put_failure;
+			NLA_PUT_U32(skb, IWL_TM_ATTR_COMMAND,
+				IWL_TM_CMD_DEV2APP_EEPROM_RSP);
+			NLA_PUT(skb, IWL_TM_ATTR_EEPROM,
+				cfg(priv)->base_params->eeprom_size,
+				priv->shrd->eeprom);
 			status = cfg80211_testmode_reply(skb);
 			if (status < 0)
 				IWL_ERR(priv, "Error sending msg : %d\n",
@@ -573,16 +566,15 @@ static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 			IWL_ERR(priv, "Memory allocation fail\n");
 			return -ENOMEM;
 		}
-		if (nla_put_u32(skb, IWL_TM_ATTR_FW_VERSION,
-				priv->fw->ucode_ver))
-			goto nla_put_failure;
+		NLA_PUT_U32(skb, IWL_TM_ATTR_FW_VERSION,
+			    priv->fw->ucode_ver);
 		status = cfg80211_testmode_reply(skb);
 		if (status < 0)
 			IWL_ERR(priv, "Error sending msg : %d\n", status);
 		break;
 
 	case IWL_TM_CMD_APP2DEV_GET_DEVICE_ID:
-		devid = priv->trans->hw_id;
+		devid = trans(priv)->hw_id;
 		IWL_INFO(priv, "hw version: 0x%x\n", devid);
 
 		skb = cfg80211_testmode_alloc_reply_skb(hw->wiphy, 20);
@@ -590,8 +582,7 @@ static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 			IWL_ERR(priv, "Memory allocation fail\n");
 			return -ENOMEM;
 		}
-		if (nla_put_u32(skb, IWL_TM_ATTR_DEVICE_ID, devid))
-			goto nla_put_failure;
+		NLA_PUT_U32(skb, IWL_TM_ATTR_DEVICE_ID, devid);
 		status = cfg80211_testmode_reply(skb);
 		if (status < 0)
 			IWL_ERR(priv, "Error sending msg : %d\n", status);
@@ -607,14 +598,13 @@ static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 			IWL_ERR(priv, "No uCode has not been loaded\n");
 			return -EINVAL;
 		} else {
-			img = &priv->fw->img[priv->cur_ucode];
+			img = &priv->fw->img[priv->shrd->ucode_type];
 			inst_size = img->sec[IWL_UCODE_SECTION_INST].len;
 			data_size = img->sec[IWL_UCODE_SECTION_DATA].len;
 		}
-		if (nla_put_u32(skb, IWL_TM_ATTR_FW_TYPE, priv->cur_ucode) ||
-		    nla_put_u32(skb, IWL_TM_ATTR_FW_INST_SIZE, inst_size) ||
-		    nla_put_u32(skb, IWL_TM_ATTR_FW_DATA_SIZE, data_size))
-			goto nla_put_failure;
+		NLA_PUT_U32(skb, IWL_TM_ATTR_FW_TYPE, priv->shrd->ucode_type);
+		NLA_PUT_U32(skb, IWL_TM_ATTR_FW_INST_SIZE, inst_size);
+		NLA_PUT_U32(skb, IWL_TM_ATTR_FW_DATA_SIZE, data_size);
 		status = cfg80211_testmode_reply(skb);
 		if (status < 0)
 			IWL_ERR(priv, "Error sending msg : %d\n", status);
@@ -649,7 +639,7 @@ static int iwl_testmode_trace(struct ieee80211_hw *hw, struct nlattr **tb)
 	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	struct sk_buff *skb;
 	int status = 0;
-	struct device *dev = priv->trans->dev;
+	struct device *dev = trans(priv)->dev;
 
 	switch (nla_get_u32(tb[IWL_TM_ATTR_COMMAND])) {
 	case IWL_TM_CMD_APP2DEV_BEGIN_TRACE:
@@ -688,10 +678,9 @@ static int iwl_testmode_trace(struct ieee80211_hw *hw, struct nlattr **tb)
 			iwl_trace_cleanup(priv);
 			return -ENOMEM;
 		}
-		if (nla_put(skb, IWL_TM_ATTR_TRACE_ADDR,
-			    sizeof(priv->testmode_trace.dma_addr),
-			    (u64 *)&priv->testmode_trace.dma_addr))
-			goto nla_put_failure;
+		NLA_PUT(skb, IWL_TM_ATTR_TRACE_ADDR,
+			sizeof(priv->testmode_trace.dma_addr),
+			(u64 *)&priv->testmode_trace.dma_addr);
 		status = cfg80211_testmode_reply(skb);
 		if (status < 0) {
 			IWL_ERR(priv, "Error sending msg : %d\n", status);
@@ -736,10 +725,9 @@ static int iwl_testmode_trace_dump(struct ieee80211_hw *hw,
 			length = priv->testmode_trace.buff_size %
 				DUMP_CHUNK_SIZE;
 
-		if (nla_put(skb, IWL_TM_ATTR_TRACE_DUMP, length,
-			    priv->testmode_trace.trace_addr +
-			    (DUMP_CHUNK_SIZE * idx)))
-			goto nla_put_failure;
+		NLA_PUT(skb, IWL_TM_ATTR_TRACE_DUMP, length,
+			priv->testmode_trace.trace_addr +
+			(DUMP_CHUNK_SIZE * idx));
 		idx++;
 		cb->args[4] = idx;
 		return 0;
@@ -791,7 +779,7 @@ static int iwl_testmode_ownership(struct ieee80211_hw *hw, struct nlattr **tb)
 
 static int iwl_testmode_indirect_read(struct iwl_priv *priv, u32 addr, u32 size)
 {
-	struct iwl_trans *trans = priv->trans;
+	struct iwl_trans *trans = trans(priv);
 	unsigned long flags;
 	int i;
 
@@ -831,7 +819,7 @@ static int iwl_testmode_indirect_read(struct iwl_priv *priv, u32 addr, u32 size)
 static int iwl_testmode_indirect_write(struct iwl_priv *priv, u32 addr,
 	u32 size, unsigned char *buf)
 {
-	struct iwl_trans *trans = priv->trans;
+	struct iwl_trans *trans = trans(priv);
 	u32 val, i;
 	unsigned long flags;
 
@@ -934,10 +922,9 @@ static int iwl_testmode_buffer_dump(struct ieee80211_hw *hw,
 			length = priv->testmode_mem.buff_size %
 				DUMP_CHUNK_SIZE;
 
-		if (nla_put(skb, IWL_TM_ATTR_BUFFER_DUMP, length,
-			    priv->testmode_mem.buff_addr +
-			    (DUMP_CHUNK_SIZE * idx)))
-			goto nla_put_failure;
+		NLA_PUT(skb, IWL_TM_ATTR_BUFFER_DUMP, length,
+			priv->testmode_mem.buff_addr +
+			(DUMP_CHUNK_SIZE * idx));
 		idx++;
 		cb->args[4] = idx;
 		return 0;

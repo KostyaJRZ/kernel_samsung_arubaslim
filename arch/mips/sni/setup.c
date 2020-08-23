@@ -10,7 +10,6 @@
  */
 #include <linux/eisa.h>
 #include <linux/init.h>
-#include <linux/export.h>
 #include <linux/console.h>
 #include <linux/fb.h>
 #include <linux/screen_info.h>

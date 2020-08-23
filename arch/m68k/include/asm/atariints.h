@@ -198,7 +198,7 @@ static inline int atari_irq_pending( unsigned irq )
 	return( get_mfp_bit( irq, MFP_PENDING ) );
 }
 
-unsigned int atari_register_vme_int(void);
-void atari_unregister_vme_int(unsigned int);
+unsigned long atari_register_vme_int( void );
+void atari_unregister_vme_int( unsigned long );
 
 #endif /* linux/atariints.h */

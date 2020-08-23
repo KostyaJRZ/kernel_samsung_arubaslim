@@ -24,7 +24,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_YVYU8_2X8,
@@ -34,7 +33,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_UYVY8_2X8,
@@ -44,7 +42,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_VYUY8_2X8,
@@ -54,7 +51,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB555_2X8_PADHI_LE,
@@ -64,7 +60,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB555_2X8_PADHI_BE,
@@ -74,7 +69,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB565_2X8_LE,
@@ -84,7 +78,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB565_2X8_BE,
@@ -94,7 +87,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SBGGR8_1X8,
@@ -104,7 +96,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_NONE,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SBGGR10_1X10,
@@ -114,7 +105,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 10,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_Y8_1X8,
@@ -124,7 +114,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_NONE,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_Y10_1X10,
@@ -134,7 +123,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 10,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SBGGR10_2X8_PADHI_LE,
@@ -144,7 +132,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SBGGR10_2X8_PADLO_LE,
@@ -154,7 +141,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADLO,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SBGGR10_2X8_PADHI_BE,
@@ -164,7 +150,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SBGGR10_2X8_PADLO_BE,
@@ -174,7 +159,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADLO,
 		.order			= SOC_MBUS_ORDER_BE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_JPEG_1X8,
@@ -184,7 +168,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample        = 8,
 		.packing                = SOC_MBUS_PACKING_VARIABLE,
 		.order                  = SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB444_2X8_PADHI_BE,
@@ -194,7 +177,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_YUYV8_1_5X8,
@@ -204,7 +186,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_1_5X8,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_YVYU8_1_5X8,
@@ -214,7 +195,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_1_5X8,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_UYVY8_1X16,
@@ -224,7 +204,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 16,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_VYUY8_1X16,
@@ -234,7 +213,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 16,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_YUYV8_1X16,
@@ -244,7 +222,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 16,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_YVYU8_1X16,
@@ -254,7 +231,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 16,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SGRBG8_1X8,
@@ -264,7 +240,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_NONE,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SGRBG10_DPCM8_1X8,
@@ -274,7 +249,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_NONE,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SGBRG10_1X10,
@@ -284,7 +258,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 10,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SGRBG10_1X10,
@@ -294,7 +267,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 10,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SRGGB10_1X10,
@@ -304,7 +276,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 10,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SBGGR12_1X12,
@@ -314,7 +285,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 12,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SGBRG12_1X12,
@@ -324,7 +294,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 12,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SGRBG12_1X12,
@@ -334,7 +303,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 12,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_SRGGB12_1X12,
@@ -344,7 +312,6 @@ static const struct soc_mbus_lookup mbus_fmt[] = {
 		.bits_per_sample	= 12,
 		.packing		= SOC_MBUS_PACKING_EXTEND16,
 		.order			= SOC_MBUS_ORDER_LE,
-		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 },
 };
@@ -378,9 +345,6 @@ EXPORT_SYMBOL(soc_mbus_samples_per_pixel);
 
 s32 soc_mbus_bytes_per_line(u32 width, const struct soc_mbus_pixelfmt *mf)
 {
-	if (mf->layout != SOC_MBUS_LAYOUT_PACKED)
-		return width * mf->bits_per_sample / 8;
-
 	switch (mf->packing) {
 	case SOC_MBUS_PACKING_NONE:
 		return width * mf->bits_per_sample / 8;
@@ -396,24 +360,6 @@ s32 soc_mbus_bytes_per_line(u32 width, const struct soc_mbus_pixelfmt *mf)
 	return -EINVAL;
 }
 EXPORT_SYMBOL(soc_mbus_bytes_per_line);
-
-s32 soc_mbus_image_size(const struct soc_mbus_pixelfmt *mf,
-			u32 bytes_per_line, u32 height)
-{
-	if (mf->layout == SOC_MBUS_LAYOUT_PACKED)
-		return bytes_per_line * height;
-
-	switch (mf->packing) {
-	case SOC_MBUS_PACKING_2X8_PADHI:
-	case SOC_MBUS_PACKING_2X8_PADLO:
-		return bytes_per_line * height * 2;
-	case SOC_MBUS_PACKING_1_5X8:
-		return bytes_per_line * height * 3 / 2;
-	default:
-		return -EINVAL;
-	}
-}
-EXPORT_SYMBOL(soc_mbus_image_size);
 
 const struct soc_mbus_pixelfmt *soc_mbus_find_fmtdesc(
 	enum v4l2_mbus_pixelcode code,

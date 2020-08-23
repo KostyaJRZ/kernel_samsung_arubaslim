@@ -69,13 +69,14 @@
 #define __ALIGNED__	__attribute__((__aligned__(sizeof(long))))
 
 struct hvsi_struct {
-	struct tty_port port;
 	struct delayed_work writer;
 	struct work_struct handshaker;
 	wait_queue_head_t emptyq; /* woken when outbuf is emptied */
 	wait_queue_head_t stateq; /* woken when HVSI state changes */
 	spinlock_t lock;
 	int index;
+	struct tty_struct *tty;
+	int count;
 	uint8_t throttle_buf[128];
 	uint8_t outbuf[N_OUTBUF]; /* to implement write_room and chars_in_buffer */
 	/* inbuf is for packet reassembly. leave a little room for leftovers. */
@@ -236,7 +237,7 @@ static int hvsi_read(struct hvsi_struct *hp, char *buf, int count)
 }
 
 static void hvsi_recv_control(struct hvsi_struct *hp, uint8_t *packet,
-	struct tty_struct *tty, struct hvsi_struct **to_handshake)
+	struct tty_struct **to_hangup, struct hvsi_struct **to_handshake)
 {
 	struct hvsi_control *header = (struct hvsi_control *)packet;
 
@@ -246,8 +247,9 @@ static void hvsi_recv_control(struct hvsi_struct *hp, uint8_t *packet,
 				/* CD went away; no more connection */
 				pr_debug("hvsi%i: CD dropped\n", hp->index);
 				hp->mctrl &= TIOCM_CD;
-				if (tty && !C_CLOCAL(tty))
-					tty_hangup(tty);
+				/* If userland hasn't done an open(2) yet, hp->tty is NULL. */
+				if (hp->tty && !(hp->tty->flags & CLOCAL))
+					*to_hangup = hp->tty;
 			}
 			break;
 		case VSV_CLOSE_PROTOCOL:
@@ -329,8 +331,7 @@ static void hvsi_recv_query(struct hvsi_struct *hp, uint8_t *packet)
 	}
 }
 
-static void hvsi_insert_chars(struct hvsi_struct *hp, struct tty_struct *tty,
-		const char *buf, int len)
+static void hvsi_insert_chars(struct hvsi_struct *hp, const char *buf, int len)
 {
 	int i;
 
@@ -346,7 +347,7 @@ static void hvsi_insert_chars(struct hvsi_struct *hp, struct tty_struct *tty,
 			continue;
 		}
 #endif /* CONFIG_MAGIC_SYSRQ */
-		tty_insert_flip_char(tty, c, 0);
+		tty_insert_flip_char(hp->tty, c, 0);
 	}
 }
 
@@ -359,7 +360,7 @@ static void hvsi_insert_chars(struct hvsi_struct *hp, struct tty_struct *tty,
  * revisited.
  */
 #define TTY_THRESHOLD_THROTTLE 128
-static bool hvsi_recv_data(struct hvsi_struct *hp, struct tty_struct *tty,
+static struct tty_struct *hvsi_recv_data(struct hvsi_struct *hp,
 		const uint8_t *packet)
 {
 	const struct hvsi_header *header = (const struct hvsi_header *)packet;
@@ -370,14 +371,14 @@ static bool hvsi_recv_data(struct hvsi_struct *hp, struct tty_struct *tty,
 	pr_debug("queueing %i chars '%.*s'\n", datalen, datalen, data);
 
 	if (datalen == 0)
-		return false;
+		return NULL;
 
 	if (overflow > 0) {
 		pr_debug("%s: got >TTY_THRESHOLD_THROTTLE bytes\n", __func__);
 		datalen = TTY_THRESHOLD_THROTTLE;
 	}
 
-	hvsi_insert_chars(hp, tty, data, datalen);
+	hvsi_insert_chars(hp, data, datalen);
 
 	if (overflow > 0) {
 		/*
@@ -389,7 +390,7 @@ static bool hvsi_recv_data(struct hvsi_struct *hp, struct tty_struct *tty,
 		hp->n_throttle = overflow;
 	}
 
-	return true;
+	return hp->tty;
 }
 
 /*
@@ -398,13 +399,14 @@ static bool hvsi_recv_data(struct hvsi_struct *hp, struct tty_struct *tty,
  * machine during console handshaking (in which case tty = NULL and we ignore
  * incoming data).
  */
-static int hvsi_load_chunk(struct hvsi_struct *hp, struct tty_struct *tty,
-		struct hvsi_struct **handshake)
+static int hvsi_load_chunk(struct hvsi_struct *hp, struct tty_struct **flip,
+		struct tty_struct **hangup, struct hvsi_struct **handshake)
 {
 	uint8_t *packet = hp->inbuf;
 	int chunklen;
-	bool flip = false;
 
+	*flip = NULL;
+	*hangup = NULL;
 	*handshake = NULL;
 
 	chunklen = hvsi_read(hp, hp->inbuf_end, HVSI_MAX_READ);
@@ -438,12 +440,12 @@ static int hvsi_load_chunk(struct hvsi_struct *hp, struct tty_struct *tty,
 			case VS_DATA_PACKET_HEADER:
 				if (!is_open(hp))
 					break;
-				if (tty == NULL)
+				if (hp->tty == NULL)
 					break; /* no tty buffer to put data in */
-				flip = hvsi_recv_data(hp, tty, packet);
+				*flip = hvsi_recv_data(hp, packet);
 				break;
 			case VS_CONTROL_PACKET_HEADER:
-				hvsi_recv_control(hp, packet, tty, handshake);
+				hvsi_recv_control(hp, packet, hangup, handshake);
 				break;
 			case VS_QUERY_RESPONSE_PACKET_HEADER:
 				hvsi_recv_response(hp, packet);
@@ -460,26 +462,28 @@ static int hvsi_load_chunk(struct hvsi_struct *hp, struct tty_struct *tty,
 
 		packet += len_packet(packet);
 
-		if (*handshake) {
-			pr_debug("%s: handshake\n", __func__);
+		if (*hangup || *handshake) {
+			pr_debug("%s: hangup or handshake\n", __func__);
+			/*
+			 * we need to send the hangup now before receiving any more data.
+			 * If we get "data, hangup, data", we can't deliver the second
+			 * data before the hangup.
+			 */
 			break;
 		}
 	}
 
 	compact_inbuf(hp, packet);
 
-	if (flip)
-		tty_flip_buffer_push(tty);
-
 	return 1;
 }
 
-static void hvsi_send_overflow(struct hvsi_struct *hp, struct tty_struct *tty)
+static void hvsi_send_overflow(struct hvsi_struct *hp)
 {
 	pr_debug("%s: delivering %i bytes overflow\n", __func__,
 			hp->n_throttle);
 
-	hvsi_insert_chars(hp, tty, hp->throttle_buf, hp->n_throttle);
+	hvsi_insert_chars(hp, hp->throttle_buf, hp->n_throttle);
 	hp->n_throttle = 0;
 }
 
@@ -490,19 +494,34 @@ static void hvsi_send_overflow(struct hvsi_struct *hp, struct tty_struct *tty)
 static irqreturn_t hvsi_interrupt(int irq, void *arg)
 {
 	struct hvsi_struct *hp = (struct hvsi_struct *)arg;
+	struct tty_struct *flip;
+	struct tty_struct *hangup;
 	struct hvsi_struct *handshake;
-	struct tty_struct *tty;
 	unsigned long flags;
 	int again = 1;
 
 	pr_debug("%s\n", __func__);
 
-	tty = tty_port_tty_get(&hp->port);
-
 	while (again) {
 		spin_lock_irqsave(&hp->lock, flags);
-		again = hvsi_load_chunk(hp, tty, &handshake);
+		again = hvsi_load_chunk(hp, &flip, &hangup, &handshake);
 		spin_unlock_irqrestore(&hp->lock, flags);
+
+		/*
+		 * we have to call tty_flip_buffer_push() and tty_hangup() outside our
+		 * spinlock. But we also have to keep going until we've read all the
+		 * available data.
+		 */
+
+		if (flip) {
+			/* there was data put in the tty flip buffer */
+			tty_flip_buffer_push(flip);
+			flip = NULL;
+		}
+
+		if (hangup) {
+			tty_hangup(hangup);
+		}
 
 		if (handshake) {
 			pr_debug("hvsi%i: attempting re-handshake\n", handshake->index);
@@ -511,15 +530,18 @@ static irqreturn_t hvsi_interrupt(int irq, void *arg)
 	}
 
 	spin_lock_irqsave(&hp->lock, flags);
-	if (tty && hp->n_throttle && !test_bit(TTY_THROTTLED, &tty->flags)) {
-		/* we weren't hung up and we weren't throttled, so we can
-		 * deliver the rest now */
-		hvsi_send_overflow(hp, tty);
-		tty_flip_buffer_push(tty);
+	if (hp->tty && hp->n_throttle
+			&& (!test_bit(TTY_THROTTLED, &hp->tty->flags))) {
+		/* we weren't hung up and we weren't throttled, so we can deliver the
+		 * rest now */
+		flip = hp->tty;
+		hvsi_send_overflow(hp);
 	}
 	spin_unlock_irqrestore(&hp->lock, flags);
 
-	tty_kref_put(tty);
+	if (flip) {
+		tty_flip_buffer_push(flip);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -727,9 +749,9 @@ static int hvsi_open(struct tty_struct *tty, struct file *filp)
 	if (hp->state == HVSI_FSP_DIED)
 		return -EIO;
 
-	tty_port_tty_set(&hp->port, tty);
 	spin_lock_irqsave(&hp->lock, flags);
-	hp->port.count++;
+	hp->tty = tty;
+	hp->count++;
 	atomic_set(&hp->seqno, 0);
 	h_vio_signal(hp->vtermno, VIO_IRQ_ENABLE);
 	spin_unlock_irqrestore(&hp->lock, flags);
@@ -786,8 +808,8 @@ static void hvsi_close(struct tty_struct *tty, struct file *filp)
 
 	spin_lock_irqsave(&hp->lock, flags);
 
-	if (--hp->port.count == 0) {
-		tty_port_tty_set(&hp->port, NULL);
+	if (--hp->count == 0) {
+		hp->tty = NULL;
 		hp->inbuf_end = hp->inbuf; /* discard remaining partial packets */
 
 		/* only close down connection if it is not the console */
@@ -819,9 +841,9 @@ static void hvsi_close(struct tty_struct *tty, struct file *filp)
 
 			spin_lock_irqsave(&hp->lock, flags);
 		}
-	} else if (hp->port.count < 0)
+	} else if (hp->count < 0)
 		printk(KERN_ERR "hvsi_close %lu: oops, count is %d\n",
-		       hp - hvsi_ports, hp->port.count);
+		       hp - hvsi_ports, hp->count);
 
 	spin_unlock_irqrestore(&hp->lock, flags);
 }
@@ -833,11 +855,12 @@ static void hvsi_hangup(struct tty_struct *tty)
 
 	pr_debug("%s\n", __func__);
 
-	tty_port_tty_set(&hp->port, NULL);
-
 	spin_lock_irqsave(&hp->lock, flags);
-	hp->port.count = 0;
+
+	hp->count = 0;
 	hp->n_outbuf = 0;
+	hp->tty = NULL;
+
 	spin_unlock_irqrestore(&hp->lock, flags);
 }
 
@@ -865,7 +888,6 @@ static void hvsi_write_worker(struct work_struct *work)
 {
 	struct hvsi_struct *hp =
 		container_of(work, struct hvsi_struct, writer.work);
-	struct tty_struct *tty;
 	unsigned long flags;
 #ifdef DEBUG
 	static long start_j = 0;
@@ -899,11 +921,7 @@ static void hvsi_write_worker(struct work_struct *work)
 		start_j = 0;
 #endif /* DEBUG */
 		wake_up_all(&hp->emptyq);
-		tty = tty_port_tty_get(&hp->port);
-		if (tty) {
-			tty_wakeup(tty);
-			tty_kref_put(tty);
-		}
+		tty_wakeup(hp->tty);
 	}
 
 out:
@@ -948,8 +966,8 @@ static int hvsi_write(struct tty_struct *tty,
 	 * and hvsi_write_worker will be scheduled. subsequent hvsi_write() calls
 	 * will see there is no room in outbuf and return.
 	 */
-	while ((count > 0) && (hvsi_write_room(tty) > 0)) {
-		int chunksize = min(count, hvsi_write_room(tty));
+	while ((count > 0) && (hvsi_write_room(hp->tty) > 0)) {
+		int chunksize = min(count, hvsi_write_room(hp->tty));
 
 		BUG_ON(hp->n_outbuf < 0);
 		memcpy(hp->outbuf + hp->n_outbuf, source, chunksize);
@@ -996,16 +1014,19 @@ static void hvsi_unthrottle(struct tty_struct *tty)
 {
 	struct hvsi_struct *hp = tty->driver_data;
 	unsigned long flags;
+	int shouldflip = 0;
 
 	pr_debug("%s\n", __func__);
 
 	spin_lock_irqsave(&hp->lock, flags);
 	if (hp->n_throttle) {
-		hvsi_send_overflow(hp, tty);
-		tty_flip_buffer_push(tty);
+		hvsi_send_overflow(hp);
+		shouldflip = 1;
 	}
 	spin_unlock_irqrestore(&hp->lock, flags);
 
+	if (shouldflip)
+		tty_flip_buffer_push(hp->tty);
 
 	h_vio_signal(hp->vtermno, VIO_IRQ_ENABLE);
 }
@@ -1207,7 +1228,6 @@ static int __init hvsi_console_init(void)
 		init_waitqueue_head(&hp->emptyq);
 		init_waitqueue_head(&hp->stateq);
 		spin_lock_init(&hp->lock);
-		tty_port_init(&hp->port);
 		hp->index = hvsi_count;
 		hp->inbuf_end = hp->inbuf;
 		hp->state = HVSI_CLOSED;

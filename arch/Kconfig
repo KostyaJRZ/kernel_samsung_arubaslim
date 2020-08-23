@@ -76,23 +76,6 @@ config OPTPROBES
 	depends on KPROBES && HAVE_OPTPROBES
 	depends on !PREEMPT
 
-config UPROBES
-	bool "Transparent user-space probes (EXPERIMENTAL)"
-	depends on UPROBE_EVENT && PERF_EVENTS
-	default n
-	help
-	  Uprobes is the user-space counterpart to kprobes: they
-	  enable instrumentation applications (such as 'perf probe')
-	  to establish unintrusive probes in user-space binaries and
-	  libraries, by executing handler functions when the probes
-	  are hit by user-space applications.
-
-	  ( These probes come in the form of single-byte breakpoints,
-	    managed by the kernel and kept transparent to the probed
-	    application. )
-
-	  If in doubt, say "N".
-
 config HAVE_EFFICIENT_UNALIGNED_ACCESS
 	bool
 	help
@@ -111,6 +94,35 @@ config HAVE_EFFICIENT_UNALIGNED_ACCESS
 
 	  See Documentation/unaligned-memory-access.txt for more
 	  information on the topic of unaligned memory accesses.
+
+config ARCH_USE_BUILTIN_BSWAP
+       bool
+       help
+	 Modern versions of GCC (since 4.4) have builtin functions
+	 for handling byte-swapping. Using these, instead of the old
+	 inline assembler that the architecture code provides in the
+	 __arch_bswapXX() macros, allows the compiler to see what's
+	 happening and offers more opportunity for optimisation. In
+	 particular, the compiler will be able to combine the byteswap
+	 with a nearby load or store and use load-and-swap or
+	 store-and-swap instructions if the architecture has them. It
+	 should almost *never* result in code which is worse than the
+	 hand-coded assembler in <asm/swab.h>.  But just in case it
+	 does, the use of the builtins is optional.
+
+	 Any architecture with load-and-swap or store-and-swap
+	 instructions should set this. And it shouldn't hurt to set it
+	 on architectures that don't have such instructions.
+
+config HAVE_IRQ_EXIT_ON_IRQ_STACK
+	bool
+	help
+	  Architecture doesn't only execute the irq handler on the irq stack
+	  but also irq_exit(). This way we can process softirqs on this irq
+	  stack instead of switching to a new one when we call __do_softirq()
+	  in the end of an hardirq.
+	  This spares a stack switch and improves cache usage on softirq
+	  processing.
 
 config HAVE_SYSCALL_WRAPPERS
 	bool
@@ -163,21 +175,6 @@ config HAVE_DMA_CONTIGUOUS
 	bool
 
 config USE_GENERIC_SMP_HELPERS
-	bool
-
-config GENERIC_SMP_IDLE_THREAD
-       bool
-
-# Select if arch init_task initializer is different to init/init_task.c
-config ARCH_INIT_TASK
-       bool
-
-# Select if arch has its private alloc_task_struct() function
-config ARCH_TASK_STRUCT_ALLOCATOR
-	bool
-
-# Select if arch has its private alloc_thread_info() function
-config ARCH_THREAD_INFO_ALLOCATOR
 	bool
 
 config HAVE_REGS_AND_STACK_ACCESS_API
@@ -263,6 +260,7 @@ config HAVE_ARCH_SECCOMP_FILTER
 	  - secure_computing is called from a ptrace_event()-safe context
 	  - secure_computing return value is checked and a return value of -1
 	    results in the system call being skipped immediately.
+	  - seccomp syscall wired up
 
 config SECCOMP_FILTER
 	def_bool y

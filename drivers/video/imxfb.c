@@ -131,9 +131,7 @@ struct imxfb_rgb {
 struct imxfb_info {
 	struct platform_device  *pdev;
 	void __iomem		*regs;
-	struct clk		*clk_ipg;
-	struct clk		*clk_ahb;
-	struct clk		*clk_per;
+	struct clk		*clk;
 
 	/*
 	 * These are the addresses we mapped
@@ -342,7 +340,7 @@ static int imxfb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 
 	pr_debug("var->bits_per_pixel=%d\n", var->bits_per_pixel);
 
-	lcd_clk = clk_get_rate(fbi->clk_per);
+	lcd_clk = clk_get_rate(fbi->clk);
 
 	tmp = var->pixclock * (unsigned long long)lcd_clk;
 
@@ -457,17 +455,11 @@ static int imxfb_bl_update_status(struct backlight_device *bl)
 
 	fbi->pwmr = (fbi->pwmr & ~0xFF) | brightness;
 
-	if (bl->props.fb_blank != FB_BLANK_UNBLANK) {
-		clk_prepare_enable(fbi->clk_ipg);
-		clk_prepare_enable(fbi->clk_ahb);
-		clk_prepare_enable(fbi->clk_per);
-	}
+	if (bl->props.fb_blank != FB_BLANK_UNBLANK)
+		clk_enable(fbi->clk);
 	writel(fbi->pwmr, fbi->regs + LCDC_PWMR);
-	if (bl->props.fb_blank != FB_BLANK_UNBLANK) {
-		clk_disable_unprepare(fbi->clk_per);
-		clk_disable_unprepare(fbi->clk_ahb);
-		clk_disable_unprepare(fbi->clk_ipg);
-	}
+	if (bl->props.fb_blank != FB_BLANK_UNBLANK)
+		clk_disable(fbi->clk);
 
 	return 0;
 }
@@ -530,9 +522,7 @@ static void imxfb_enable_controller(struct imxfb_info *fbi)
 	 */
 	writel(RMCR_LCDC_EN_MX1, fbi->regs + LCDC_RMCR);
 
-	clk_prepare_enable(fbi->clk_ipg);
-	clk_prepare_enable(fbi->clk_ahb);
-	clk_prepare_enable(fbi->clk_per);
+	clk_enable(fbi->clk);
 
 	if (fbi->backlight_power)
 		fbi->backlight_power(1);
@@ -549,9 +539,7 @@ static void imxfb_disable_controller(struct imxfb_info *fbi)
 	if (fbi->lcd_power)
 		fbi->lcd_power(0);
 
-	clk_disable_unprepare(fbi->clk_per);
-	clk_disable_unprepare(fbi->clk_ipg);
-	clk_disable_unprepare(fbi->clk_ahb);
+	clk_disable(fbi->clk);
 
 	writel(0, fbi->regs + LCDC_RMCR);
 }
@@ -782,21 +770,10 @@ static int __init imxfb_probe(struct platform_device *pdev)
 		goto failed_req;
 	}
 
-	fbi->clk_ipg = devm_clk_get(&pdev->dev, "ipg");
-	if (IS_ERR(fbi->clk_ipg)) {
-		ret = PTR_ERR(fbi->clk_ipg);
-		goto failed_getclock;
-	}
-
-	fbi->clk_ahb = devm_clk_get(&pdev->dev, "ahb");
-	if (IS_ERR(fbi->clk_ahb)) {
-		ret = PTR_ERR(fbi->clk_ahb);
-		goto failed_getclock;
-	}
-
-	fbi->clk_per = devm_clk_get(&pdev->dev, "per");
-	if (IS_ERR(fbi->clk_per)) {
-		ret = PTR_ERR(fbi->clk_per);
+	fbi->clk = clk_get(&pdev->dev, NULL);
+	if (IS_ERR(fbi->clk)) {
+		ret = PTR_ERR(fbi->clk);
+		dev_err(&pdev->dev, "unable to get clock: %d\n", ret);
 		goto failed_getclock;
 	}
 
@@ -881,6 +858,7 @@ failed_platform_init:
 failed_map:
 	iounmap(fbi->regs);
 failed_ioremap:
+	clk_put(fbi->clk);
 failed_getclock:
 	release_mem_region(res->start, resource_size(res));
 failed_req:
@@ -917,6 +895,8 @@ static int __devexit imxfb_remove(struct platform_device *pdev)
 
 	iounmap(fbi->regs);
 	release_mem_region(res->start, resource_size(res));
+	clk_disable(fbi->clk);
+	clk_put(fbi->clk);
 
 	platform_set_drvdata(pdev, NULL);
 

@@ -29,8 +29,6 @@
  *	Kazunori MIYAZAWA @USAGI:       change output process to use ip6_append_data
  */
 
-#define pr_fmt(fmt) "IPv6: " fmt
-
 #include <linux/module.h>
 #include <linux/errno.h>
 #include <linux/types.h>
@@ -131,7 +129,7 @@ void icmpv6_param_prob(struct sk_buff *skb, u8 code, int pos)
  *	--ANK (980726)
  */
 
-static bool is_ineligible(const struct sk_buff *skb)
+static int is_ineligible(struct sk_buff *skb)
 {
 	int ptr = (u8 *)(ipv6_hdr(skb) + 1) - skb->data;
 	int len = skb->len - ptr;
@@ -139,11 +137,11 @@ static bool is_ineligible(const struct sk_buff *skb)
 	__be16 frag_off;
 
 	if (len < 0)
-		return true;
+		return 1;
 
 	ptr = ipv6_skip_exthdr(skb, ptr, &nexthdr, &frag_off);
 	if (ptr < 0)
-		return false;
+		return 0;
 	if (nexthdr == IPPROTO_ICMPV6) {
 		u8 _type, *tp;
 		tp = skb_header_pointer(skb,
@@ -151,9 +149,9 @@ static bool is_ineligible(const struct sk_buff *skb)
 			sizeof(_type), &_type);
 		if (tp == NULL ||
 		    !(*tp & ICMPV6_INFOMSG_MASK))
-			return true;
+			return 1;
 	}
-	return false;
+	return 0;
 }
 
 /*
@@ -208,14 +206,14 @@ static inline bool icmpv6_xrlim_allow(struct sock *sk, u8 type,
  *	highest-order two bits set to 10
  */
 
-static bool opt_unrec(struct sk_buff *skb, __u32 offset)
+static __inline__ int opt_unrec(struct sk_buff *skb, __u32 offset)
 {
 	u8 _optval, *op;
 
 	offset += skb_network_offset(skb);
 	op = skb_header_pointer(skb, offset, sizeof(_optval), &_optval);
 	if (op == NULL)
-		return true;
+		return 1;
 	return (*op & 0xC0) == 0x80;
 }
 
@@ -500,10 +498,10 @@ void icmpv6_send(struct sk_buff *skb, u8 type, u8 code, __u32 info)
 	err = ip6_append_data(sk, icmpv6_getfrag, &msg,
 			      len + sizeof(struct icmp6hdr),
 			      sizeof(struct icmp6hdr), hlimit,
-			      np->tclass, NULL, &fl6, (struct rt6_info *)dst,
+			      np->tclass, NULL, &fl6, (struct rt6_info*)dst,
 			      MSG_DONTWAIT, np->dontfrag);
 	if (err) {
-		ICMP6_INC_STATS_BH(net, idev, ICMP6_MIB_OUTERRORS);
+		ICMP6_INC_STATS(net, idev, ICMP6_MIB_OUTERRORS);
 		ip6_flush_pending_frames(sk);
 	} else {
 		err = icmpv6_push_pending_frames(sk, &fl6, &tmp_hdr,
@@ -581,7 +579,7 @@ static void icmpv6_echo_reply(struct sk_buff *skb)
 
 	err = ip6_append_data(sk, icmpv6_getfrag, &msg, skb->len + sizeof(struct icmp6hdr),
 				sizeof(struct icmp6hdr), hlimit, np->tclass, NULL, &fl6,
-				(struct rt6_info *)dst, MSG_DONTWAIT,
+				(struct rt6_info*)dst, MSG_DONTWAIT,
 				np->dontfrag);
 
 	if (err) {
@@ -822,7 +820,9 @@ static int __net_init icmpv6_sk_init(struct net *net)
 		err = inet_ctl_sock_create(&sk, PF_INET6,
 					   SOCK_RAW, IPPROTO_ICMPV6, net);
 		if (err < 0) {
-			pr_err("Failed to initialize the ICMP6 control socket (err %d)\n",
+			printk(KERN_ERR
+			       "Failed to initialize the ICMP6 control socket "
+			       "(err %d).\n",
 			       err);
 			goto fail;
 		}
@@ -881,7 +881,7 @@ int __init icmpv6_init(void)
 	return 0;
 
 fail:
-	pr_err("Failed to register ICMP6 protocol\n");
+	printk(KERN_ERR "Failed to register ICMP6 protocol\n");
 	unregister_pernet_subsys(&icmpv6_sk_ops);
 	return err;
 }
@@ -917,6 +917,14 @@ static const struct icmp6_err {
 		.err	= ECONNREFUSED,
 		.fatal	= 1,
 	},
+	{	/* POLICY_FAIL */
+		.err	= EACCES,
+		.fatal	= 1,
+	},
+	{	/* REJECT_ROUTE	*/
+		.err	= EACCES,
+		.fatal	= 1,
+	},
 };
 
 int icmpv6_err_convert(u8 type, u8 code, int *err)
@@ -928,7 +936,7 @@ int icmpv6_err_convert(u8 type, u8 code, int *err)
 	switch (type) {
 	case ICMPV6_DEST_UNREACH:
 		fatal = 1;
-		if (code <= ICMPV6_PORT_UNREACH) {
+		if (code < ARRAY_SIZE(tab_unreach)) {
 			*err  = tab_unreach[code].err;
 			fatal = tab_unreach[code].fatal;
 		}
@@ -950,6 +958,7 @@ int icmpv6_err_convert(u8 type, u8 code, int *err)
 
 	return fatal;
 }
+
 EXPORT_SYMBOL(icmpv6_err_convert);
 
 #ifdef CONFIG_SYSCTL

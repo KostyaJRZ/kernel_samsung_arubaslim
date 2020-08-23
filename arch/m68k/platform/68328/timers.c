@@ -53,7 +53,6 @@
 #endif
 
 static u32 m68328_tick_cnt;
-static irq_handler_t timer_interrupt;
 
 /***************************************************************************/
 
@@ -63,7 +62,7 @@ static irqreturn_t hw_tick(int irq, void *dummy)
 	TSTAT &= 0;
 
 	m68328_tick_cnt += TICKS_PER_JIFFY;
-	return timer_interrupt(irq, dummy);
+	return arch_timer_interrupt(irq, dummy);
 }
 
 /***************************************************************************/
@@ -100,7 +99,7 @@ static struct clocksource m68328_clk = {
 
 /***************************************************************************/
 
-void hw_timer_init(irq_handler_t handler)
+void hw_timer_init(void)
 {
 	/* disable timer 1 */
 	TCTL = 0;
@@ -116,7 +115,6 @@ void hw_timer_init(irq_handler_t handler)
 	/* Enable timer 1 */
 	TCTL |= TCTL_TEN;
 	clocksource_register_hz(&m68328_clk, TICKS_PER_JIFFY*HZ);
-	timer_interrupt = handler;
 }
 
 /***************************************************************************/

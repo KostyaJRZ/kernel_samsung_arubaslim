@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2004-2007,2011-2012 Freescale Semiconductor, Inc.
+ * Copyright (C) 2004-2007,2011 Freescale Semiconductor, Inc.
  * All rights reserved.
  *
  * Author: Li Yang <leoli@freescale.com>
@@ -58,8 +58,9 @@ static const char driver_name[] = "fsl-usb2-udc";
 static const char driver_desc[] = DRIVER_DESC;
 
 static struct usb_dr_device *dr_regs;
-
+#ifndef CONFIG_ARCH_MXC
 static struct usb_sys_interface *usb_sys_regs;
+#endif
 
 /* it is initialized in probe()  */
 static struct fsl_udc *udc_controller = NULL;
@@ -243,9 +244,10 @@ static int dr_controller_setup(struct fsl_udc *udc)
 {
 	unsigned int tmp, portctrl, ep_num;
 	unsigned int max_no_of_ep;
+#ifndef CONFIG_ARCH_MXC
 	unsigned int ctrl;
+#endif
 	unsigned long timeout;
-
 #define FSL_UDC_RESET_TIMEOUT 1000
 
 	/* Config PHY interface */
@@ -253,32 +255,12 @@ static int dr_controller_setup(struct fsl_udc *udc)
 	portctrl &= ~(PORTSCX_PHY_TYPE_SEL | PORTSCX_PORT_WIDTH);
 	switch (udc->phy_mode) {
 	case FSL_USB2_PHY_ULPI:
-		if (udc->pdata->have_sysif_regs) {
-			if (udc->pdata->controller_ver) {
-				/* controller version 1.6 or above */
-				ctrl = __raw_readl(&usb_sys_regs->control);
-				ctrl &= ~USB_CTRL_UTMI_PHY_EN;
-				ctrl |= USB_CTRL_USB_EN;
-				__raw_writel(ctrl, &usb_sys_regs->control);
-			}
-		}
 		portctrl |= PORTSCX_PTS_ULPI;
 		break;
 	case FSL_USB2_PHY_UTMI_WIDE:
 		portctrl |= PORTSCX_PTW_16BIT;
 		/* fall through */
 	case FSL_USB2_PHY_UTMI:
-		if (udc->pdata->have_sysif_regs) {
-			if (udc->pdata->controller_ver) {
-				/* controller version 1.6 or above */
-				ctrl = __raw_readl(&usb_sys_regs->control);
-				ctrl |= (USB_CTRL_UTMI_PHY_EN |
-					USB_CTRL_USB_EN);
-				__raw_writel(ctrl, &usb_sys_regs->control);
-				mdelay(FSL_UTMI_PHY_DLY); /* Delay for UTMI
-					PHY CLK to become stable - 10ms*/
-			}
-		}
 		portctrl |= PORTSCX_PTS_UTMI;
 		break;
 	case FSL_USB2_PHY_SERIAL:
@@ -567,7 +549,7 @@ static int fsl_ep_enable(struct usb_ep *_ep,
 	ep = container_of(_ep, struct fsl_ep, ep);
 
 	/* catch various bogus parameters */
-	if (!_ep || !desc
+	if (!_ep || !desc || ep->desc
 			|| (desc->bDescriptorType != USB_DT_ENDPOINT))
 		return -EINVAL;
 
@@ -608,7 +590,7 @@ static int fsl_ep_enable(struct usb_ep *_ep,
 
 	spin_lock_irqsave(&udc->lock, flags);
 	ep->ep.maxpacket = max;
-	ep->ep.desc = desc;
+	ep->desc = desc;
 	ep->stopped = 0;
 
 	/* Controller related setup */
@@ -632,7 +614,7 @@ static int fsl_ep_enable(struct usb_ep *_ep,
 	retval = 0;
 
 	VDBG("enabled %s (ep%d%s) maxpacket %d",ep->ep.name,
-			ep->ep.desc->bEndpointAddress & 0x0f,
+			ep->desc->bEndpointAddress & 0x0f,
 			(desc->bEndpointAddress & USB_DIR_IN)
 				? "in" : "out", max);
 en_done:
@@ -652,7 +634,7 @@ static int fsl_ep_disable(struct usb_ep *_ep)
 	int ep_num;
 
 	ep = container_of(_ep, struct fsl_ep, ep);
-	if (!_ep || !ep->ep.desc) {
+	if (!_ep || !ep->desc) {
 		VDBG("%s not enabled", _ep ? ep->ep.name : NULL);
 		return -EINVAL;
 	}
@@ -675,6 +657,7 @@ static int fsl_ep_disable(struct usb_ep *_ep)
 	/* nuke all pending requests (does flush) */
 	nuke(ep, -ESHUTDOWN);
 
+	ep->desc = NULL;
 	ep->ep.desc = NULL;
 	ep->stopped = 1;
 	spin_unlock_irqrestore(&udc->lock, flags);
@@ -893,11 +876,11 @@ fsl_ep_queue(struct usb_ep *_ep, struct usb_request *_req, gfp_t gfp_flags)
 		VDBG("%s, bad params", __func__);
 		return -EINVAL;
 	}
-	if (unlikely(!_ep || !ep->ep.desc)) {
+	if (unlikely(!_ep || !ep->desc)) {
 		VDBG("%s, bad ep", __func__);
 		return -EINVAL;
 	}
-	if (usb_endpoint_xfer_isoc(ep->ep.desc)) {
+	if (usb_endpoint_xfer_isoc(ep->desc)) {
 		if (req->req.length > ep->ep.maxpacket)
 			return -EMSGSIZE;
 	}
@@ -1036,12 +1019,12 @@ static int fsl_ep_set_halt(struct usb_ep *_ep, int value)
 
 	ep = container_of(_ep, struct fsl_ep, ep);
 	udc = ep->udc;
-	if (!_ep || !ep->ep.desc) {
+	if (!_ep || !ep->desc) {
 		status = -EINVAL;
 		goto out;
 	}
 
-	if (usb_endpoint_xfer_isoc(ep->ep.desc)) {
+	if (usb_endpoint_xfer_isoc(ep->desc)) {
 		status = -EOPNOTSUPP;
 		goto out;
 	}
@@ -1080,7 +1063,7 @@ static int fsl_ep_fifo_status(struct usb_ep *_ep)
 	struct ep_queue_head *qh;
 
 	ep = container_of(_ep, struct fsl_ep, ep);
-	if (!_ep || (!ep->ep.desc && ep_index(ep) != 0))
+	if (!_ep || (!ep->desc && ep_index(ep) != 0))
 		return -ENODEV;
 
 	udc = (struct fsl_udc *)ep->udc;
@@ -1113,7 +1096,7 @@ static void fsl_ep_fifo_flush(struct usb_ep *_ep)
 		return;
 	} else {
 		ep = container_of(_ep, struct fsl_ep, ep);
-		if (!ep->ep.desc)
+		if (!ep->desc)
 			return;
 	}
 	ep_num = ep_index(ep);
@@ -1368,7 +1351,7 @@ static void ch9getstatus(struct fsl_udc *udc, u8 request_type, u16 value,
 		target_ep = get_ep_by_pipe(udc, get_pipe_by_windex(index));
 
 		/* stall if endpoint doesn't exist */
-		if (!target_ep->ep.desc)
+		if (!target_ep->desc)
 			goto stall;
 		tmp = dr_ep_get_stall(ep_index(target_ep), ep_is_in(target_ep))
 				<< USB_ENDPOINT_HALT;
@@ -2278,7 +2261,7 @@ static int fsl_proc_read(char *page, char **start, off_t off, int count,
 	}
 	/* other gadget->eplist ep */
 	list_for_each_entry(ep, &udc->gadget.ep_list, ep.ep_list) {
-		if (ep->ep.desc) {
+		if (ep->desc) {
 			t = scnprintf(next, size,
 					"\nFor %s Maxpkt is 0x%x "
 					"index is 0x%x\n",
@@ -2575,7 +2558,7 @@ static int __init fsl_udc_probe(struct platform_device *pdev)
 	/* for ep0: the desc defined here;
 	 * for other eps, gadget layer called ep_enable with defined desc
 	 */
-	udc_controller->eps[0].ep.desc = &fsl_ep0_desc;
+	udc_controller->eps[0].desc = &fsl_ep0_desc;
 	udc_controller->eps[0].ep.maxpacket = USB_MAX_CTRL_PAYLOAD;
 
 	/* setup the udc->eps[] for non-control endpoints and link

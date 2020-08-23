@@ -477,6 +477,8 @@ int second_overflow(unsigned long secs)
 							 << NTP_SCALE_SHIFT;
 	time_adjust = 0;
 
+
+
 out:
 	spin_unlock_irqrestore(&ntp_lock, flags);
 
@@ -561,10 +563,10 @@ static inline void process_adj_status(struct timex *txc, struct timespec *ts)
 	/* only set allowed bits */
 	time_status &= STA_RONLY;
 	time_status |= txc->status & ~STA_RONLY;
-}
 
+}
 /*
- * Called with ntp_lock held, so we can access and modify
+ * Called with the xtime lock held, so we can access and modify
  * all the global NTP state:
  */
 static inline void process_adjtimex_modes(struct timex *txc, struct timespec *ts)
@@ -656,6 +658,17 @@ int do_adjtimex(struct timex *txc)
 		result = timekeeping_inject_offset(&delta);
 		if (result)
 			return result;
+	}
+
+	/*
+	 * Check for potential multiplication overflows that can
+	 * only happen on 64-bit systems:
+	 */
+	if ((txc->modes & ADJ_FREQUENCY) && (BITS_PER_LONG == 64)) {
+		if (LLONG_MIN / PPM_SCALE > txc->freq)
+			return -EINVAL;
+		if (LLONG_MAX / PPM_SCALE < txc->freq)
+			return -EINVAL;
 	}
 
 	getnstimeofday(&ts);

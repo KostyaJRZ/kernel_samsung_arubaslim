@@ -85,11 +85,12 @@ static const struct platform_suspend_ops sirfsoc_pm_ops = {
 	.valid = suspend_valid_only_mem,
 };
 
-int __init sirfsoc_pm_init(void)
+static int __init sirfsoc_pm_init(void)
 {
 	suspend_set_ops(&sirfsoc_pm_ops);
 	return 0;
 }
+late_initcall(sirfsoc_pm_init);
 
 static const struct of_device_id pwrc_ids[] = {
 	{ .compatible = "sirf,prima2-pwrc" },

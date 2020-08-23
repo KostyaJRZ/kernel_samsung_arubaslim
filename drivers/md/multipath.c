@@ -474,8 +474,7 @@ static int multipath_run (struct mddev *mddev)
 	}
 
 	{
-		mddev->thread = md_register_thread(multipathd, mddev,
-						   "multipath");
+		mddev->thread = md_register_thread(multipathd, mddev, NULL);
 		if (!mddev->thread) {
 			printk(KERN_ERR "multipath: couldn't allocate thread"
 				" for %s\n", mdname(mddev));

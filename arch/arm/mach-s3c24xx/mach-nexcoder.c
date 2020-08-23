@@ -84,7 +84,11 @@ static struct s3c2410_uartcfg nexcoder_uartcfgs[] __initdata = {
 /* NOR Flash on NexVision NexCoder 2440 board */
 
 static struct resource nexcoder_nor_resource[] = {
-	[0] = DEFINE_RES_MEM(S3C2410_CS0, SZ_8M),
+	[0] = {
+		.start = S3C2410_CS0,
+		.end   = S3C2410_CS0 + (8*1024*1024) - 1,
+		.flags = IORESOURCE_MEM,
+	}
 };
 
 static struct map_info nexcoder_nor_map = {

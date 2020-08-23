@@ -19,7 +19,7 @@
 #include <linux/of_gpio.h>
 #include <linux/spi/spi.h>
 #include <linux/spi/spi_bitbang.h>
-#include <linux/pinctrl/consumer.h>
+#include <linux/pinctrl/pinmux.h>
 
 #define DRIVER_NAME "sirfsoc_spi"
 
@@ -127,7 +127,7 @@ struct sirfsoc_spi {
 	void __iomem *base;
 	u32 ctrl_freq;  /* SPI controller clock speed */
 	struct clk *clk;
-	struct pinctrl *p;
+	struct pinmux *pmx;
 
 	/* rx & tx bufs from the spi_transfer */
 	const void *tx;
@@ -560,15 +560,17 @@ static int __devinit spi_sirfsoc_probe(struct platform_device *pdev)
 	master->bus_num = pdev->id;
 	sspi->bitbang.master->dev.of_node = pdev->dev.of_node;
 
-	sspi->p = pinctrl_get_select_default(&pdev->dev);
-	ret = IS_ERR(sspi->p);
+	sspi->pmx = pinmux_get(&pdev->dev, NULL);
+	ret = IS_ERR(sspi->pmx);
 	if (ret)
 		goto free_master;
+
+	pinmux_enable(sspi->pmx);
 
 	sspi->clk = clk_get(&pdev->dev, NULL);
 	if (IS_ERR(sspi->clk)) {
 		ret = -EINVAL;
-		goto free_pin;
+		goto free_pmx;
 	}
 	clk_enable(sspi->clk);
 	sspi->ctrl_freq = clk_get_rate(sspi->clk);
@@ -596,8 +598,9 @@ static int __devinit spi_sirfsoc_probe(struct platform_device *pdev)
 free_clk:
 	clk_disable(sspi->clk);
 	clk_put(sspi->clk);
-free_pin:
-	pinctrl_put(sspi->p);
+free_pmx:
+	pinmux_disable(sspi->pmx);
+	pinmux_put(sspi->pmx);
 free_master:
 	spi_master_put(master);
 err_cs:
@@ -620,7 +623,8 @@ static int  __devexit spi_sirfsoc_remove(struct platform_device *pdev)
 	}
 	clk_disable(sspi->clk);
 	clk_put(sspi->clk);
-	pinctrl_put(sspi->p);
+	pinmux_disable(sspi->pmx);
+	pinmux_put(sspi->pmx);
 	spi_master_put(master);
 	return 0;
 }

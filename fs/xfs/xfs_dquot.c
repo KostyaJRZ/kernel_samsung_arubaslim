@@ -19,6 +19,7 @@
 #include "xfs_fs.h"
 #include "xfs_bit.h"
 #include "xfs_log.h"
+#include "xfs_inum.h"
 #include "xfs_trans.h"
 #include "xfs_sb.h"
 #include "xfs_ag.h"
@@ -856,7 +857,7 @@ xfs_qm_dqflush_done(
 		/* xfs_trans_ail_delete() drops the AIL lock. */
 		spin_lock(&ailp->xa_lock);
 		if (lip->li_lsn == qip->qli_flush_lsn)
-			xfs_trans_ail_delete(ailp, lip, SHUTDOWN_CORRUPT_INCORE);
+			xfs_trans_ail_delete(ailp, lip);
 		else
 			spin_unlock(&ailp->xa_lock);
 	}
@@ -877,8 +878,8 @@ xfs_qm_dqflush_done(
  */
 int
 xfs_qm_dqflush(
-	struct xfs_dquot	*dqp,
-	struct xfs_buf		**bpp)
+	xfs_dquot_t		*dqp,
+	uint			flags)
 {
 	struct xfs_mount	*mp = dqp->q_mount;
 	struct xfs_buf		*bp;
@@ -890,30 +891,25 @@ xfs_qm_dqflush(
 
 	trace_xfs_dqflush(dqp);
 
-	*bpp = NULL;
-
+	/*
+	 * If not dirty, or it's pinned and we are not supposed to block, nada.
+	 */
+	if (!XFS_DQ_IS_DIRTY(dqp) ||
+	    ((flags & SYNC_TRYLOCK) && atomic_read(&dqp->q_pincount) > 0)) {
+		xfs_dqfunlock(dqp);
+		return 0;
+	}
 	xfs_qm_dqunpin_wait(dqp);
 
 	/*
 	 * This may have been unpinned because the filesystem is shutting
 	 * down forcibly. If that's the case we must not write this dquot
-	 * to disk, because the log record didn't make it to disk.
-	 *
-	 * We also have to remove the log item from the AIL in this case,
-	 * as we wait for an emptry AIL as part of the unmount process.
+	 * to disk, because the log record didn't make it to disk!
 	 */
 	if (XFS_FORCED_SHUTDOWN(mp)) {
-		struct xfs_log_item	*lip = &dqp->q_logitem.qli_item;
 		dqp->dq_flags &= ~XFS_DQ_DIRTY;
-
-		spin_lock(&mp->m_ail->xa_lock);
-		if (lip->li_flags & XFS_LI_IN_AIL)
-			xfs_trans_ail_delete(mp->m_ail, lip,
-					     SHUTDOWN_CORRUPT_INCORE);
-		else
-			spin_unlock(&mp->m_ail->xa_lock);
-		error = XFS_ERROR(EIO);
-		goto out_unlock;
+		xfs_dqfunlock(dqp);
+		return XFS_ERROR(EIO);
 	}
 
 	/*
@@ -921,8 +917,11 @@ xfs_qm_dqflush(
 	 */
 	error = xfs_trans_read_buf(mp, NULL, mp->m_ddev_targp, dqp->q_blkno,
 				   mp->m_quotainfo->qi_dqchunklen, 0, &bp);
-	if (error)
-		goto out_unlock;
+	if (error) {
+		ASSERT(error != ENOENT);
+		xfs_dqfunlock(dqp);
+		return error;
+	}
 
 	/*
 	 * Calculate the location of the dquot inside the buffer.
@@ -968,13 +967,20 @@ xfs_qm_dqflush(
 		xfs_log_force(mp, 0);
 	}
 
-	trace_xfs_dqflush_done(dqp);
-	*bpp = bp;
-	return 0;
+	if (flags & SYNC_WAIT)
+		error = xfs_bwrite(bp);
+	else
+		xfs_buf_delwri_queue(bp);
 
-out_unlock:
-	xfs_dqfunlock(dqp);
-	return XFS_ERROR(EIO);
+	xfs_buf_relse(bp);
+
+	trace_xfs_dqflush_done(dqp);
+
+	/*
+	 * dqp is still locked, but caller is free to unlock it now.
+	 */
+	return error;
+
 }
 
 /*
@@ -1003,6 +1009,39 @@ xfs_dqlock2(
 	} else if (d2) {
 		mutex_lock(&d2->q_qlock);
 	}
+}
+
+/*
+ * Give the buffer a little push if it is incore and
+ * wait on the flush lock.
+ */
+void
+xfs_dqflock_pushbuf_wait(
+	xfs_dquot_t	*dqp)
+{
+	xfs_mount_t	*mp = dqp->q_mount;
+	xfs_buf_t	*bp;
+
+	/*
+	 * Check to see if the dquot has been flushed delayed
+	 * write.  If so, grab its buffer and send it
+	 * out immediately.  We'll be able to acquire
+	 * the flush lock when the I/O completes.
+	 */
+	bp = xfs_incore(mp->m_ddev_targp, dqp->q_blkno,
+			mp->m_quotainfo->qi_dqchunklen, XBF_TRYLOCK);
+	if (!bp)
+		goto out_lock;
+
+	if (XFS_BUF_ISDELAYWRITE(bp)) {
+		if (xfs_buf_ispinned(bp))
+			xfs_log_force(mp, 0);
+		xfs_buf_delwri_promote(bp);
+		wake_up_process(bp->b_target->bt_task);
+	}
+	xfs_buf_relse(bp);
+out_lock:
+	xfs_dqflock(dqp);
 }
 
 int __init

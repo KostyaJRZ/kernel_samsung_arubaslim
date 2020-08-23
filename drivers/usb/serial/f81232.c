@@ -68,6 +68,8 @@ static void f81232_read_int_callback(struct urb *urb)
 	int status = urb->status;
 	int retval;
 
+	dbg("%s (%d)", __func__, port->number);
+
 	switch (status) {
 	case 0:
 		/* success */
@@ -76,12 +78,12 @@ static void f81232_read_int_callback(struct urb *urb)
 	case -ENOENT:
 	case -ESHUTDOWN:
 		/* this urb is terminated, clean up */
-		dev_dbg(&port->dev, "%s - urb shutting down with status: %d\n",
-			__func__, status);
+		dbg("%s - urb shutting down with status: %d", __func__,
+		    status);
 		return;
 	default:
-		dev_dbg(&port->dev, "%s - nonzero urb status received: %d\n",
-			__func__, status);
+		dbg("%s - nonzero urb status received: %d", __func__,
+		    status);
 		goto exit;
 	}
 
@@ -131,7 +133,7 @@ static void f81232_process_read_urb(struct urb *urb)
 		tty_flag = TTY_PARITY;
 	else if (line_status & UART_FRAME_ERROR)
 		tty_flag = TTY_FRAME;
-	dev_dbg(&port->dev, "%s - tty_flag = %d\n", __func__, tty_flag);
+	dbg("%s - tty_flag = %d", __func__, tty_flag);
 
 	/* overrun is special, not associated with a char */
 	if (line_status & UART_OVERRUN_ERROR)
@@ -201,6 +203,7 @@ static int f81232_open(struct tty_struct *tty, struct usb_serial_port *port)
 	if (tty)
 		f81232_set_termios(tty, port, &tmp_termios);
 
+	dbg("%s - submitting interrupt urb", __func__);
 	result = usb_submit_urb(port->interrupt_in_urb, GFP_KERNEL);
 	if (result) {
 		dev_err(&port->dev, "%s - failed submitting interrupt urb,"
@@ -290,9 +293,7 @@ static int f81232_ioctl(struct tty_struct *tty,
 {
 	struct serial_struct ser;
 	struct usb_serial_port *port = tty->driver_data;
-
-	dev_dbg(&port->dev, "%s (%d) cmd = 0x%04x\n", __func__,
-		port->number, cmd);
+	dbg("%s (%d) cmd = 0x%04x", __func__, port->number, cmd);
 
 	switch (cmd) {
 	case TIOCGSERIAL:
@@ -308,12 +309,10 @@ static int f81232_ioctl(struct tty_struct *tty,
 		return 0;
 
 	case TIOCMIWAIT:
-		dev_dbg(&port->dev, "%s (%d) TIOCMIWAIT\n", __func__,
-			port->number);
+		dbg("%s (%d) TIOCMIWAIT", __func__,  port->number);
 		return wait_modem_info(port, arg);
 	default:
-		dev_dbg(&port->dev, "%s not supported = 0x%04x\n",
-			__func__, cmd);
+		dbg("%s not supported = 0x%04x", __func__, cmd);
 		break;
 	}
 	return -ENOIOCTLCMD;
@@ -354,12 +353,24 @@ static void f81232_release(struct usb_serial *serial)
 	}
 }
 
+static struct usb_driver f81232_driver = {
+	.name =		"f81232",
+	.probe =	usb_serial_probe,
+	.disconnect =	usb_serial_disconnect,
+	.id_table =	id_table,
+	.suspend =      usb_serial_suspend,
+	.resume =       usb_serial_resume,
+	.no_dynamic_id = 	1,
+	.supports_autosuspend =	1,
+};
+
 static struct usb_serial_driver f81232_device = {
 	.driver = {
 		.owner =	THIS_MODULE,
 		.name =		"f81232",
 	},
 	.id_table =		id_table,
+	.usb_driver = 		&f81232_driver,
 	.num_ports =		1,
 	.bulk_in_size =		256,
 	.bulk_out_size =	256,
@@ -383,7 +394,7 @@ static struct usb_serial_driver * const serial_drivers[] = {
 	NULL,
 };
 
-module_usb_serial_driver(serial_drivers, id_table);
+module_usb_serial_driver(f81232_driver, serial_drivers);
 
 MODULE_DESCRIPTION("Fintek F81232 USB to serial adaptor driver");
 MODULE_AUTHOR("Greg Kroah-Hartman <gregkh@linuxfoundation.org");

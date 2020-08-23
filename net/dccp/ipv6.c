@@ -343,7 +343,6 @@ static struct request_sock_ops dccp6_request_sock_ops = {
 	.send_ack	= dccp_reqsk_send_ack,
 	.destructor	= dccp_v6_reqsk_destructor,
 	.send_reset	= dccp_v6_ctl_send_reset,
-	.syn_ack_timeout = dccp_syn_ack_timeout,
 };
 
 static struct sock *dccp_v6_hnd_req(struct sock *sk,struct sk_buff *skb)
@@ -580,7 +579,7 @@ static struct sock *dccp_v6_request_recv_sock(struct sock *sk,
 	newnp->pktoptions = NULL;
 	if (ireq6->pktopts != NULL) {
 		newnp->pktoptions = skb_clone(ireq6->pktopts, GFP_ATOMIC);
-		consume_skb(ireq6->pktopts);
+		kfree_skb(ireq6->pktopts);
 		ireq6->pktopts = NULL;
 		if (newnp->pktoptions)
 			skb_set_owner_r(newnp->pktoptions, newsk);
@@ -612,7 +611,8 @@ static struct sock *dccp_v6_request_recv_sock(struct sock *sk,
 	newinet->inet_rcv_saddr = LOOPBACK4_IPV6;
 
 	if (__inet_inherit_port(sk, newsk) < 0) {
-		sock_put(newsk);
+		inet_csk_prepare_forced_close(newsk);
+		dccp_done(newsk);
 		goto out;
 	}
 	__inet6_hash(newsk, NULL);

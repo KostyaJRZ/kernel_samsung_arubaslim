@@ -85,6 +85,7 @@ void tipc_printf(struct print_buf *, const char *fmt, ...);
 /*
  * TIPC_OUTPUT is the destination print buffer for system messages.
  */
+
 #ifndef TIPC_OUTPUT
 #define TIPC_OUTPUT TIPC_LOG
 #endif
@@ -101,6 +102,7 @@ void tipc_printf(struct print_buf *, const char *fmt, ...);
 /*
  * DBG_OUTPUT is the destination print buffer for debug messages.
  */
+
 #ifndef DBG_OUTPUT
 #define DBG_OUTPUT TIPC_LOG
 #endif
@@ -124,11 +126,13 @@ void tipc_msg_dbg(struct print_buf *, struct tipc_msg *, const char *);
 /*
  * TIPC-specific error codes
  */
+
 #define ELINKCONG EAGAIN	/* link congestion <=> resource unavailable */
 
 /*
  * Global configuration variables
  */
+
 extern u32 tipc_own_addr;
 extern int tipc_max_ports;
 extern int tipc_max_subscriptions;
@@ -139,6 +143,7 @@ extern int tipc_remote_management;
 /*
  * Other global variables
  */
+
 extern int tipc_random;
 extern const char tipc_alphabet[];
 
@@ -146,6 +151,7 @@ extern const char tipc_alphabet[];
 /*
  * Routines available to privileged subsystems
  */
+
 extern int tipc_core_start_net(unsigned long);
 extern int  tipc_handler_start(void);
 extern void tipc_handler_stop(void);
@@ -157,6 +163,7 @@ extern void tipc_socket_stop(void);
 /*
  * TIPC timer and signal code
  */
+
 typedef void (*Handler) (unsigned long);
 
 u32 tipc_k_signal(Handler routine, unsigned long argument);
@@ -169,6 +176,7 @@ u32 tipc_k_signal(Handler routine, unsigned long argument);
  *
  * Timer must be initialized before use (and terminated when no longer needed).
  */
+
 static inline void k_init_timer(struct timer_list *timer, Handler routine,
 				unsigned long argument)
 {
@@ -188,6 +196,7 @@ static inline void k_init_timer(struct timer_list *timer, Handler routine,
  * then an additional jiffy is added to account for the fact that
  * the starting time may be in the middle of the current jiffy.
  */
+
 static inline void k_start_timer(struct timer_list *timer, unsigned long msec)
 {
 	mod_timer(timer, jiffies + msecs_to_jiffies(msec) + 1);
@@ -203,6 +212,7 @@ static inline void k_start_timer(struct timer_list *timer, unsigned long msec)
  * WARNING: Must not be called when holding locks required by the timer's
  *          timeout routine, otherwise deadlock can occur on SMP systems!
  */
+
 static inline void k_cancel_timer(struct timer_list *timer)
 {
 	del_timer_sync(timer);
@@ -219,9 +229,11 @@ static inline void k_cancel_timer(struct timer_list *timer)
  * (Do not "enhance" this routine to automatically cancel an active timer,
  * otherwise deadlock can arise when a timeout routine calls k_term_timer.)
  */
+
 static inline void k_term_timer(struct timer_list *timer)
 {
 }
+
 
 /*
  * TIPC message buffer code
@@ -232,6 +244,7 @@ static inline void k_term_timer(struct timer_list *timer)
  * Note: Headroom should be a multiple of 4 to ensure the TIPC header fields
  *       are word aligned for quicker access
  */
+
 #define BUF_HEADROOM LL_MAX_HEADER
 
 struct tipc_skb_cb {
@@ -239,6 +252,7 @@ struct tipc_skb_cb {
 };
 
 #define TIPC_SKB_CB(__skb) ((struct tipc_skb_cb *)&((__skb)->cb[0]))
+
 
 static inline struct tipc_msg *buf_msg(struct sk_buff *skb)
 {

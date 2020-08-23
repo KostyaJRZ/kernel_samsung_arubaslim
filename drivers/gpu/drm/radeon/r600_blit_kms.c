@@ -513,6 +513,7 @@ int r600_blit_init(struct radeon_device *rdev)
 	rdev->r600_blit.primitives.set_default_state = set_default_state;
 
 	rdev->r600_blit.ring_size_common = 40; /* shaders + def state */
+	rdev->r600_blit.ring_size_common += 16; /* fence emit for VB IB */
 	rdev->r600_blit.ring_size_common += 5; /* done copy */
 	rdev->r600_blit.ring_size_common += 16; /* fence emit for done copy */
 
@@ -527,6 +528,7 @@ int r600_blit_init(struct radeon_device *rdev)
 	if (rdev->r600_blit.shader_obj)
 		goto done;
 
+	mutex_init(&rdev->r600_blit.mutex);
 	rdev->r600_blit.state_offset = 0;
 
 	if (rdev->family >= CHIP_RV770)
@@ -552,7 +554,7 @@ int r600_blit_init(struct radeon_device *rdev)
 	obj_size = ALIGN(obj_size, 256);
 
 	r = radeon_bo_create(rdev, obj_size, PAGE_SIZE, true, RADEON_GEM_DOMAIN_VRAM,
-			     NULL, &rdev->r600_blit.shader_obj);
+				&rdev->r600_blit.shader_obj);
 	if (r) {
 		DRM_ERROR("r600 failed to allocate shader\n");
 		return r;
@@ -619,6 +621,27 @@ void r600_blit_fini(struct radeon_device *rdev)
 	radeon_bo_unref(&rdev->r600_blit.shader_obj);
 }
 
+static int r600_vb_ib_get(struct radeon_device *rdev, unsigned size)
+{
+	int r;
+	r = radeon_ib_get(rdev, RADEON_RING_TYPE_GFX_INDEX,
+			  &rdev->r600_blit.vb_ib, size);
+	if (r) {
+		DRM_ERROR("failed to get IB for vertex buffer\n");
+		return r;
+	}
+
+	rdev->r600_blit.vb_total = size;
+	rdev->r600_blit.vb_used = 0;
+	return 0;
+}
+
+static void r600_vb_ib_put(struct radeon_device *rdev)
+{
+	radeon_fence_emit(rdev, rdev->r600_blit.vb_ib->fence);
+	radeon_ib_free(rdev, &rdev->r600_blit.vb_ib);
+}
+
 static unsigned r600_blit_create_rect(unsigned num_gpu_pages,
 				      int *width, int *height, int max_dim)
 {
@@ -665,8 +688,7 @@ static unsigned r600_blit_create_rect(unsigned num_gpu_pages,
 }
 
 
-int r600_blit_prepare_copy(struct radeon_device *rdev, unsigned num_gpu_pages,
-			   struct radeon_sa_bo **vb)
+int r600_blit_prepare_copy(struct radeon_device *rdev, unsigned num_gpu_pages)
 {
 	struct radeon_ring *ring = &rdev->ring[RADEON_RING_TYPE_GFX_INDEX];
 	int r;
@@ -683,54 +705,46 @@ int r600_blit_prepare_copy(struct radeon_device *rdev, unsigned num_gpu_pages,
 	}
 
 	/* 48 bytes for vertex per loop */
-	r = radeon_sa_bo_new(rdev, &rdev->ring_tmp_bo, vb,
-			     (num_loops*48)+256, 256, true);
-	if (r) {
+	r = r600_vb_ib_get(rdev, (num_loops*48)+256);
+	if (r)
 		return r;
-	}
 
 	/* calculate number of loops correctly */
 	ring_size = num_loops * dwords_per_loop;
 	ring_size += rdev->r600_blit.ring_size_common;
 	r = radeon_ring_lock(rdev, ring, ring_size);
-	if (r) {
-		radeon_sa_bo_free(rdev, vb, NULL);
+	if (r)
 		return r;
-	}
 
 	rdev->r600_blit.primitives.set_default_state(rdev);
 	rdev->r600_blit.primitives.set_shaders(rdev);
 	return 0;
 }
 
-void r600_blit_done_copy(struct radeon_device *rdev, struct radeon_fence *fence,
-			 struct radeon_sa_bo *vb)
+void r600_blit_done_copy(struct radeon_device *rdev, struct radeon_fence *fence)
 {
-	struct radeon_ring *ring = &rdev->ring[RADEON_RING_TYPE_GFX_INDEX];
 	int r;
 
-	r = radeon_fence_emit(rdev, fence);
-	if (r) {
-		radeon_ring_unlock_undo(rdev, ring);
-		return;
-	}
+	if (rdev->r600_blit.vb_ib)
+		r600_vb_ib_put(rdev);
 
-	radeon_ring_unlock_commit(rdev, ring);
-	radeon_sa_bo_free(rdev, &vb, fence);
+	if (fence)
+		r = radeon_fence_emit(rdev, fence);
+
+	radeon_ring_unlock_commit(rdev, &rdev->ring[RADEON_RING_TYPE_GFX_INDEX]);
 }
 
 void r600_kms_blit_copy(struct radeon_device *rdev,
 			u64 src_gpu_addr, u64 dst_gpu_addr,
-			unsigned num_gpu_pages,
-			struct radeon_sa_bo *vb)
+			unsigned num_gpu_pages)
 {
 	u64 vb_gpu_addr;
-	u32 *vb_cpu_addr;
+	u32 *vb;
 
-	DRM_DEBUG("emitting copy %16llx %16llx %d\n",
-		  src_gpu_addr, dst_gpu_addr, num_gpu_pages);
-	vb_cpu_addr = (u32 *)radeon_sa_bo_cpu_addr(vb);
-	vb_gpu_addr = radeon_sa_bo_gpu_addr(vb);
+	DRM_DEBUG("emitting copy %16llx %16llx %d %d\n",
+		  src_gpu_addr, dst_gpu_addr,
+		  num_gpu_pages, rdev->r600_blit.vb_used);
+	vb = (u32 *)(rdev->r600_blit.vb_ib->ptr + rdev->r600_blit.vb_used);
 
 	while (num_gpu_pages) {
 		int w, h;
@@ -742,34 +756,39 @@ void r600_kms_blit_copy(struct radeon_device *rdev,
 		size_in_bytes = pages_per_loop * RADEON_GPU_PAGE_SIZE;
 		DRM_DEBUG("rectangle w=%d h=%d\n", w, h);
 
-		vb_cpu_addr[0] = 0;
-		vb_cpu_addr[1] = 0;
-		vb_cpu_addr[2] = 0;
-		vb_cpu_addr[3] = 0;
+		if ((rdev->r600_blit.vb_used + 48) > rdev->r600_blit.vb_total) {
+			WARN_ON(1);
+		}
 
-		vb_cpu_addr[4] = 0;
-		vb_cpu_addr[5] = i2f(h);
-		vb_cpu_addr[6] = 0;
-		vb_cpu_addr[7] = i2f(h);
+		vb[0] = 0;
+		vb[1] = 0;
+		vb[2] = 0;
+		vb[3] = 0;
 
-		vb_cpu_addr[8] = i2f(w);
-		vb_cpu_addr[9] = i2f(h);
-		vb_cpu_addr[10] = i2f(w);
-		vb_cpu_addr[11] = i2f(h);
+		vb[4] = 0;
+		vb[5] = i2f(h);
+		vb[6] = 0;
+		vb[7] = i2f(h);
+
+		vb[8] = i2f(w);
+		vb[9] = i2f(h);
+		vb[10] = i2f(w);
+		vb[11] = i2f(h);
 
 		rdev->r600_blit.primitives.set_tex_resource(rdev, FMT_8_8_8_8,
 							    w, h, w, src_gpu_addr, size_in_bytes);
 		rdev->r600_blit.primitives.set_render_target(rdev, COLOR_8_8_8_8,
 							     w, h, dst_gpu_addr);
 		rdev->r600_blit.primitives.set_scissors(rdev, 0, 0, w, h);
+		vb_gpu_addr = rdev->r600_blit.vb_ib->gpu_addr + rdev->r600_blit.vb_used;
 		rdev->r600_blit.primitives.set_vtx_resource(rdev, vb_gpu_addr);
 		rdev->r600_blit.primitives.draw_auto(rdev);
 		rdev->r600_blit.primitives.cp_set_surface_sync(rdev,
 				    PACKET3_CB_ACTION_ENA | PACKET3_CB0_DEST_BASE_ENA,
 				    size_in_bytes, dst_gpu_addr);
 
-		vb_cpu_addr += 12;
-		vb_gpu_addr += 4*12;
+		vb += 12;
+		rdev->r600_blit.vb_used += 4*12;
 		src_gpu_addr += size_in_bytes;
 		dst_gpu_addr += size_in_bytes;
 		num_gpu_pages -= pages_per_loop;

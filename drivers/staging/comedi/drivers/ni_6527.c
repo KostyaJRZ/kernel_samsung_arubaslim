@@ -78,7 +78,7 @@ Updated: Sat, 25 Jan 2003 13:24:40 -0800
 
 static int ni6527_attach(struct comedi_device *dev,
 			 struct comedi_devconfig *it);
-static void ni6527_detach(struct comedi_device *dev);
+static int ni6527_detach(struct comedi_device *dev);
 static struct comedi_driver driver_ni6527 = {
 	.driver_name = "ni6527",
 	.module = THIS_MODULE,
@@ -449,15 +449,19 @@ static int ni6527_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	return 0;
 }
 
-static void ni6527_detach(struct comedi_device *dev)
+static int ni6527_detach(struct comedi_device *dev)
 {
 	if (devpriv && devpriv->mite && devpriv->mite->daq_io_addr)
 		writeb(0x00,
 		       devpriv->mite->daq_io_addr + Master_Interrupt_Control);
+
 	if (dev->irq)
 		free_irq(dev->irq, dev);
+
 	if (devpriv && devpriv->mite)
 		mite_unsetup(devpriv->mite);
+
+	return 0;
 }
 
 static int ni6527_find_device(struct comedi_device *dev, int bus, int slot)
@@ -489,7 +493,7 @@ static int ni6527_find_device(struct comedi_device *dev, int bus, int slot)
 static int __devinit driver_ni6527_pci_probe(struct pci_dev *dev,
 					     const struct pci_device_id *ent)
 {
-	return comedi_pci_auto_config(dev, &driver_ni6527);
+	return comedi_pci_auto_config(dev, driver_ni6527.driver_name);
 }
 
 static void __devexit driver_ni6527_pci_remove(struct pci_dev *dev)

@@ -151,7 +151,6 @@ MACHINE_START(NOKIA_RM680, "Nokia RM-680 board")
 	.init_irq	= omap3_init_irq,
 	.handle_irq	= omap3_intc_handle_irq,
 	.init_machine	= rm680_init,
-	.init_late	= omap3630_init_late,
 	.timer		= &omap3_timer,
 	.restart	= omap_prcm_restart,
 MACHINE_END
@@ -164,7 +163,6 @@ MACHINE_START(NOKIA_RM696, "Nokia RM-696 board")
 	.init_irq	= omap3_init_irq,
 	.handle_irq	= omap3_intc_handle_irq,
 	.init_machine	= rm680_init,
-	.init_late	= omap3630_init_late,
 	.timer		= &omap3_timer,
 	.restart	= omap_prcm_restart,
 MACHINE_END

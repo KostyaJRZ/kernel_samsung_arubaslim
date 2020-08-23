@@ -261,17 +261,6 @@ static int stv06xx_init(struct gspca_dev *gspca_dev)
 	return (err < 0) ? err : 0;
 }
 
-/* this function is called at probe time */
-static int stv06xx_init_controls(struct gspca_dev *gspca_dev)
-{
-	struct sd *sd = (struct sd *) gspca_dev;
-
-	PDEBUG(D_PROBE, "Initializing controls");
-
-	gspca_dev->vdev.ctrl_handler = &gspca_dev->ctrl_handler;
-	return sd->sensor->init_controls(sd);
-}
-
 /* Start the camera */
 static int stv06xx_start(struct gspca_dev *gspca_dev)
 {
@@ -523,7 +512,6 @@ static const struct sd_desc sd_desc = {
 	.name = MODULE_NAME,
 	.config = stv06xx_config,
 	.init = stv06xx_init,
-	.init_controls = stv06xx_init_controls,
 	.start = stv06xx_start,
 	.stopN = stv06xx_stopN,
 	.pkt_scan = stv06xx_pkt_scan,
@@ -542,8 +530,9 @@ static int stv06xx_config(struct gspca_dev *gspca_dev,
 
 	PDEBUG(D_PROBE, "Configuring camera");
 
+	sd->desc = sd_desc;
 	sd->bridge = id->driver_info;
-	gspca_dev->sd_desc = &sd_desc;
+	gspca_dev->sd_desc = &sd->desc;
 
 	if (dump_bridge)
 		stv06xx_dump_bridge(sd);
@@ -605,12 +594,11 @@ static void sd_disconnect(struct usb_interface *intf)
 {
 	struct gspca_dev *gspca_dev = usb_get_intfdata(intf);
 	struct sd *sd = (struct sd *) gspca_dev;
-	void *priv = sd->sensor_priv;
 	PDEBUG(D_PROBE, "Disconnecting the stv06xx device");
 
-	sd->sensor = NULL;
+	if (sd->sensor->disconnect)
+		sd->sensor->disconnect(sd);
 	gspca_disconnect(intf);
-	kfree(priv);
 }
 
 static struct usb_driver sd_driver = {
@@ -621,7 +609,6 @@ static struct usb_driver sd_driver = {
 #ifdef CONFIG_PM
 	.suspend = gspca_suspend,
 	.resume = gspca_resume,
-	.reset_resume = gspca_resume,
 #endif
 };
 

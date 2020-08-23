@@ -643,7 +643,9 @@ static ssize_t ds2781_read_param_eeprom_bin(struct file *filp,
 	struct power_supply *psy = to_power_supply(dev);
 	struct ds2781_device_info *dev_info = to_ds2781_device_info(psy);
 
-	count = min_t(loff_t, count, DS2781_PARAM_EEPROM_SIZE - off);
+	count = min_t(loff_t, count,
+		DS2781_EEPROM_BLOCK1_END -
+		DS2781_EEPROM_BLOCK1_START + 1 - off);
 
 	return ds2781_read_block(dev_info, buf,
 				DS2781_EEPROM_BLOCK1_START + off, count);
@@ -659,7 +661,9 @@ static ssize_t ds2781_write_param_eeprom_bin(struct file *filp,
 	struct ds2781_device_info *dev_info = to_ds2781_device_info(psy);
 	int ret;
 
-	count = min_t(loff_t, count, DS2781_PARAM_EEPROM_SIZE - off);
+	count = min_t(loff_t, count,
+		DS2781_EEPROM_BLOCK1_END -
+		DS2781_EEPROM_BLOCK1_START + 1 - off);
 
 	ret = ds2781_write(dev_info, buf,
 				DS2781_EEPROM_BLOCK1_START + off, count);
@@ -678,7 +682,7 @@ static struct bin_attribute ds2781_param_eeprom_bin_attr = {
 		.name = "param_eeprom",
 		.mode = S_IRUGO | S_IWUSR,
 	},
-	.size = DS2781_PARAM_EEPROM_SIZE,
+	.size = DS2781_EEPROM_BLOCK1_END - DS2781_EEPROM_BLOCK1_START + 1,
 	.read = ds2781_read_param_eeprom_bin,
 	.write = ds2781_write_param_eeprom_bin,
 };
@@ -692,7 +696,9 @@ static ssize_t ds2781_read_user_eeprom_bin(struct file *filp,
 	struct power_supply *psy = to_power_supply(dev);
 	struct ds2781_device_info *dev_info = to_ds2781_device_info(psy);
 
-	count = min_t(loff_t, count, DS2781_USER_EEPROM_SIZE - off);
+	count = min_t(loff_t, count,
+		DS2781_EEPROM_BLOCK0_END -
+		DS2781_EEPROM_BLOCK0_START + 1 - off);
 
 	return ds2781_read_block(dev_info, buf,
 				DS2781_EEPROM_BLOCK0_START + off, count);
@@ -709,7 +715,9 @@ static ssize_t ds2781_write_user_eeprom_bin(struct file *filp,
 	struct ds2781_device_info *dev_info = to_ds2781_device_info(psy);
 	int ret;
 
-	count = min_t(loff_t, count, DS2781_USER_EEPROM_SIZE - off);
+	count = min_t(loff_t, count,
+		DS2781_EEPROM_BLOCK0_END -
+		DS2781_EEPROM_BLOCK0_START + 1 - off);
 
 	ret = ds2781_write(dev_info, buf,
 				DS2781_EEPROM_BLOCK0_START + off, count);
@@ -728,7 +736,7 @@ static struct bin_attribute ds2781_user_eeprom_bin_attr = {
 		.name = "user_eeprom",
 		.mode = S_IRUGO | S_IWUSR,
 	},
-	.size = DS2781_USER_EEPROM_SIZE,
+	.size = DS2781_EEPROM_BLOCK0_END - DS2781_EEPROM_BLOCK0_START + 1,
 	.read = ds2781_read_user_eeprom_bin,
 	.write = ds2781_write_user_eeprom_bin,
 };

@@ -39,8 +39,6 @@
  *
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include <linux/pci.h>
 #include "ath5k.h"
 

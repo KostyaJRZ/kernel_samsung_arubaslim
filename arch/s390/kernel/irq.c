@@ -42,8 +42,7 @@ static const struct irq_class intrclass_names[] = {
 	{.name = "VRT", .desc = "[EXT] Virtio" },
 	{.name = "SCP", .desc = "[EXT] Service Call" },
 	{.name = "IUC", .desc = "[EXT] IUCV" },
-	{.name = "CMS", .desc = "[EXT] CPU-Measurement: Sampling" },
-	{.name = "CMC", .desc = "[EXT] CPU-Measurement: Counter" },
+	{.name = "CPM", .desc = "[EXT] CPU Measurement" },
 	{.name = "CIO", .desc = "[I/O] Common I/O Layer Interrupt" },
 	{.name = "QAI", .desc = "[I/O] QDIO Adapter Interrupt" },
 	{.name = "DAS", .desc = "[I/O] DASD" },
@@ -93,39 +92,29 @@ int show_interrupts(struct seq_file *p, void *v)
 /*
  * Switch to the asynchronous interrupt stack for softirq execution.
  */
-asmlinkage void do_softirq(void)
+void do_softirq_own_stack(void)
 {
-	unsigned long flags, old, new;
+	unsigned long old, new;
 
-	if (in_interrupt())
-		return;
-
-	local_irq_save(flags);
-
-	if (local_softirq_pending()) {
-		/* Get current stack pointer. */
-		asm volatile("la %0,0(15)" : "=a" (old));
-		/* Check against async. stack address range. */
-		new = S390_lowcore.async_stack;
-		if (((new - old) >> (PAGE_SHIFT + THREAD_ORDER)) != 0) {
-			/* Need to switch to the async. stack. */
-			new -= STACK_FRAME_OVERHEAD;
-			((struct stack_frame *) new)->back_chain = old;
-
-			asm volatile("   la    15,0(%0)\n"
-				     "   basr  14,%2\n"
-				     "   la    15,0(%1)\n"
-				     : : "a" (new), "a" (old),
-				         "a" (__do_softirq)
-				     : "0", "1", "2", "3", "4", "5", "14",
-				       "cc", "memory" );
-		} else {
-			/* We are already on the async stack. */
-			__do_softirq();
-		}
+	/* Get current stack pointer. */
+	asm volatile("la %0,0(15)" : "=a" (old));
+	/* Check against async. stack address range. */
+	new = S390_lowcore.async_stack;
+	if (((new - old) >> (PAGE_SHIFT + THREAD_ORDER)) != 0) {
+		/* Need to switch to the async. stack. */
+		new -= STACK_FRAME_OVERHEAD;
+		((struct stack_frame *) new)->back_chain = old;
+		asm volatile("   la    15,0(%0)\n"
+			     "   basr  14,%2\n"
+			     "   la    15,0(%1)\n"
+			     : : "a" (new), "a" (old),
+			         "a" (__do_softirq)
+			     : "0", "1", "2", "3", "4", "5", "14",
+			       "cc", "memory" );
+	} else {
+		/* We are already on the async stack. */
+		__do_softirq();
 	}
-
-	local_irq_restore(flags);
 }
 
 #ifdef CONFIG_PROC_FS

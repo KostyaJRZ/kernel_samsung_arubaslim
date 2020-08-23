@@ -54,7 +54,8 @@ static int omap1_dm_timer_set_src(struct platform_device *pdev,
 	return 0;
 }
 
-static int __init omap1_dm_timer_init(void)
+
+int __init omap1_dm_timer_init(void)
 {
 	int i;
 	int ret;

@@ -48,7 +48,7 @@ static inline int init_new_context(struct task_struct *tsk,
 
 #define destroy_context(mm)             do { } while (0)
 
-#ifndef CONFIG_64BIT
+#ifndef __s390x__
 #define LCTL_OPCODE "lctl"
 #else
 #define LCTL_OPCODE "lctlg"

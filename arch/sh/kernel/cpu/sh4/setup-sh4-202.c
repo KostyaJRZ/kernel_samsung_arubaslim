@@ -13,7 +13,6 @@
 #include <linux/serial.h>
 #include <linux/serial_sci.h>
 #include <linux/sh_timer.h>
-#include <linux/sh_intc.h>
 #include <linux/io.h>
 
 static struct plat_sci_port scif0_platform_data = {
@@ -22,10 +21,7 @@ static struct plat_sci_port scif0_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type		= PORT_SCIF,
-	.irqs		= { evt2irq(0x700),
-			    evt2irq(0x720),
-			    evt2irq(0x760),
-			    evt2irq(0x740) },
+	.irqs		= { 40, 41, 43, 42 },
 };
 
 static struct platform_device scif0_device = {
@@ -49,7 +45,7 @@ static struct resource tmu0_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x400),
+		.start	= 16,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -77,7 +73,7 @@ static struct resource tmu1_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x420),
+		.start	= 17,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -104,7 +100,7 @@ static struct resource tmu2_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x440),
+		.start	= 18,
 		.flags	= IORESOURCE_IRQ,
 	},
 };

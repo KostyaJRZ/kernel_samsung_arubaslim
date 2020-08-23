@@ -1710,7 +1710,7 @@ toshoboe_gotosleep (struct pci_dev *pci_dev, pm_message_t crap)
 
 /* Flush all packets */
   while ((i--) && (self->txpending))
-    msleep(10);
+    udelay (10000);
 
   spin_lock_irqsave(&self->spinlock, flags);
 

@@ -155,21 +155,14 @@ static void atlx_set_multi(struct net_device *netdev)
 	}
 }
 
-static inline void atlx_imr_set(struct atlx_adapter *adapter,
-				unsigned int imr)
-{
-	iowrite32(imr, adapter->hw.hw_addr + REG_IMR);
-	ioread32(adapter->hw.hw_addr + REG_IMR);
-}
-
 /*
  * atlx_irq_enable - Enable default interrupt generation settings
  * @adapter: board private structure
  */
 static void atlx_irq_enable(struct atlx_adapter *adapter)
 {
-	atlx_imr_set(adapter, IMR_NORMAL_MASK);
-	adapter->int_enabled = true;
+	iowrite32(IMR_NORMAL_MASK, adapter->hw.hw_addr + REG_IMR);
+	ioread32(adapter->hw.hw_addr + REG_IMR);
 }
 
 /*
@@ -178,8 +171,8 @@ static void atlx_irq_enable(struct atlx_adapter *adapter)
  */
 static void atlx_irq_disable(struct atlx_adapter *adapter)
 {
-	adapter->int_enabled = false;
-	atlx_imr_set(adapter, 0);
+	iowrite32(0, adapter->hw.hw_addr + REG_IMR);
+	ioread32(adapter->hw.hw_addr + REG_IMR);
 	synchronize_irq(adapter->pdev->irq);
 }
 

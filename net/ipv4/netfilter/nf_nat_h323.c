@@ -42,7 +42,9 @@ static int set_addr(struct sk_buff *skb,
 		if (!nf_nat_mangle_tcp_packet(skb, ct, ctinfo,
 					      addroff, sizeof(buf),
 					      (char *) &buf, sizeof(buf))) {
-			net_notice_ratelimited("nf_nat_h323: nf_nat_mangle_tcp_packet error\n");
+			if (net_ratelimit())
+				pr_notice("nf_nat_h323: nf_nat_mangle_tcp_packet"
+				       " error\n");
 			return -1;
 		}
 
@@ -56,7 +58,9 @@ static int set_addr(struct sk_buff *skb,
 		if (!nf_nat_mangle_udp_packet(skb, ct, ctinfo,
 					      addroff, sizeof(buf),
 					      (char *) &buf, sizeof(buf))) {
-			net_notice_ratelimited("nf_nat_h323: nf_nat_mangle_udp_packet error\n");
+			if (net_ratelimit())
+				pr_notice("nf_nat_h323: nf_nat_mangle_udp_packet"
+				       " error\n");
 			return -1;
 		}
 		/* nf_nat_mangle_udp_packet uses skb_make_writable() to copy
@@ -210,7 +214,8 @@ static int nat_rtp_rtcp(struct sk_buff *skb, struct nf_conn *ct,
 
 	/* Run out of expectations */
 	if (i >= H323_RTP_CHANNEL_MAX) {
-		net_notice_ratelimited("nf_nat_h323: out of expectations\n");
+		if (net_ratelimit())
+			pr_notice("nf_nat_h323: out of expectations\n");
 		return 0;
 	}
 
@@ -239,7 +244,8 @@ static int nat_rtp_rtcp(struct sk_buff *skb, struct nf_conn *ct,
 	}
 
 	if (nated_port == 0) {	/* No port available */
-		net_notice_ratelimited("nf_nat_h323: out of RTP ports\n");
+		if (net_ratelimit())
+			pr_notice("nf_nat_h323: out of RTP ports\n");
 		return 0;
 	}
 
@@ -302,7 +308,8 @@ static int nat_t120(struct sk_buff *skb, struct nf_conn *ct,
 	}
 
 	if (nated_port == 0) {	/* No port available */
-		net_notice_ratelimited("nf_nat_h323: out of TCP ports\n");
+		if (net_ratelimit())
+			pr_notice("nf_nat_h323: out of TCP ports\n");
 		return 0;
 	}
 
@@ -358,7 +365,8 @@ static int nat_h245(struct sk_buff *skb, struct nf_conn *ct,
 	}
 
 	if (nated_port == 0) {	/* No port available */
-		net_notice_ratelimited("nf_nat_q931: out of TCP ports\n");
+		if (net_ratelimit())
+			pr_notice("nf_nat_q931: out of TCP ports\n");
 		return 0;
 	}
 
@@ -448,7 +456,8 @@ static int nat_q931(struct sk_buff *skb, struct nf_conn *ct,
 	}
 
 	if (nated_port == 0) {	/* No port available */
-		net_notice_ratelimited("nf_nat_ras: out of TCP ports\n");
+		if (net_ratelimit())
+			pr_notice("nf_nat_ras: out of TCP ports\n");
 		return 0;
 	}
 
@@ -536,7 +545,8 @@ static int nat_callforwarding(struct sk_buff *skb, struct nf_conn *ct,
 	}
 
 	if (nated_port == 0) {	/* No port available */
-		net_notice_ratelimited("nf_nat_q931: out of TCP ports\n");
+		if (net_ratelimit())
+			pr_notice("nf_nat_q931: out of TCP ports\n");
 		return 0;
 	}
 

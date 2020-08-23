@@ -249,11 +249,6 @@ static inline unsigned long kernel_stack_pointer(struct pt_regs *regs)
 	return regs->ARM_sp;
 }
 
-static inline unsigned long user_stack_pointer(struct pt_regs *regs)
-{
-	return regs->ARM_sp;
-}
-
 #endif /* __KERNEL__ */
 
 #endif /* __ASSEMBLY__ */

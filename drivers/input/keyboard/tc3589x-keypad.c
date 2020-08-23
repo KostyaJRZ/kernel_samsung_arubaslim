@@ -78,7 +78,7 @@
  * @input:      pointer to input device object
  * @board:      keypad platform device
  * @krow:	number of rows
- * @kcol:	number of columns
+ * @kcol:	number of coloumns
  * @keymap:     matrix scan code table for keycodes
  * @keypad_stopped: holds keypad status
  */
@@ -96,15 +96,21 @@ static int tc3589x_keypad_init_key_hardware(struct tc_keypad *keypad)
 {
 	int ret;
 	struct tc3589x *tc3589x = keypad->tc3589x;
-	const struct tc3589x_keypad_platform_data *board = keypad->board;
+	u8 settle_time = keypad->board->settle_time;
+	u8 dbounce_period = keypad->board->debounce_period;
+	u8 rows = keypad->board->krow & 0xf;	/* mask out the nibble */
+	u8 column = keypad->board->kcol & 0xf;	/* mask out the nibble */
 
-	/* validate platform configuration */
-	if (board->kcol > TC3589x_MAX_KPCOL || board->krow > TC3589x_MAX_KPROW)
+	/* validate platform configurations */
+	if (keypad->board->kcol > TC3589x_MAX_KPCOL ||
+	    keypad->board->krow > TC3589x_MAX_KPROW ||
+	    keypad->board->debounce_period > TC3589x_MAX_DEBOUNCE_SETTLE ||
+	    keypad->board->settle_time > TC3589x_MAX_DEBOUNCE_SETTLE)
 		return -EINVAL;
 
 	/* configure KBDSIZE 4 LSbits for cols and 4 MSbits for rows */
 	ret = tc3589x_reg_write(tc3589x, TC3589x_KBDSIZE,
-			(board->krow << KP_ROW_SHIFT) | board->kcol);
+			(rows << KP_ROW_SHIFT) | column);
 	if (ret < 0)
 		return ret;
 
@@ -118,14 +124,12 @@ static int tc3589x_keypad_init_key_hardware(struct tc_keypad *keypad)
 		return ret;
 
 	/* Configure settle time */
-	ret = tc3589x_reg_write(tc3589x, TC3589x_KBDSETTLE_REG,
-				board->settle_time);
+	ret = tc3589x_reg_write(tc3589x, TC3589x_KBDSETTLE_REG, settle_time);
 	if (ret < 0)
 		return ret;
 
 	/* Configure debounce time */
-	ret = tc3589x_reg_write(tc3589x, TC3589x_KBDBOUNCE,
-				board->debounce_period);
+	ret = tc3589x_reg_write(tc3589x, TC3589x_KBDBOUNCE, dbounce_period);
 	if (ret < 0)
 		return ret;
 
@@ -333,22 +337,23 @@ static int __devinit tc3589x_keypad_probe(struct platform_device *pdev)
 	input->name = pdev->name;
 	input->dev.parent = &pdev->dev;
 
+	input->keycode = keypad->keymap;
+	input->keycodesize = sizeof(keypad->keymap[0]);
+	input->keycodemax = ARRAY_SIZE(keypad->keymap);
+
 	input->open = tc3589x_keypad_open;
 	input->close = tc3589x_keypad_close;
 
-	error = matrix_keypad_build_keymap(plat->keymap_data, NULL,
-					   TC3589x_MAX_KPROW, TC3589x_MAX_KPCOL,
-					   keypad->keymap, input);
-	if (error) {
-		dev_err(&pdev->dev, "Failed to build keymap\n");
-		goto err_free_mem;
-	}
+	input_set_drvdata(input, keypad);
 
 	input_set_capability(input, EV_MSC, MSC_SCAN);
+
+	__set_bit(EV_KEY, input->evbit);
 	if (!plat->no_autorepeat)
 		__set_bit(EV_REP, input->evbit);
 
-	input_set_drvdata(input, keypad);
+	matrix_keypad_build_keymap(plat->keymap_data, 0x3,
+			input->keycode, input->keybit);
 
 	error = request_threaded_irq(irq, NULL,
 			tc3589x_keypad_irq, plat->irqtype,

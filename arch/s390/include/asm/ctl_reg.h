@@ -7,7 +7,7 @@
 #ifndef __ASM_CTL_REG_H
 #define __ASM_CTL_REG_H
 
-#ifdef CONFIG_64BIT
+#ifdef __s390x__
 
 #define __ctl_load(array, low, high) ({				\
 	typedef struct { char _[sizeof(array)]; } addrtype;	\
@@ -25,7 +25,7 @@
 		: "i" (low), "i" (high));			\
 	})
 
-#else /* CONFIG_64BIT */
+#else /* __s390x__ */
 
 #define __ctl_load(array, low, high) ({				\
 	typedef struct { char _[sizeof(array)]; } addrtype;	\
@@ -43,7 +43,7 @@
 		: "i" (low), "i" (high));			\
 	})
 
-#endif /* CONFIG_64BIT */
+#endif /* __s390x__ */
 
 #define __ctl_set_bit(cr, bit) ({	\
 	unsigned long __dummy;		\

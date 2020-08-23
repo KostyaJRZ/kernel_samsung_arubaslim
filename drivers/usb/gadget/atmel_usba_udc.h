@@ -280,6 +280,7 @@ struct usba_ep {
 	struct usba_udc				*udc;
 
 	struct list_head			queue;
+	const struct usb_endpoint_descriptor	*desc;
 
 	u16					fifo_size;
 	u8					nr_banks;

@@ -1162,6 +1162,9 @@ static void x86_pmu_del(struct perf_event *event, int flags)
 	for (i = 0; i < cpuc->n_events; i++) {
 		if (event == cpuc->event_list[i]) {
 
+			if (i >= cpuc->n_events - cpuc->n_added)
+				--cpuc->n_added;
+
 			if (x86_pmu.put_event_constraints)
 				x86_pmu.put_event_constraints(cpuc, event);
 
@@ -1496,7 +1499,6 @@ static struct cpu_hw_events *allocate_fake_cpuc(void)
 		if (!cpuc->shared_regs)
 			goto error;
 	}
-	cpuc->is_fake = 1;
 	return cpuc;
 error:
 	free_fake_cpuc(cpuc);
@@ -1757,12 +1759,6 @@ perf_callchain_kernel(struct perf_callchain_entry *entry, struct pt_regs *regs)
 	dump_trace(NULL, regs, NULL, 0, &backtrace_ops, entry);
 }
 
-static inline int
-valid_user_frame(const void __user *fp, unsigned long size)
-{
-	return (__range_not_ok(fp, size, TASK_SIZE) == 0);
-}
-
 #ifdef CONFIG_COMPAT
 
 #include <asm/compat.h>
@@ -1787,7 +1783,7 @@ perf_callchain_user32(struct pt_regs *regs, struct perf_callchain_entry *entry)
 		if (bytes != sizeof(frame))
 			break;
 
-		if (!valid_user_frame(fp, sizeof(frame)))
+		if (fp < compat_ptr(regs->sp))
 			break;
 
 		perf_callchain_store(entry, frame.return_address);
@@ -1833,7 +1829,7 @@ perf_callchain_user(struct perf_callchain_entry *entry, struct pt_regs *regs)
 		if (bytes != sizeof(frame))
 			break;
 
-		if (!valid_user_frame(fp, sizeof(frame)))
+		if ((unsigned long)fp < regs->sp)
 			break;
 
 		perf_callchain_store(entry, frame.return_address);

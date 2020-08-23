@@ -5,10 +5,10 @@
  * Copyright (C) 1995 David S. Miller (davem@caip.rutgers.edu)
  */
 
-#include <linux/linkage.h>
-
 	.text
-ENTRY(__ashrdi3)
+	.align	4
+	.globl __ashrdi3
+__ashrdi3:
 	tst	%o2
 	be	3f
 	 or	%g0, 32, %g2
@@ -34,4 +34,3 @@ ENTRY(__ashrdi3)
 3:
 	jmpl	%o7 + 8, %g0
 	 nop
-ENDPROC(__ashrdi3)

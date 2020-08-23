@@ -10,6 +10,8 @@
 #include <linux/spinlock.h>
 #include <asm/types.h>
 
+#ifdef __KERNEL__
+
 #define LPM_ANYPATH 0xff
 #define __MAX_CSSID 0
 
@@ -287,5 +289,7 @@ extern int cio_get_iplinfo(struct cio_iplinfo *iplinfo);
 /* Function from drivers/s390/cio/chsc.c */
 int chsc_sstpc(void *page, unsigned int op, u16 ctrl);
 int chsc_sstpi(void *page, void *result, size_t size);
+
+#endif
 
 #endif

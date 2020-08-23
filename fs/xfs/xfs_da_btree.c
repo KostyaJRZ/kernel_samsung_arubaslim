@@ -20,6 +20,7 @@
 #include "xfs_types.h"
 #include "xfs_bit.h"
 #include "xfs_log.h"
+#include "xfs_inum.h"
 #include "xfs_trans.h"
 #include "xfs_sb.h"
 #include "xfs_ag.h"
@@ -2276,20 +2277,20 @@ xfs_da_buf_make(int nbuf, xfs_buf_t **bps)
 	if (nbuf == 1) {
 		dabuf->nbuf = 1;
 		bp = bps[0];
-		dabuf->bbcount = bp->b_length;
+		dabuf->bbcount = (short)BTOBB(XFS_BUF_COUNT(bp));
 		dabuf->data = bp->b_addr;
 		dabuf->bps[0] = bp;
 	} else {
 		dabuf->nbuf = nbuf;
 		for (i = 0, dabuf->bbcount = 0; i < nbuf; i++) {
 			dabuf->bps[i] = bp = bps[i];
-			dabuf->bbcount += bp->b_length;
+			dabuf->bbcount += BTOBB(XFS_BUF_COUNT(bp));
 		}
 		dabuf->data = kmem_alloc(BBTOB(dabuf->bbcount), KM_SLEEP);
-		for (i = off = 0; i < nbuf; i++, off += BBTOB(bp->b_length)) {
+		for (i = off = 0; i < nbuf; i++, off += XFS_BUF_COUNT(bp)) {
 			bp = bps[i];
 			memcpy((char *)dabuf->data + off, bp->b_addr,
-				BBTOB(bp->b_length));
+				XFS_BUF_COUNT(bp));
 		}
 	}
 	return dabuf;
@@ -2309,10 +2310,10 @@ xfs_da_buf_clean(xfs_dabuf_t *dabuf)
 		ASSERT(dabuf->nbuf > 1);
 		dabuf->dirty = 0;
 		for (i = off = 0; i < dabuf->nbuf;
-				i++, off += BBTOB(bp->b_length)) {
+				i++, off += XFS_BUF_COUNT(bp)) {
 			bp = dabuf->bps[i];
 			memcpy(bp->b_addr, dabuf->data + off,
-						BBTOB(bp->b_length));
+						XFS_BUF_COUNT(bp));
 		}
 	}
 }
@@ -2355,10 +2356,10 @@ xfs_da_log_buf(xfs_trans_t *tp, xfs_dabuf_t *dabuf, uint first, uint last)
 	}
 	dabuf->dirty = 1;
 	ASSERT(first <= last);
-	for (i = off = 0; i < dabuf->nbuf; i++, off += BBTOB(bp->b_length)) {
+	for (i = off = 0; i < dabuf->nbuf; i++, off += XFS_BUF_COUNT(bp)) {
 		bp = dabuf->bps[i];
 		f = off;
-		l = f + BBTOB(bp->b_length) - 1;
+		l = f + XFS_BUF_COUNT(bp) - 1;
 		if (f < first)
 			f = first;
 		if (l > last)

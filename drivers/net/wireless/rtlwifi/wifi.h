@@ -77,11 +77,7 @@
 #define RTL_SLOT_TIME_9				9
 #define RTL_SLOT_TIME_20			20
 
-/*related with tcp/ip. */
-/*if_ehther.h*/
-#define ETH_P_PAE		0x888E	/*Port Access Entity (IEEE 802.1X) */
-#define ETH_P_IP		0x0800	/*Internet Protocol packet */
-#define ETH_P_ARP		0x0806	/*Address Resolution packet */
+/*related to tcp/ip. */
 #define SNAP_SIZE		6
 #define PROTOC_TYPE_SIZE	2
 
@@ -1593,65 +1589,6 @@ struct rtl_debug {
 	char proc_name[20];
 };
 
-struct ps_t {
-	u8 pre_ccastate;
-	u8 cur_ccasate;
-	u8 pre_rfstate;
-	u8 cur_rfstate;
-	long rssi_val_min;
-};
-
-struct dig_t {
-	u32 rssi_lowthresh;
-	u32 rssi_highthresh;
-	u32 fa_lowthresh;
-	u32 fa_highthresh;
-	long last_min_undecorated_pwdb_for_dm;
-	long rssi_highpower_lowthresh;
-	long rssi_highpower_highthresh;
-	u32 recover_cnt;
-	u32 pre_igvalue;
-	u32 cur_igvalue;
-	long rssi_val;
-	u8 dig_enable_flag;
-	u8 dig_ext_port_stage;
-	u8 dig_algorithm;
-	u8 dig_twoport_algorithm;
-	u8 dig_dbgmode;
-	u8 dig_slgorithm_switch;
-	u8 cursta_connectctate;
-	u8 presta_connectstate;
-	u8 curmultista_connectstate;
-	char backoff_val;
-	char backoff_val_range_max;
-	char backoff_val_range_min;
-	u8 rx_gain_range_max;
-	u8 rx_gain_range_min;
-	u8 min_undecorated_pwdb_for_dm;
-	u8 rssi_val_min;
-	u8 pre_cck_pd_state;
-	u8 cur_cck_pd_state;
-	u8 pre_cck_fa_state;
-	u8 cur_cck_fa_state;
-	u8 pre_ccastate;
-	u8 cur_ccasate;
-	u8 large_fa_hit;
-	u8 forbidden_igi;
-	u8 dig_state;
-	u8 dig_highpwrstate;
-	u8 cur_sta_connectstate;
-	u8 pre_sta_connectstate;
-	u8 cur_ap_connectstate;
-	u8 pre_ap_connectstate;
-	u8 cur_pd_thstate;
-	u8 pre_pd_thstate;
-	u8 cur_cs_ratiostate;
-	u8 pre_cs_ratiostate;
-	u8 backoff_enable_flag;
-	char backoffval_range_max;
-	char backoffval_range_min;
-};
-
 struct rtl_priv {
 	struct completion firmware_loading_complete;
 	struct rtl_locks locks;
@@ -1689,10 +1626,6 @@ struct rtl_priv {
 	   interface or hardware */
 	unsigned long status;
 
-	/* tables for dm */
-	struct dig_t dm_digtable;
-	struct ps_t dm_pstable;
-
 	/* data buffer pointer for USB reads */
 	__le32 *usb_data;
 	int usb_data_index;
@@ -1701,7 +1634,7 @@ struct rtl_priv {
 	   that it points to the data allocated
 	   beyond  this structure like:
 	   rtl_pci_priv or rtl_usb_priv */
-	u8 priv[0];
+	u8 priv[0] __aligned(sizeof(void *));
 };
 
 #define rtl_priv(hw)		(((struct rtl_priv *)(hw)->priv))
@@ -2022,35 +1955,37 @@ static inline void rtl_write_dword(struct rtl_priv *rtlpriv,
 static inline u32 rtl_get_bbreg(struct ieee80211_hw *hw,
 				u32 regaddr, u32 bitmask)
 {
-	struct rtl_priv *rtlpriv = hw->priv;
-
-	return rtlpriv->cfg->ops->get_bbreg(hw, regaddr, bitmask);
+	return ((struct rtl_priv *)(hw)->priv)->cfg->ops->get_bbreg(hw,
+								    regaddr,
+								    bitmask);
 }
 
 static inline void rtl_set_bbreg(struct ieee80211_hw *hw, u32 regaddr,
 				 u32 bitmask, u32 data)
 {
-	struct rtl_priv *rtlpriv = hw->priv;
+	((struct rtl_priv *)(hw)->priv)->cfg->ops->set_bbreg(hw,
+							     regaddr, bitmask,
+							     data);
 
-	rtlpriv->cfg->ops->set_bbreg(hw, regaddr, bitmask, data);
 }
 
 static inline u32 rtl_get_rfreg(struct ieee80211_hw *hw,
 				enum radio_path rfpath, u32 regaddr,
 				u32 bitmask)
 {
-	struct rtl_priv *rtlpriv = hw->priv;
-
-	return rtlpriv->cfg->ops->get_rfreg(hw, rfpath, regaddr, bitmask);
+	return ((struct rtl_priv *)(hw)->priv)->cfg->ops->get_rfreg(hw,
+								    rfpath,
+								    regaddr,
+								    bitmask);
 }
 
 static inline void rtl_set_rfreg(struct ieee80211_hw *hw,
 				 enum radio_path rfpath, u32 regaddr,
 				 u32 bitmask, u32 data)
 {
-	struct rtl_priv *rtlpriv = hw->priv;
-
-	rtlpriv->cfg->ops->set_rfreg(hw, rfpath, regaddr, bitmask, data);
+	((struct rtl_priv *)(hw)->priv)->cfg->ops->set_rfreg(hw,
+							     rfpath, regaddr,
+							     bitmask, data);
 }
 
 static inline bool is_hal_stop(struct rtl_hal *rtlhal)

@@ -1,7 +1,6 @@
 /* Copyright (C) 1995, 1996 Olaf Kirch <okir@monad.swb.de> */
 
 #include <linux/sched.h>
-#include <linux/user_namespace.h>
 #include "nfsd.h"
 #include "auth.h"
 
@@ -11,7 +10,7 @@ int nfsexp_flags(struct svc_rqst *rqstp, struct svc_export *exp)
 	struct exp_flavor_info *end = exp->ex_flavors + exp->ex_nflavors;
 
 	for (f = exp->ex_flavors; f < end; f++) {
-		if (f->pseudoflavor == rqstp->rq_cred.cr_flavor)
+		if (f->pseudoflavor == rqstp->rq_flavor)
 			return f->flags;
 	}
 	return exp->ex_flags;
@@ -57,8 +56,8 @@ int nfsd_setuser(struct svc_rqst *rqstp, struct svc_export *exp)
 			goto oom;
 
 		for (i = 0; i < rqgi->ngroups; i++) {
-			if (gid_eq(GLOBAL_ROOT_GID, GROUP_AT(rqgi, i)))
-				GROUP_AT(gi, i) = make_kgid(&init_user_ns, exp->ex_anon_gid);
+			if (!GROUP_AT(rqgi, i))
+				GROUP_AT(gi, i) = exp->ex_anon_gid;
 			else
 				GROUP_AT(gi, i) = GROUP_AT(rqgi, i);
 		}

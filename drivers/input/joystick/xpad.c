@@ -256,7 +256,6 @@ MODULE_DEVICE_TABLE (usb, xpad_table);
 struct usb_xpad {
 	struct input_dev *dev;		/* input device interface */
 	struct usb_device *udev;	/* usb device */
-	struct usb_interface *intf;	/* usb interface */
 
 	int pad_present;
 
@@ -462,7 +461,6 @@ static void xpad360w_process_packet(struct usb_xpad *xpad, u16 cmd, unsigned cha
 static void xpad_irq_in(struct urb *urb)
 {
 	struct usb_xpad *xpad = urb->context;
-	struct device *dev = &xpad->intf->dev;
 	int retval, status;
 
 	status = urb->status;
@@ -475,11 +473,11 @@ static void xpad_irq_in(struct urb *urb)
 	case -ENOENT:
 	case -ESHUTDOWN:
 		/* this urb is terminated, clean up */
-		dev_dbg(dev, "%s - urb shutting down with status: %d\n",
+		dbg("%s - urb shutting down with status: %d",
 			__func__, status);
 		return;
 	default:
-		dev_dbg(dev, "%s - nonzero urb status received: %d\n",
+		dbg("%s - nonzero urb status received: %d",
 			__func__, status);
 		goto exit;
 	}
@@ -498,15 +496,12 @@ static void xpad_irq_in(struct urb *urb)
 exit:
 	retval = usb_submit_urb(urb, GFP_ATOMIC);
 	if (retval)
-		dev_err(dev, "%s - usb_submit_urb failed with result %d\n",
-			__func__, retval);
+		err ("%s - usb_submit_urb failed with result %d",
+		     __func__, retval);
 }
 
 static void xpad_bulk_out(struct urb *urb)
 {
-	struct usb_xpad *xpad = urb->context;
-	struct device *dev = &xpad->intf->dev;
-
 	switch (urb->status) {
 	case 0:
 		/* success */
@@ -515,20 +510,16 @@ static void xpad_bulk_out(struct urb *urb)
 	case -ENOENT:
 	case -ESHUTDOWN:
 		/* this urb is terminated, clean up */
-		dev_dbg(dev, "%s - urb shutting down with status: %d\n",
-			__func__, urb->status);
+		dbg("%s - urb shutting down with status: %d", __func__, urb->status);
 		break;
 	default:
-		dev_dbg(dev, "%s - nonzero urb status received: %d\n",
-			__func__, urb->status);
+		dbg("%s - nonzero urb status received: %d", __func__, urb->status);
 	}
 }
 
 #if defined(CONFIG_JOYSTICK_XPAD_FF) || defined(CONFIG_JOYSTICK_XPAD_LEDS)
 static void xpad_irq_out(struct urb *urb)
 {
-	struct usb_xpad *xpad = urb->context;
-	struct device *dev = &xpad->intf->dev;
 	int retval, status;
 
 	status = urb->status;
@@ -542,21 +533,19 @@ static void xpad_irq_out(struct urb *urb)
 	case -ENOENT:
 	case -ESHUTDOWN:
 		/* this urb is terminated, clean up */
-		dev_dbg(dev, "%s - urb shutting down with status: %d\n",
-			__func__, status);
+		dbg("%s - urb shutting down with status: %d", __func__, status);
 		return;
 
 	default:
-		dev_dbg(dev, "%s - nonzero urb status received: %d\n",
-			__func__, status);
+		dbg("%s - nonzero urb status received: %d", __func__, status);
 		goto exit;
 	}
 
 exit:
 	retval = usb_submit_urb(urb, GFP_ATOMIC);
 	if (retval)
-		dev_err(dev, "%s - usb_submit_urb failed with result %d\n",
-			__func__, retval);
+		err("%s - usb_submit_urb failed with result %d",
+		    __func__, retval);
 }
 
 static int xpad_init_output(struct usb_interface *intf, struct usb_xpad *xpad)
@@ -669,8 +658,7 @@ static int xpad_play_effect(struct input_dev *dev, void *data, struct ff_effect 
 			return usb_submit_urb(xpad->irq_out, GFP_ATOMIC);
 
 		default:
-			dev_dbg(&xpad->dev->dev,
-				"%s - rumble command sent to unsupported xpad type: %d\n",
+			dbg("%s - rumble command sent to unsupported xpad type: %d",
 				__func__, xpad->xtype);
 			return -1;
 		}
@@ -860,7 +848,6 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 	}
 
 	xpad->udev = udev;
-	xpad->intf = intf;
 	xpad->mapping = xpad_device[i].mapping;
 	xpad->xtype = xpad_device[i].xtype;
 
@@ -992,9 +979,19 @@ static int xpad_probe(struct usb_interface *intf, const struct usb_device_id *id
 		}
 
 		ep_irq_in = &intf->cur_altsetting->endpoint[1].desc;
-		usb_fill_bulk_urb(xpad->bulk_out, udev,
-				usb_sndbulkpipe(udev, ep_irq_in->bEndpointAddress),
-				xpad->bdata, XPAD_PKT_LEN, xpad_bulk_out, xpad);
+		if (usb_endpoint_is_bulk_out(ep_irq_in)) {
+			usb_fill_bulk_urb(xpad->bulk_out, udev,
+					  usb_sndbulkpipe(udev,
+							  ep_irq_in->bEndpointAddress),
+					  xpad->bdata, XPAD_PKT_LEN,
+					  xpad_bulk_out, xpad);
+		} else {
+			usb_fill_int_urb(xpad->bulk_out, udev,
+					 usb_sndintpipe(udev,
+							ep_irq_in->bEndpointAddress),
+					 xpad->bdata, XPAD_PKT_LEN,
+					 xpad_bulk_out, xpad, 0);
+		}
 
 		/*
 		 * Submit the int URB immediately rather than waiting for open

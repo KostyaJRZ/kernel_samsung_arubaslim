@@ -22,7 +22,7 @@ extern struct hlist_head unix_socket_table[UNIX_HASH_SIZE + 1];
 struct unix_address {
 	atomic_t	refcnt;
 	int		len;
-	unsigned int	hash;
+	unsigned	hash;
 	struct sockaddr_un name[0];
 };
 
@@ -60,6 +60,7 @@ struct unix_sock {
 	unsigned int		gc_maybe_cycle : 1;
 	unsigned char		recursion_level;
 	struct socket_wq	peer_wq;
+	wait_queue_t		peer_wake;
 };
 #define unix_sk(__sk) ((struct unix_sock *)__sk)
 

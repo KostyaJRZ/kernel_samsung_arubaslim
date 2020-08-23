@@ -19,8 +19,7 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/dma-mapping.h>
-#include <linux/module.h>
-#include <linux/clk.h>
+#include <linux/export.h>
 
 #include <lantiq_soc.h>
 #include <xway_dma.h>
@@ -55,6 +54,13 @@
 #define ltq_dma_w32(x, y)		ltq_w32(x, ltq_dma_membase + (y))
 #define ltq_dma_w32_mask(x, y, z)	ltq_w32_mask(x, y, \
 						ltq_dma_membase + (z))
+
+static struct resource ltq_dma_resource = {
+	.name	= "dma",
+	.start	= LTQ_DMA_BASE_ADDR,
+	.end	= LTQ_DMA_BASE_ADDR + LTQ_DMA_SIZE - 1,
+	.flags  = IORESOURCE_MEM,
+};
 
 static void __iomem *ltq_dma_membase;
 
@@ -209,28 +215,27 @@ ltq_dma_init_port(int p)
 }
 EXPORT_SYMBOL_GPL(ltq_dma_init_port);
 
-static int __devinit
-ltq_dma_init(struct platform_device *pdev)
+int __init
+ltq_dma_init(void)
 {
-	struct clk *clk;
-	struct resource *res;
 	int i;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res)
-		panic("Failed to get dma resource");
+	/* insert and request the memory region */
+	if (insert_resource(&iomem_resource, &ltq_dma_resource) < 0)
+		panic("Failed to insert dma memory");
+
+	if (request_mem_region(ltq_dma_resource.start,
+			resource_size(&ltq_dma_resource), "dma") < 0)
+		panic("Failed to request dma memory");
 
 	/* remap dma register range */
-	ltq_dma_membase = devm_request_and_ioremap(&pdev->dev, res);
+	ltq_dma_membase = ioremap_nocache(ltq_dma_resource.start,
+				resource_size(&ltq_dma_resource));
 	if (!ltq_dma_membase)
-		panic("Failed to remap dma resource");
+		panic("Failed to remap dma memory");
 
 	/* power up and reset the dma engine */
-	clk = clk_get(&pdev->dev, NULL);
-	if (IS_ERR(clk))
-		panic("Failed to get dma clock");
-
-	clk_enable(clk);
+	ltq_pmu_enable(PMU_DMA);
 	ltq_dma_w32_mask(0, DMA_RESET, LTQ_DMA_CTRL);
 
 	/* disable all interrupts */
@@ -243,29 +248,7 @@ ltq_dma_init(struct platform_device *pdev)
 		ltq_dma_w32(DMA_POLL | DMA_CLK_DIV4, LTQ_DMA_CPOLL);
 		ltq_dma_w32_mask(DMA_CHAN_ON, 0, LTQ_DMA_CCTRL);
 	}
-	dev_info(&pdev->dev, "init done\n");
 	return 0;
 }
 
-static const struct of_device_id dma_match[] = {
-	{ .compatible = "lantiq,dma-xway" },
-	{},
-};
-MODULE_DEVICE_TABLE(of, dma_match);
-
-static struct platform_driver dma_driver = {
-	.probe = ltq_dma_init,
-	.driver = {
-		.name = "dma-xway",
-		.owner = THIS_MODULE,
-		.of_match_table = dma_match,
-	},
-};
-
-int __init
-dma_init(void)
-{
-	return platform_driver_register(&dma_driver);
-}
-
-postcore_initcall(dma_init);
+postcore_initcall(ltq_dma_init);

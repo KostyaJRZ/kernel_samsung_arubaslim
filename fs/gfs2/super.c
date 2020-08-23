@@ -1298,11 +1298,11 @@ static int gfs2_show_options(struct seq_file *s, struct dentry *root)
 	if (is_ancestor(root, sdp->sd_master_dir))
 		seq_printf(s, ",meta");
 	if (args->ar_lockproto[0])
-		seq_printf(s, ",lockproto=%s", args->ar_lockproto);
+		seq_show_option(s, "lockproto", args->ar_lockproto);
 	if (args->ar_locktable[0])
-		seq_printf(s, ",locktable=%s", args->ar_locktable);
+		seq_show_option(s, "locktable", args->ar_locktable);
 	if (args->ar_hostdata[0])
-		seq_printf(s, ",hostdata=%s", args->ar_hostdata);
+		seq_show_option(s, "hostdata", args->ar_hostdata);
 	if (args->ar_spectator)
 		seq_printf(s, ",spectator");
 	if (args->ar_localflocks)
@@ -1554,7 +1554,7 @@ out_unlock:
 out:
 	/* Case 3 starts here */
 	truncate_inode_pages(&inode->i_data, 0);
-	clear_inode(inode);
+	end_writeback(inode);
 	gfs2_dir_hash_inval(ip);
 	ip->i_gl->gl_object = NULL;
 	flush_delayed_work_sync(&ip->i_gl->gl_work);

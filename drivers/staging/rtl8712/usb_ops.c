@@ -33,6 +33,7 @@
 #include "osdep_intf.h"
 #include "usb_ops.h"
 #include "recv_osdep.h"
+#include "rtl871x_byteorder.h"
 
 static u8 usb_read8(struct intf_hdl *pintfhdl, u32 addr)
 {

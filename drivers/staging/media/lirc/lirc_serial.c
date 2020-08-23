@@ -129,7 +129,6 @@ static void send_space_homebrew(long length);
 
 static struct lirc_serial hardware[] = {
 	[LIRC_HOMEBREW] = {
-		.lock = __SPIN_LOCK_UNLOCKED(hardware[LIRC_HOMEBREW].lock),
 		.signal_pin        = UART_MSR_DCD,
 		.signal_pin_change = UART_MSR_DDCD,
 		.on  = (UART_MCR_RTS | UART_MCR_OUT2 | UART_MCR_DTR),
@@ -146,7 +145,6 @@ static struct lirc_serial hardware[] = {
 	},
 
 	[LIRC_IRDEO] = {
-		.lock = __SPIN_LOCK_UNLOCKED(hardware[LIRC_IRDEO].lock),
 		.signal_pin        = UART_MSR_DSR,
 		.signal_pin_change = UART_MSR_DDSR,
 		.on  = UART_MCR_OUT2,
@@ -158,7 +156,6 @@ static struct lirc_serial hardware[] = {
 	},
 
 	[LIRC_IRDEO_REMOTE] = {
-		.lock = __SPIN_LOCK_UNLOCKED(hardware[LIRC_IRDEO_REMOTE].lock),
 		.signal_pin        = UART_MSR_DSR,
 		.signal_pin_change = UART_MSR_DDSR,
 		.on  = (UART_MCR_RTS | UART_MCR_DTR | UART_MCR_OUT2),
@@ -170,7 +167,6 @@ static struct lirc_serial hardware[] = {
 	},
 
 	[LIRC_ANIMAX] = {
-		.lock = __SPIN_LOCK_UNLOCKED(hardware[LIRC_ANIMAX].lock),
 		.signal_pin        = UART_MSR_DCD,
 		.signal_pin_change = UART_MSR_DDCD,
 		.on  = 0,
@@ -181,7 +177,6 @@ static struct lirc_serial hardware[] = {
 	},
 
 	[LIRC_IGOR] = {
-		.lock = __SPIN_LOCK_UNLOCKED(hardware[LIRC_IGOR].lock),
 		.signal_pin        = UART_MSR_DSR,
 		.signal_pin_change = UART_MSR_DDSR,
 		.on  = (UART_MCR_RTS | UART_MCR_OUT2 | UART_MCR_DTR),
@@ -206,7 +201,6 @@ static struct lirc_serial hardware[] = {
 	 * See also http://www.nslu2-linux.org for this device
 	 */
 	[LIRC_NSLU2] = {
-		.lock = __SPIN_LOCK_UNLOCKED(hardware[LIRC_NSLU2].lock),
 		.signal_pin        = UART_MSR_CTS,
 		.signal_pin_change = UART_MSR_DCTS,
 		.on  = (UART_MCR_RTS | UART_MCR_OUT2 | UART_MCR_DTR),

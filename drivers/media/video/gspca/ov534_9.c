@@ -1008,7 +1008,6 @@ static int sccb_check_status(struct gspca_dev *gspca_dev)
 	int i;
 
 	for (i = 0; i < 5; i++) {
-		msleep(10);
 		data = reg_r(gspca_dev, OV534_REG_STATUS);
 
 		switch (data) {
@@ -1377,7 +1376,7 @@ static int sd_init(struct gspca_dev *gspca_dev)
 				ARRAY_SIZE(ov562x_init_2));
 		reg_w(gspca_dev, 0xe0, 0x00);
 	} else {
-		pr_err("Unknown sensor %04x", sensor_id);
+		err("Unknown sensor %04x", sensor_id);
 		return -EINVAL;
 	}
 

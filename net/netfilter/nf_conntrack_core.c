@@ -303,6 +303,21 @@ static void death_by_timeout(unsigned long ul_conntrack)
 	nf_ct_put(ct);
 }
 
+static inline bool
+nf_ct_key_equal(struct nf_conntrack_tuple_hash *h,
+			const struct nf_conntrack_tuple *tuple,
+			u16 zone)
+{
+	struct nf_conn *ct = nf_ct_tuplehash_to_ctrack(h);
+
+	/* A conntrack can be recreated with the equal tuple,
+	 * so we need to check that the conntrack is confirmed
+	 */
+	return nf_ct_tuple_equal(tuple, &h->tuple) &&
+		nf_ct_zone(ct) == zone &&
+		nf_ct_is_confirmed(ct);
+}
+
 /*
  * Warning :
  * - Caller must take a reference on returned object
@@ -324,8 +339,7 @@ ____nf_conntrack_find(struct net *net, u16 zone,
 	local_bh_disable();
 begin:
 	hlist_nulls_for_each_entry_rcu(h, n, &net->ct.hash[bucket], hnnode) {
-		if (nf_ct_tuple_equal(tuple, &h->tuple) &&
-		    nf_ct_zone(nf_ct_tuplehash_to_ctrack(h)) == zone) {
+		if (nf_ct_key_equal(h, tuple, zone)) {
 			NF_CT_STAT_INC(net, found);
 			local_bh_enable();
 			return h;
@@ -372,8 +386,7 @@ begin:
 			     !atomic_inc_not_zero(&ct->ct_general.use)))
 			h = NULL;
 		else {
-			if (unlikely(!nf_ct_tuple_equal(tuple, &h->tuple) ||
-				     nf_ct_zone(ct) != zone)) {
+			if (unlikely(!nf_ct_key_equal(h, tuple, zone))) {
 				nf_ct_put(ct);
 				goto begin;
 			}
@@ -683,7 +696,10 @@ __nf_conntrack_alloc(struct net *net, u16 zone,
 	    unlikely(atomic_read(&net->ct.count) > nf_conntrack_max)) {
 		if (!early_drop(net, hash_bucket(hash, net))) {
 			atomic_dec(&net->ct.count);
-			net_warn_ratelimited("nf_conntrack: table full, dropping packet\n");
+			if (net_ratelimit())
+				printk(KERN_WARNING
+				       "nf_conntrack: table full, dropping"
+				       " packet.\n");
 			return ERR_PTR(-ENOMEM);
 		}
 	}
@@ -1149,9 +1165,8 @@ static struct nf_ct_ext_type nf_ct_zone_extend __read_mostly = {
 int nf_ct_port_tuple_to_nlattr(struct sk_buff *skb,
 			       const struct nf_conntrack_tuple *tuple)
 {
-	if (nla_put_be16(skb, CTA_PROTO_SRC_PORT, tuple->src.u.tcp.port) ||
-	    nla_put_be16(skb, CTA_PROTO_DST_PORT, tuple->dst.u.tcp.port))
-		goto nla_put_failure;
+	NLA_PUT_BE16(skb, CTA_PROTO_SRC_PORT, tuple->src.u.tcp.port);
+	NLA_PUT_BE16(skb, CTA_PROTO_DST_PORT, tuple->dst.u.tcp.port);
 	return 0;
 
 nla_put_failure:
@@ -1333,6 +1348,7 @@ static void nf_conntrack_cleanup_init_net(void)
 	while (untrack_refs() > 0)
 		schedule();
 
+	nf_conntrack_helper_fini();
 	nf_conntrack_proto_fini();
 #ifdef CONFIG_NF_CONNTRACK_ZONES
 	nf_ct_extend_unregister(&nf_ct_zone_extend);
@@ -1350,7 +1366,6 @@ static void nf_conntrack_cleanup_net(struct net *net)
 	}
 
 	nf_ct_free_hashtable(net->ct.hash, net->ct.htable_size);
-	nf_conntrack_helper_fini(net);
 	nf_conntrack_timeout_fini(net);
 	nf_conntrack_ecache_fini(net);
 	nf_conntrack_tstamp_fini(net);
@@ -1501,6 +1516,10 @@ static int nf_conntrack_init_init_net(void)
 	if (ret < 0)
 		goto err_proto;
 
+	ret = nf_conntrack_helper_init();
+	if (ret < 0)
+		goto err_helper;
+
 #ifdef CONFIG_NF_CONNTRACK_ZONES
 	ret = nf_ct_extend_register(&nf_ct_zone_extend);
 	if (ret < 0)
@@ -1518,8 +1537,10 @@ static int nf_conntrack_init_init_net(void)
 
 #ifdef CONFIG_NF_CONNTRACK_ZONES
 err_extend:
-	nf_conntrack_proto_fini();
+	nf_conntrack_helper_fini();
 #endif
+err_helper:
+	nf_conntrack_proto_fini();
 err_proto:
 	return ret;
 }
@@ -1580,14 +1601,9 @@ static int nf_conntrack_init_net(struct net *net)
 	ret = nf_conntrack_timeout_init(net);
 	if (ret < 0)
 		goto err_timeout;
-	ret = nf_conntrack_helper_init(net);
-	if (ret < 0)
-		goto err_helper;
 
 	return 0;
 
-err_helper:
-	nf_conntrack_timeout_fini(net);
 err_timeout:
 	nf_conntrack_ecache_fini(net);
 err_ecache:

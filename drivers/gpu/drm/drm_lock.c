@@ -331,7 +331,7 @@ static int drm_notifier(void *priv)
 
 void drm_idlelock_take(struct drm_lock_data *lock_data)
 {
-	int ret;
+	int ret = 0;
 
 	spin_lock_bh(&lock_data->spinlock);
 	lock_data->kernel_waiters++;

@@ -59,10 +59,7 @@ static int parse_status(char *value)
 
 
 	/* skip a header line */
-	c = strchr(value, '\n');
-	if (!c)
-		return -1;
-	c++;
+	c = strchr(value, '\n') + 1;
 
 	while (*c != '\0') {
 		int port, status, speed, devid;
@@ -112,10 +109,7 @@ static int parse_status(char *value)
 
 
 		/* go to the next line */
-		c = strchr(c, '\n');
-		if (!c)
-			break;
-		c++;
+		c = strchr(c, '\n') + 1;
 	}
 
 	dbg("exit");
@@ -270,17 +264,11 @@ static int get_nports(void)
 	    attr_status->method, attr_status->value);
 
 	/* skip a header line */
-	c = strchr(attr_status->value, '\n');
-	if (!c)
-		return 0;
-	c++;
+	c = strchr(attr_status->value, '\n') + 1;
 
 	while (*c != '\0') {
 		/* go to the next line */
-		c = strchr(c, '\n');
-		if (!c)
-			return nports;
-		c++;
+		c = strchr(c, '\n') + 1;
 		nports += 1;
 	}
 

@@ -451,15 +451,11 @@ static ssize_t set_pwm_enable(struct device *dev, struct device_attribute *da,
 		data->fan_rpm_control = true;
 		break;
 	default:
-		count = -EINVAL;
-		goto err;
+		mutex_unlock(&data->update_lock);
+		return -EINVAL;
 	}
 
-	result = read_u8_from_i2c(client, REG_FAN_CONF1, &conf_reg);
-	if (result) {
-		count = result;
-		goto err;
-	}
+	read_u8_from_i2c(client, REG_FAN_CONF1, &conf_reg);
 
 	if (data->fan_rpm_control)
 		conf_reg |= 0x80;
@@ -467,7 +463,7 @@ static ssize_t set_pwm_enable(struct device *dev, struct device_attribute *da,
 		conf_reg &= ~0x80;
 
 	i2c_smbus_write_byte_data(client, REG_FAN_CONF1, conf_reg);
-err:
+
 	mutex_unlock(&data->update_lock);
 	return count;
 }

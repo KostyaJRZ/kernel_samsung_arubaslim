@@ -530,8 +530,12 @@
 	SET_BITS_OFFSET_LE(__pdesc+28, 0, 32, __val)
 
 #define CLEAR_PCI_TX_DESC_CONTENT(__pdesc, _size)	\
-	memset((void *)__pdesc, 0,			\
-	       min_t(size_t, _size, TX_DESC_NEXT_DESC_OFFSET))
+do {							\
+	if (_size > TX_DESC_NEXT_DESC_OFFSET)		\
+		memset((void *)__pdesc, 0, TX_DESC_NEXT_DESC_OFFSET);	\
+	else						\
+		memset((void *)__pdesc, 0, _size);	\
+} while (0);
 
 /* For 92D early mode */
 #define SET_EARLYMODE_PKTNUM(__paddr, __value)		\

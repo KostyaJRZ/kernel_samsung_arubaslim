@@ -154,7 +154,8 @@ static int set_bud_lprops(struct ubifs_info *c, struct bud_entry *b)
 
 	/* Make sure the journal head points to the latest bud */
 	err = ubifs_wbuf_seek_nolock(&c->jheads[b->bud->jhead].wbuf,
-				     b->bud->lnum, c->leb_size - b->free);
+				     b->bud->lnum, c->leb_size - b->free,
+				     UBI_SHORTTERM);
 
 out:
 	ubifs_release_lprops(c);
@@ -685,7 +686,7 @@ out:
 
 out_dump:
 	ubifs_err("bad node is at LEB %d:%d", lnum, snod->offs);
-	ubifs_dump_node(c, snod->node);
+	dbg_dump_node(c, snod->node);
 	ubifs_scan_destroy(sleb);
 	return -EINVAL;
 }
@@ -860,16 +861,16 @@ static int replay_log_leb(struct ubifs_info *c, int lnum, int offs, void *sbuf)
 		 * numbers.
 		 */
 		if (snod->type != UBIFS_CS_NODE) {
-			ubifs_err("first log node at LEB %d:%d is not CS node",
-				  lnum, offs);
+			dbg_err("first log node at LEB %d:%d is not CS node",
+				lnum, offs);
 			goto out_dump;
 		}
 		if (le64_to_cpu(node->cmt_no) != c->cmt_no) {
-			ubifs_err("first CS node at LEB %d:%d has wrong "
-				  "commit number %llu expected %llu",
-				  lnum, offs,
-				  (unsigned long long)le64_to_cpu(node->cmt_no),
-				  c->cmt_no);
+			dbg_err("first CS node at LEB %d:%d has wrong "
+				"commit number %llu expected %llu",
+				lnum, offs,
+				(unsigned long long)le64_to_cpu(node->cmt_no),
+				c->cmt_no);
 			goto out_dump;
 		}
 
@@ -891,7 +892,7 @@ static int replay_log_leb(struct ubifs_info *c, int lnum, int offs, void *sbuf)
 
 	/* Make sure the first node sits at offset zero of the LEB */
 	if (snod->offs != 0) {
-		ubifs_err("first node is not at zero offset");
+		dbg_err("first node is not at zero offset");
 		goto out_dump;
 	}
 
@@ -904,8 +905,8 @@ static int replay_log_leb(struct ubifs_info *c, int lnum, int offs, void *sbuf)
 		}
 
 		if (snod->sqnum < c->cs_sqnum) {
-			ubifs_err("bad sqnum %llu, commit sqnum %llu",
-				  snod->sqnum, c->cs_sqnum);
+			dbg_err("bad sqnum %llu, commit sqnum %llu",
+				snod->sqnum, c->cs_sqnum);
 			goto out_dump;
 		}
 
@@ -957,7 +958,7 @@ out:
 out_dump:
 	ubifs_err("log error detected while replaying the log at LEB %d:%d",
 		  lnum, offs + snod->offs);
-	ubifs_dump_node(c, snod->node);
+	dbg_dump_node(c, snod->node);
 	ubifs_scan_destroy(sleb);
 	return -EINVAL;
 }

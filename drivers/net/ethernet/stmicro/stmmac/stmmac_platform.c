@@ -50,6 +50,7 @@ static int __devinit stmmac_probe_config_dt(struct platform_device *pdev,
 	 * once needed on other platforms.
 	 */
 	if (of_device_is_compatible(np, "st,spear600-gmac")) {
+		plat->pbl = 8;
 		plat->has_gmac = 1;
 		plat->pmt = 1;
 	}
@@ -188,6 +189,9 @@ static int stmmac_pltfr_remove(struct platform_device *pdev)
 	if (priv->plat->exit)
 		priv->plat->exit(pdev);
 
+	if (priv->plat->exit)
+		priv->plat->exit(pdev);
+
 	platform_set_drvdata(pdev, NULL);
 
 	iounmap((void *)priv->ioaddr);
@@ -214,26 +218,14 @@ static int stmmac_pltfr_resume(struct device *dev)
 
 int stmmac_pltfr_freeze(struct device *dev)
 {
-	int ret;
-	struct plat_stmmacenet_data *plat_dat = dev_get_platdata(dev);
 	struct net_device *ndev = dev_get_drvdata(dev);
-	struct platform_device *pdev = to_platform_device(dev);
 
-	ret = stmmac_freeze(ndev);
-	if (plat_dat->exit)
-		plat_dat->exit(pdev);
-
-	return ret;
+	return stmmac_freeze(ndev);
 }
 
 int stmmac_pltfr_restore(struct device *dev)
 {
-	struct plat_stmmacenet_data *plat_dat = dev_get_platdata(dev);
 	struct net_device *ndev = dev_get_drvdata(dev);
-	struct platform_device *pdev = to_platform_device(dev);
-
-	if (plat_dat->init)
-		plat_dat->init(pdev);
 
 	return stmmac_restore(ndev);
 }
@@ -255,7 +247,7 @@ static const struct of_device_id stmmac_dt_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, stmmac_dt_ids);
 
-struct platform_driver stmmac_pltfr_driver = {
+static struct platform_driver stmmac_driver = {
 	.probe = stmmac_pltfr_probe,
 	.remove = stmmac_pltfr_remove,
 	.driver = {
@@ -265,6 +257,8 @@ struct platform_driver stmmac_pltfr_driver = {
 		   .of_match_table = of_match_ptr(stmmac_dt_ids),
 		   },
 };
+
+module_platform_driver(stmmac_driver);
 
 MODULE_DESCRIPTION("STMMAC 10/100/1000 Ethernet PLATFORM driver");
 MODULE_AUTHOR("Giuseppe Cavallaro <peppe.cavallaro@st.com>");

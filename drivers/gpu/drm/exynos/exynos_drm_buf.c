@@ -35,7 +35,7 @@ static int lowlevel_buffer_allocate(struct drm_device *dev,
 		unsigned int flags, struct exynos_drm_gem_buf *buf)
 {
 	dma_addr_t start_addr;
-	unsigned int npages, i = 0;
+	unsigned int npages, page_size, i = 0;
 	struct scatterlist *sgl;
 	int ret = 0;
 
@@ -53,13 +53,13 @@ static int lowlevel_buffer_allocate(struct drm_device *dev,
 
 	if (buf->size >= SZ_1M) {
 		npages = buf->size >> SECTION_SHIFT;
-		buf->page_size = SECTION_SIZE;
+		page_size = SECTION_SIZE;
 	} else if (buf->size >= SZ_64K) {
 		npages = buf->size >> 16;
-		buf->page_size = SZ_64K;
+		page_size = SZ_64K;
 	} else {
 		npages = buf->size >> PAGE_SHIFT;
-		buf->page_size = PAGE_SIZE;
+		page_size = PAGE_SIZE;
 	}
 
 	buf->sgt = kzalloc(sizeof(struct sg_table), GFP_KERNEL);
@@ -96,9 +96,9 @@ static int lowlevel_buffer_allocate(struct drm_device *dev,
 
 	while (i < npages) {
 		buf->pages[i] = phys_to_page(start_addr);
-		sg_set_page(sgl, buf->pages[i], buf->page_size, 0);
+		sg_set_page(sgl, buf->pages[i], page_size, 0);
 		sg_dma_address(sgl) = start_addr;
-		start_addr += buf->page_size;
+		start_addr += page_size;
 		sgl = sg_next(sgl);
 		i++;
 	}

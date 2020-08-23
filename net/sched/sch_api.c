@@ -426,8 +426,7 @@ static int qdisc_dump_stab(struct sk_buff *skb, struct qdisc_size_table *stab)
 	nest = nla_nest_start(skb, TCA_STAB);
 	if (nest == NULL)
 		goto nla_put_failure;
-	if (nla_put(skb, TCA_STAB_BASE, sizeof(stab->szopts), &stab->szopts))
-		goto nla_put_failure;
+	NLA_PUT(skb, TCA_STAB_BASE, sizeof(stab->szopts), &stab->szopts);
 	nla_nest_end(skb, nest);
 
 	return skb->len;
@@ -1202,8 +1201,7 @@ static int tc_fill_qdisc(struct sk_buff *skb, struct Qdisc *q, u32 clid,
 	tcm->tcm_parent = clid;
 	tcm->tcm_handle = q->handle;
 	tcm->tcm_info = atomic_read(&q->refcnt);
-	if (nla_put_string(skb, TCA_KIND, q->ops->id))
-		goto nla_put_failure;
+	NLA_PUT_STRING(skb, TCA_KIND, q->ops->id);
 	if (q->ops->dump && q->ops->dump(q, skb) < 0)
 		goto nla_put_failure;
 	q->qstats.qlen = q->q.qlen;
@@ -1507,8 +1505,7 @@ static int tc_fill_tclass(struct sk_buff *skb, struct Qdisc *q,
 	tcm->tcm_parent = q->handle;
 	tcm->tcm_handle = q->handle;
 	tcm->tcm_info = 0;
-	if (nla_put_string(skb, TCA_KIND, q->ops->id))
-		goto nla_put_failure;
+	NLA_PUT_STRING(skb, TCA_KIND, q->ops->id);
 	if (cl_ops->dump && cl_ops->dump(q, cl, skb, tcm) < 0)
 		goto nla_put_failure;
 
@@ -1691,10 +1688,12 @@ reclassify:
 		tp = otp;
 
 		if (verd++ >= MAX_REC_LOOP) {
-			net_notice_ratelimited("%s: packet reclassify loop rule prio %u protocol %02x\n",
-					       tp->q->ops->id,
-					       tp->prio & 0xffff,
-					       ntohs(tp->protocol));
+			if (net_ratelimit())
+				pr_notice("%s: packet reclassify loop"
+					  " rule prio %u protocol %02x\n",
+					  tp->q->ops->id,
+					  tp->prio & 0xffff,
+					  ntohs(tp->protocol));
 			return TC_ACT_SHOT;
 		}
 		skb->tc_verd = SET_TC_VERD(skb->tc_verd, verd);

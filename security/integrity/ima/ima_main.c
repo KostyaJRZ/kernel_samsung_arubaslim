@@ -194,9 +194,7 @@ int ima_bprm_check(struct linux_binprm *bprm)
 {
 	int rc;
 
-	rc = process_measurement(bprm->file,
-				 (strcmp(bprm->filename, bprm->interp) == 0) ?
-				 bprm->filename : bprm->interp,
+	rc = process_measurement(bprm->file, bprm->filename,
 				 MAY_EXEC, BPRM_CHECK);
 	return 0;
 }

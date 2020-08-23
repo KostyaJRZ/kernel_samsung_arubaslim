@@ -35,11 +35,13 @@ source "sound/soc/blackfin/Kconfig"
 source "sound/soc/davinci/Kconfig"
 source "sound/soc/ep93xx/Kconfig"
 source "sound/soc/fsl/Kconfig"
+source "sound/soc/imx/Kconfig"
 source "sound/soc/jz4740/Kconfig"
 source "sound/soc/nuc900/Kconfig"
 source "sound/soc/omap/Kconfig"
 source "sound/soc/kirkwood/Kconfig"
 source "sound/soc/mid-x86/Kconfig"
+source "sound/soc/msm/Kconfig"
 source "sound/soc/mxs/Kconfig"
 source "sound/soc/pxa/Kconfig"
 source "sound/soc/samsung/Kconfig"
@@ -47,13 +49,9 @@ source "sound/soc/s6000/Kconfig"
 source "sound/soc/sh/Kconfig"
 source "sound/soc/tegra/Kconfig"
 source "sound/soc/txx9/Kconfig"
-source "sound/soc/ux500/Kconfig"
 
 # Supported codecs
 source "sound/soc/codecs/Kconfig"
-
-# generic frame-work
-source "sound/soc/generic/Kconfig"
 
 endif	# SND_SOC
 

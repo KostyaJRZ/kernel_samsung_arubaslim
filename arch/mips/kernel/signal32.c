@@ -288,7 +288,15 @@ asmlinkage int sys32_sigsuspend(nabi_no_regargs struct pt_regs regs)
 	uset = (compat_sigset_t __user *) regs.regs[4];
 	if (get_sigset(&newset, uset))
 		return -EFAULT;
-	return sigsuspend(&newset);
+	sigdelsetmask(&newset, ~_BLOCKABLE);
+
+	current->saved_sigmask = current->blocked;
+	set_current_blocked(&newset);
+
+	current->state = TASK_INTERRUPTIBLE;
+	schedule();
+	set_thread_flag(TIF_RESTORE_SIGMASK);
+	return -ERESTARTNOHAND;
 }
 
 asmlinkage int sys32_rt_sigsuspend(nabi_no_regargs struct pt_regs regs)
@@ -305,7 +313,15 @@ asmlinkage int sys32_rt_sigsuspend(nabi_no_regargs struct pt_regs regs)
 	uset = (compat_sigset_t __user *) regs.regs[4];
 	if (get_sigset(&newset, uset))
 		return -EFAULT;
-	return sigsuspend(&newset);
+	sigdelsetmask(&newset, ~_BLOCKABLE);
+
+	current->saved_sigmask = current->blocked;
+	set_current_blocked(&newset);
+
+	current->state = TASK_INTERRUPTIBLE;
+	schedule();
+	set_thread_flag(TIF_RESTORE_SIGMASK);
+	return -ERESTARTNOHAND;
 }
 
 SYSCALL_DEFINE3(32_sigaction, long, sig, const struct sigaction32 __user *, act,
@@ -465,6 +481,7 @@ asmlinkage void sys32_sigreturn(nabi_no_regargs struct pt_regs regs)
 	if (__copy_conv_sigset_from_user(&blocked, &frame->sf_mask))
 		goto badframe;
 
+	sigdelsetmask(&blocked, ~_BLOCKABLE);
 	set_current_blocked(&blocked);
 
 	sig = restore_sigcontext32(&regs, &frame->sf_sc);
@@ -502,6 +519,7 @@ asmlinkage void sys32_rt_sigreturn(nabi_no_regargs struct pt_regs regs)
 	if (__copy_conv_sigset_from_user(&set, &frame->rs_uc.uc_sigmask))
 		goto badframe;
 
+	sigdelsetmask(&set, ~_BLOCKABLE);
 	set_current_blocked(&set);
 
 	sig = restore_sigcontext32(&regs, &frame->rs_uc.uc_mcontext);

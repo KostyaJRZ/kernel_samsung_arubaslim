@@ -267,8 +267,6 @@ static struct usbduxsub usbduxsub[NUMUSBDUX];
 
 static DEFINE_SEMAPHORE(start_stop_sem);
 
-static struct comedi_driver driver_usbduxsigma;	/* see below for initializer */
-
 /*
  * Stops the data acquision
  * It should be safe to call this function from any context
@@ -2314,11 +2312,11 @@ static void usbdux_firmware_request_complete_handler(const struct firmware *fw,
 						     void *context)
 {
 	struct usbduxsub *usbduxsub_tmp = context;
-	struct usb_interface *uinterf = usbduxsub_tmp->interface;
+	struct usb_device *usbdev = usbduxsub_tmp->usbdev;
 	int ret;
 
 	if (fw == NULL) {
-		dev_err(&uinterf->dev,
+		dev_err(&usbdev->dev,
 			"Firmware complete handler without firmware!\n");
 		return;
 	}
@@ -2330,11 +2328,11 @@ static void usbdux_firmware_request_complete_handler(const struct firmware *fw,
 	ret = firmwareUpload(usbduxsub_tmp, fw->data, fw->size);
 
 	if (ret) {
-		dev_err(&uinterf->dev,
+		dev_err(&usbdev->dev,
 			"Could not upload firmware (err=%d)\n", ret);
 		goto out;
 	}
-	comedi_usb_auto_config(uinterf, &driver_usbduxsigma);
+	comedi_usb_auto_config(usbdev, BOARDNAME);
 out:
 	release_firmware(fw);
 }
@@ -2625,7 +2623,7 @@ static void usbduxsigma_disconnect(struct usb_interface *intf)
 	if (usbduxsub_tmp->ao_cmd_running)
 		/* we are still running a command */
 		usbdux_ao_stop(usbduxsub_tmp, 1);
-	comedi_usb_auto_unconfig(intf);
+	comedi_usb_auto_unconfig(udev);
 	down(&start_stop_sem);
 	down(&usbduxsub_tmp->sem);
 	tidy_up(usbduxsub_tmp);
@@ -2801,17 +2799,37 @@ static int usbduxsigma_attach(struct comedi_device *dev,
 	return 0;
 }
 
-static void usbduxsigma_detach(struct comedi_device *dev)
+static int usbduxsigma_detach(struct comedi_device *dev)
 {
-	struct usbduxsub *usb = dev->private;
+	struct usbduxsub *usbduxsub_tmp;
 
-	if (usb) {
-		down(&usb->sem);
-		dev->private = NULL;
-		usb->attached = 0;
-		usb->comedidev = NULL;
-		up(&usb->sem);
+	if (!dev) {
+		printk(KERN_ERR
+		       "comedi? usbduxsigma detach: dev=NULL\n");
+		return -EFAULT;
 	}
+
+	usbduxsub_tmp = dev->private;
+	if (!usbduxsub_tmp) {
+		printk(KERN_ERR
+		       "comedi?: usbduxsigma detach: private=NULL\n");
+		return -EFAULT;
+	}
+
+	dev_dbg(&usbduxsub_tmp->interface->dev,
+		"comedi%d: detach usb device\n",
+		dev->minor);
+
+	down(&usbduxsub_tmp->sem);
+	/* Don't allow detach to free the private structure */
+	/* It's one entry of of usbduxsub[] */
+	dev->private = NULL;
+	usbduxsub_tmp->attached = 0;
+	usbduxsub_tmp->comedidev = NULL;
+	dev_info(&usbduxsub_tmp->interface->dev,
+		"comedi%d: successfully detached.\n", dev->minor);
+	up(&usbduxsub_tmp->sem);
+	return 0;
 }
 
 /* main driver struct */

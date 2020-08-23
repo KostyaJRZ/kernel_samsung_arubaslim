@@ -340,16 +340,17 @@ static int gigaset_initbcshw(struct bc_state *bcs)
 {
 	/* unused */
 	bcs->hw.ser = NULL;
-	return 0;
+	return 1;
 }
 
 /*
  * Free B channel structure
  * Called by "gigaset_freebcs" in common.c
  */
-static void gigaset_freebcshw(struct bc_state *bcs)
+static int gigaset_freebcshw(struct bc_state *bcs)
 {
 	/* unused */
+	return 1;
 }
 
 /*
@@ -397,7 +398,7 @@ static int gigaset_initcshw(struct cardstate *cs)
 	scs = kzalloc(sizeof(struct ser_cardstate), GFP_KERNEL);
 	if (!scs) {
 		pr_err("out of memory\n");
-		return -ENOMEM;
+		return 0;
 	}
 	cs->hw.ser = scs;
 
@@ -409,13 +410,13 @@ static int gigaset_initcshw(struct cardstate *cs)
 		pr_err("error %d registering platform device\n", rc);
 		kfree(cs->hw.ser);
 		cs->hw.ser = NULL;
-		return rc;
+		return 0;
 	}
 	dev_set_drvdata(&cs->hw.ser->dev.dev, cs);
 
 	tasklet_init(&cs->write_tasklet,
 		     gigaset_modem_fill, (unsigned long) cs);
-	return 0;
+	return 1;
 }
 
 /*
@@ -502,7 +503,6 @@ static int
 gigaset_tty_open(struct tty_struct *tty)
 {
 	struct cardstate *cs;
-	int rc;
 
 	gig_dbg(DEBUG_INIT, "Starting HLL for Gigaset M101");
 
@@ -515,10 +515,8 @@ gigaset_tty_open(struct tty_struct *tty)
 
 	/* allocate memory for our device state and initialize it */
 	cs = gigaset_initcs(driver, 1, 1, 0, cidmode, GIGASET_MODULENAME);
-	if (!cs) {
-		rc = -ENODEV;
+	if (!cs)
 		goto error;
-	}
 
 	cs->dev = &cs->hw.ser->dev.dev;
 	cs->hw.ser->tty = tty;
@@ -532,8 +530,7 @@ gigaset_tty_open(struct tty_struct *tty)
 	 */
 	if (startmode == SM_LOCKED)
 		cs->mstate = MS_LOCKED;
-	rc = gigaset_start(cs);
-	if (rc < 0) {
+	if (!gigaset_start(cs)) {
 		tasklet_kill(&cs->write_tasklet);
 		goto error;
 	}
@@ -545,7 +542,7 @@ error:
 	gig_dbg(DEBUG_INIT, "Startup of HLL failed");
 	tty->disc_data = NULL;
 	gigaset_freecs(cs);
-	return rc;
+	return -ENODEV;
 }
 
 /*

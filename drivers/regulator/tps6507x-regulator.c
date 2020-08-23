@@ -23,6 +23,7 @@
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/tps6507x.h>
+#include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/mfd/tps6507x.h>
 
@@ -282,7 +283,7 @@ static int tps6507x_pmic_disable(struct regulator_dev *dev)
 					1 << shift);
 }
 
-static int tps6507x_pmic_get_voltage_sel(struct regulator_dev *dev)
+static int tps6507x_pmic_get_voltage(struct regulator_dev *dev)
 {
 	struct tps6507x_pmic *tps = rdev_get_drvdata(dev);
 	int data, rid = rdev_get_id(dev);
@@ -324,7 +325,7 @@ static int tps6507x_pmic_get_voltage_sel(struct regulator_dev *dev)
 		return data;
 
 	data &= mask;
-	return data;
+	return tps->info[rid]->table[data] * 1000;
 }
 
 static int tps6507x_pmic_set_voltage_sel(struct regulator_dev *dev,
@@ -394,7 +395,7 @@ static struct regulator_ops tps6507x_pmic_ops = {
 	.is_enabled = tps6507x_pmic_is_enabled,
 	.enable = tps6507x_pmic_enable,
 	.disable = tps6507x_pmic_disable,
-	.get_voltage_sel = tps6507x_pmic_get_voltage_sel,
+	.get_voltage = tps6507x_pmic_get_voltage,
 	.set_voltage_sel = tps6507x_pmic_set_voltage_sel,
 	.list_voltage = tps6507x_pmic_list_voltage,
 };
@@ -403,7 +404,6 @@ static __devinit int tps6507x_pmic_probe(struct platform_device *pdev)
 {
 	struct tps6507x_dev *tps6507x_dev = dev_get_drvdata(pdev->dev.parent);
 	struct tps_info *info = &tps6507x_pmic_regs[0];
-	struct regulator_config config = { };
 	struct regulator_init_data *init_data;
 	struct regulator_dev *rdev;
 	struct tps6507x_pmic *tps;
@@ -428,7 +428,7 @@ static __devinit int tps6507x_pmic_probe(struct platform_device *pdev)
 	if (!init_data)
 		return -EINVAL;
 
-	tps = devm_kzalloc(&pdev->dev, sizeof(*tps), GFP_KERNEL);
+	tps = kzalloc(sizeof(*tps), GFP_KERNEL);
 	if (!tps)
 		return -ENOMEM;
 
@@ -453,11 +453,8 @@ static __devinit int tps6507x_pmic_probe(struct platform_device *pdev)
 		tps->desc[i].type = REGULATOR_VOLTAGE;
 		tps->desc[i].owner = THIS_MODULE;
 
-		config.dev = tps6507x_dev->dev;
-		config.init_data = init_data;
-		config.driver_data = tps;
-
-		rdev = regulator_register(&tps->desc[i], &config);
+		rdev = regulator_register(&tps->desc[i],
+					tps6507x_dev->dev, init_data, tps, NULL);
 		if (IS_ERR(rdev)) {
 			dev_err(tps6507x_dev->dev,
 				"failed to register %s regulator\n",
@@ -478,6 +475,8 @@ static __devinit int tps6507x_pmic_probe(struct platform_device *pdev)
 fail:
 	while (--i >= 0)
 		regulator_unregister(tps->rdev[i]);
+
+	kfree(tps);
 	return error;
 }
 
@@ -489,6 +488,9 @@ static int __devexit tps6507x_pmic_remove(struct platform_device *pdev)
 
 	for (i = 0; i < TPS6507X_NUM_REGULATOR; i++)
 		regulator_unregister(tps->rdev[i]);
+
+	kfree(tps);
+
 	return 0;
 }
 

@@ -47,6 +47,29 @@ Configuration Options:
 #define RTI802_DATALOW 1
 #define RTI802_DATAHIGH 2
 
+static int rti802_attach(struct comedi_device *dev,
+			 struct comedi_devconfig *it);
+static int rti802_detach(struct comedi_device *dev);
+static struct comedi_driver driver_rti802 = {
+	.driver_name = "rti802",
+	.module = THIS_MODULE,
+	.attach = rti802_attach,
+	.detach = rti802_detach,
+};
+
+static int __init driver_rti802_init_module(void)
+{
+	return comedi_driver_register(&driver_rti802);
+}
+
+static void __exit driver_rti802_cleanup_module(void)
+{
+	comedi_driver_unregister(&driver_rti802);
+}
+
+module_init(driver_rti802_init_module);
+module_exit(driver_rti802_cleanup_module);
+
 struct rti802_private {
 	enum {
 		dac_2comp, dac_straight
@@ -129,19 +152,15 @@ static int rti802_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	return 0;
 }
 
-static void rti802_detach(struct comedi_device *dev)
+static int rti802_detach(struct comedi_device *dev)
 {
+	printk(KERN_INFO "comedi%d: rti802: remove\n", dev->minor);
+
 	if (dev->iobase)
 		release_region(dev->iobase, RTI802_SIZE);
-}
 
-static struct comedi_driver rti802_driver = {
-	.driver_name	= "rti802",
-	.module		= THIS_MODULE,
-	.attach		= rti802_attach,
-	.detach		= rti802_detach,
-};
-module_comedi_driver(rti802_driver);
+	return 0;
+}
 
 MODULE_AUTHOR("Comedi http://www.comedi.org");
 MODULE_DESCRIPTION("Comedi low-level driver");

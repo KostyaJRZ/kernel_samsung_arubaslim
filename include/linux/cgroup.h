@@ -16,7 +16,6 @@
 #include <linux/prio_heap.h>
 #include <linux/rwsem.h>
 #include <linux/idr.h>
-#include <linux/workqueue.h>
 
 #ifdef CONFIG_CGROUPS
 
@@ -33,7 +32,6 @@ extern int cgroup_lock_is_held(void);
 extern bool cgroup_lock_live_group(struct cgroup *cgrp);
 extern void cgroup_unlock(void);
 extern void cgroup_fork(struct task_struct *p);
-extern void cgroup_fork_callbacks(struct task_struct *p);
 extern void cgroup_post_fork(struct task_struct *p);
 extern void cgroup_exit(struct task_struct *p, int run_callbacks);
 extern int cgroupstats_build(struct cgroupstats *stats,
@@ -77,23 +75,13 @@ struct cgroup_subsys_state {
 	unsigned long flags;
 	/* ID for this css, if possible */
 	struct css_id __rcu *id;
-
-	/* Used to put @cgroup->dentry on the last css_put() */
-	struct work_struct dput_work;
 };
 
 /* bits in struct cgroup_subsys_state flags field */
 enum {
 	CSS_ROOT, /* This CSS is the root of the subsystem */
 	CSS_REMOVED, /* This CSS is dead */
-	CSS_CLEAR_CSS_REFS,		/* @ss->__DEPRECATED_clear_css_refs */
 };
-
-/* Caller must verify that the css is not for root cgroup */
-static inline void __css_get(struct cgroup_subsys_state *css, int count)
-{
-	atomic_add(count, &css->refcnt);
-}
 
 /*
  * Call css_get() to hold a reference on the css; it can be used
@@ -102,6 +90,7 @@ static inline void __css_get(struct cgroup_subsys_state *css, int count)
  * - task->cgroups for a locked task
  */
 
+extern void __css_get(struct cgroup_subsys_state *css, int count);
 static inline void css_get(struct cgroup_subsys_state *css)
 {
 	/* We don't need to reference count the root state */
@@ -120,12 +109,16 @@ static inline bool css_is_removed(struct cgroup_subsys_state *css)
  * the css has been destroyed.
  */
 
-extern bool __css_tryget(struct cgroup_subsys_state *css);
 static inline bool css_tryget(struct cgroup_subsys_state *css)
 {
 	if (test_bit(CSS_ROOT, &css->flags))
 		return true;
-	return __css_tryget(css);
+	while (!atomic_inc_not_zero(&css->refcnt)) {
+		if (test_bit(CSS_REMOVED, &css->flags))
+			return false;
+		cpu_relax();
+	}
+	return true;
 }
 
 /*
@@ -133,21 +126,18 @@ static inline bool css_tryget(struct cgroup_subsys_state *css)
  * css_get() or css_tryget()
  */
 
-extern void __css_put(struct cgroup_subsys_state *css);
+extern void __css_put(struct cgroup_subsys_state *css, int count);
 static inline void css_put(struct cgroup_subsys_state *css)
 {
 	if (!test_bit(CSS_ROOT, &css->flags))
-		__css_put(css);
+		__css_put(css, 1);
 }
 
 /* bits in struct cgroup flags field */
 enum {
 	/* Control Group is dead */
 	CGRP_REMOVED,
-	/*
-	 * Control Group has previously had a child cgroup or a task,
-	 * but no longer (only if CGRP_NOTIFY_ON_RELEASE is set)
-	 */
+	/* Control Group has ever had a child cgroup or a task */
 	CGRP_RELEASABLE,
 	/* Control Group requires release notifications to userspace */
 	CGRP_NOTIFY_ON_RELEASE,
@@ -176,7 +166,6 @@ struct cgroup {
 	 */
 	struct list_head sibling;	/* my parent's children */
 	struct list_head children;	/* my children */
-	struct list_head files;		/* my files */
 
 	struct cgroup *parent;		/* my parent */
 	struct dentry __rcu *dentry;	/* cgroup fs entry, RCU protected */
@@ -192,9 +181,6 @@ struct cgroup {
 	 * tasks in this cgroup. Protected by css_set_lock
 	 */
 	struct list_head css_sets;
-
-	struct list_head allcg_node;	/* cgroupfs_root->allcg_list */
-	struct list_head cft_q_node;	/* used during cftype add/rm */
 
 	/*
 	 * Linked list running through all cgroups that can
@@ -260,6 +246,7 @@ struct css_set {
 
 	/* For RCU-protected deletion */
 	struct rcu_head rcu_head;
+	struct work_struct work;
 };
 
 /*
@@ -280,17 +267,11 @@ struct cgroup_map_cb {
  *	- the 'cftype' of the file is file->f_dentry->d_fsdata
  */
 
-/* cftype->flags */
-#define CFTYPE_ONLY_ON_ROOT	(1U << 0)	/* only create on root cg */
-#define CFTYPE_NOT_ON_ROOT	(1U << 1)	/* don't create onp root cg */
-
-#define MAX_CFTYPE_NAME		64
-
+#define MAX_CFTYPE_NAME 64
 struct cftype {
 	/*
 	 * By convention, the name should begin with the name of the
-	 * subsystem, followed by a period.  Zero length string indicates
-	 * end of cftype array.
+	 * subsystem, followed by a period
 	 */
 	char name[MAX_CFTYPE_NAME];
 	int private;
@@ -305,9 +286,6 @@ struct cftype {
 	 * be passed to write_string; defaults to 64
 	 */
 	size_t max_write_len;
-
-	/* CFTYPE_* flags */
-	unsigned int flags;
 
 	int (*open)(struct inode *inode, struct file *file);
 	ssize_t (*read)(struct cgroup *cgrp, struct cftype *cft,
@@ -387,16 +365,6 @@ struct cftype {
 			struct eventfd_ctx *eventfd);
 };
 
-/*
- * cftype_sets describe cftypes belonging to a subsystem and are chained at
- * cgroup_subsys->cftsets.  Each cftset points to an array of cftypes
- * terminated by zero length name.
- */
-struct cftype_set {
-	struct list_head		node;	/* chained at subsys->cftsets */
-	const struct cftype		*cfts;
-};
-
 struct cgroup_scanner {
 	struct cgroup *cg;
 	int (*test_task)(struct task_struct *p, struct cgroup_scanner *scan);
@@ -406,8 +374,21 @@ struct cgroup_scanner {
 	void *data;
 };
 
-int cgroup_add_cftypes(struct cgroup_subsys *ss, const struct cftype *cfts);
-int cgroup_rm_cftypes(struct cgroup_subsys *ss, const struct cftype *cfts);
+/*
+ * Add a new file to the given cgroup directory. Should only be
+ * called by subsystems from within a populate() method
+ */
+int cgroup_add_file(struct cgroup *cgrp, struct cgroup_subsys *subsys,
+		       const struct cftype *cft);
+
+/*
+ * Add a set of new files to the given cgroup directory. Should
+ * only be called by subsystems from within a populate() method
+ */
+int cgroup_add_files(struct cgroup *cgrp,
+			struct cgroup_subsys *subsys,
+			const struct cftype cft[],
+			int count);
 
 int cgroup_is_removed(const struct cgroup *cgrp);
 
@@ -466,12 +447,14 @@ struct cgroup_subsys {
 	struct cgroup_subsys_state *(*create)(struct cgroup *cgrp);
 	int (*pre_destroy)(struct cgroup *cgrp);
 	void (*destroy)(struct cgroup *cgrp);
+	int (*allow_attach)(struct cgroup *cgrp, struct cgroup_taskset *tset);
 	int (*can_attach)(struct cgroup *cgrp, struct cgroup_taskset *tset);
 	void (*cancel_attach)(struct cgroup *cgrp, struct cgroup_taskset *tset);
 	void (*attach)(struct cgroup *cgrp, struct cgroup_taskset *tset);
 	void (*fork)(struct task_struct *task);
 	void (*exit)(struct cgroup *cgrp, struct cgroup *old_cgrp,
 		     struct task_struct *task);
+	int (*populate)(struct cgroup_subsys *ss, struct cgroup *cgrp);
 	void (*post_clone)(struct cgroup *cgrp);
 	void (*bind)(struct cgroup *root);
 
@@ -484,18 +467,6 @@ struct cgroup_subsys {
 	 * (not available in early_init time.)
 	 */
 	bool use_id;
-
-	/*
-	 * If %true, cgroup removal will try to clear css refs by retrying
-	 * ss->pre_destroy() until there's no css ref left.  This behavior
-	 * is strictly for backward compatibility and will be removed as
-	 * soon as the current user (memcg) is updated.
-	 *
-	 * If %false, ss->pre_destroy() can't fail and cgroup removal won't
-	 * wait for css refs to drop to zero before proceeding.
-	 */
-	bool __DEPRECATED_clear_css_refs;
-
 #define MAX_CGROUP_TYPE_NAMELEN 32
 	const char *name;
 
@@ -522,13 +493,6 @@ struct cgroup_subsys {
 	struct idr idr;
 	spinlock_t id_lock;
 
-	/* list of cftype_sets */
-	struct list_head cftsets;
-
-	/* base cftypes, automatically [de]registered with subsys itself */
-	struct cftype *base_cftypes;
-	struct cftype_set base_cftset;
-
 	/* should be defined only by modular subsystems */
 	struct module *module;
 };
@@ -543,16 +507,54 @@ static inline struct cgroup_subsys_state *cgroup_subsys_state(
 	return cgrp->subsys[subsys_id];
 }
 
-/*
- * function to get the cgroup_subsys_state which allows for extra
- * rcu_dereference_check() conditions, such as locks used during the
- * cgroup_subsys::attach() methods.
+/**
+ * task_css_set_check - obtain a task's css_set with extra access conditions
+ * @task: the task to obtain css_set for
+ * @__c: extra condition expression to be passed to rcu_dereference_check()
+ *
+ * A task's css_set is RCU protected, initialized and exited while holding
+ * task_lock(), and can only be modified while holding both cgroup_mutex
+ * and task_lock() while the task is alive.  This macro verifies that the
+ * caller is inside proper critical section and returns @task's css_set.
+ *
+ * The caller can also specify additional allowed conditions via @__c, such
+ * as locks used during the cgroup_subsys::attach() methods.
+ */
+#define task_css_set_check(task, __c)					\
+	rcu_dereference_check((task)->cgroups,				\
+		lockdep_is_held(&(task)->alloc_lock) ||			\
+		cgroup_lock_is_held() || (__c))
+
+/**
+ * task_subsys_state_check - obtain css for (task, subsys) w/ extra access conds
+ * @task: the target task
+ * @subsys_id: the target subsystem ID
+ * @__c: extra condition expression to be passed to rcu_dereference_check()
+ *
+ * Return the cgroup_subsys_state for the (@task, @subsys_id) pair.  The
+ * synchronization rules are the same as task_css_set_check().
  */
 #define task_subsys_state_check(task, subsys_id, __c)			\
-	rcu_dereference_check(task->cgroups->subsys[subsys_id],		\
-			      lockdep_is_held(&task->alloc_lock) ||	\
-			      cgroup_lock_is_held() || (__c))
+	task_css_set_check((task), (__c))->subsys[(subsys_id)]
 
+/**
+ * task_css_set - obtain a task's css_set
+ * @task: the task to obtain css_set for
+ *
+ * See task_css_set_check().
+ */
+static inline struct css_set *task_css_set(struct task_struct *task)
+{
+	return task_css_set_check(task, false);
+}
+
+/**
+ * task_subsys_state - obtain css for (task, subsys)
+ * @task: the target task
+ * @subsys_id: the target subsystem ID
+ *
+ * See task_subsys_state_check().
+ */
 static inline struct cgroup_subsys_state *
 task_subsys_state(struct task_struct *task, int subsys_id)
 {

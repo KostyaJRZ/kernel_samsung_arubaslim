@@ -47,6 +47,8 @@ static struct console usbcons;
  * ------------------------------------------------------------
  */
 
+static const struct tty_operations usb_console_fake_tty_ops = {
+};
 
 /*
  * The parsing of the command line works exactly like the
@@ -113,8 +115,7 @@ static int usb_console_setup(struct console *co, char *options)
 	serial = usb_serial_get_by_index(co->index);
 	if (serial == NULL) {
 		/* no device is connected yet, sorry :( */
-		printk(KERN_ERR "No USB device connected to ttyUSB%i\n",
-		       co->index);
+		err("No USB device connected to ttyUSB%i", co->index);
 		return -ENODEV;
 	}
 
@@ -138,18 +139,21 @@ static int usb_console_setup(struct console *co, char *options)
 			tty = kzalloc(sizeof(*tty), GFP_KERNEL);
 			if (!tty) {
 				retval = -ENOMEM;
-				dev_err(&port->dev, "no more memory\n");
+				err("no more memory");
 				goto reset_open_count;
 			}
 			kref_init(&tty->kref);
-			tty_port_tty_set(&port->port, tty);
 			tty->driver = usb_serial_tty_driver;
 			tty->index = co->index;
+			INIT_LIST_HEAD(&tty->tty_files);
+			kref_get(&tty->driver->kref);
+			tty->ops = &usb_console_fake_tty_ops;
 			if (tty_init_termios(tty)) {
 				retval = -ENOMEM;
-				dev_err(&port->dev, "no more memory\n");
-				goto free_tty;
+				err("no more memory");
+				goto put_tty;
 			}
+			tty_port_tty_set(&port->port, tty);
 		}
 
 		/* only call the device specific open if this
@@ -160,7 +164,7 @@ static int usb_console_setup(struct console *co, char *options)
 			retval = usb_serial_generic_open(NULL, port);
 
 		if (retval) {
-			dev_err(&port->dev, "could not open USB console port\n");
+			err("could not open USB console port");
 			goto fail;
 		}
 
@@ -171,7 +175,7 @@ static int usb_console_setup(struct console *co, char *options)
 			serial->type->set_termios(tty, port, &dummy);
 
 			tty_port_tty_set(&port->port, NULL);
-			kfree(tty);
+			tty_kref_put(tty);
 		}
 		set_bit(ASYNCB_INITIALIZED, &port->port.flags);
 	}
@@ -187,8 +191,8 @@ static int usb_console_setup(struct console *co, char *options)
 
  fail:
 	tty_port_tty_set(&port->port, NULL);
- free_tty:
-	kfree(tty);
+ put_tty:
+	tty_kref_put(tty);
  reset_open_count:
 	port->port.count = 0;
 	usb_autopm_put_interface(serial->interface);

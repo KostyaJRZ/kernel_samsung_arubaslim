@@ -177,8 +177,6 @@
 /* PM_WKST_WKUP, CM_IDLEST_WKUP shared bits */
 #define OMAP24XX_ST_GPIOS_SHIFT				2
 #define OMAP24XX_ST_GPIOS_MASK				(1 << 2)
-#define OMAP24XX_ST_32KSYNC_SHIFT			1
-#define OMAP24XX_ST_32KSYNC_MASK			(1 << 1)
 #define OMAP24XX_ST_GPT1_SHIFT				0
 #define OMAP24XX_ST_GPT1_MASK				(1 << 0)
 
@@ -309,8 +307,6 @@
 #define OMAP3430_ST_SR1_MASK				(1 << 6)
 #define OMAP3430_ST_GPIO1_SHIFT				3
 #define OMAP3430_ST_GPIO1_MASK				(1 << 3)
-#define OMAP3430_ST_32KSYNC_SHIFT			2
-#define OMAP3430_ST_32KSYNC_MASK			(1 << 2)
 #define OMAP3430_ST_GPT12_SHIFT				1
 #define OMAP3430_ST_GPT12_MASK				(1 << 1)
 #define OMAP3430_ST_GPT1_SHIFT				0
@@ -414,19 +410,6 @@
 extern void __iomem *prm_base;
 extern void __iomem *cm_base;
 extern void __iomem *cm2_base;
-extern void __iomem *prcm_mpu_base;
-
-#if defined(CONFIG_ARCH_OMAP4) || defined(CONFIG_ARCH_OMAP5)
-extern void omap_prm_base_init(void);
-extern void omap_cm_base_init(void);
-#else
-static inline void omap_prm_base_init(void)
-{
-}
-static inline void omap_cm_base_init(void)
-{
-}
-#endif
 
 /**
  * struct omap_prcm_irq - describes a PRCM interrupt bit

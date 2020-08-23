@@ -151,7 +151,10 @@ static struct platform_device sht15 = {
 };
 
 static struct regulator_consumer_supply stargate2_sensor_3_con[] = {
-	REGULATOR_SUPPLY("vcc", "sht15"),
+	{
+		.dev_name = "sht15",
+		.supply = "vcc",
+	},
 };
 
 enum stargate2_ldos{

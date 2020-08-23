@@ -1671,7 +1671,7 @@ static int irda_usb_probe(struct usb_interface *intf,
 
 	/* Is this really necessary? (no, except maybe for broken devices) */
 	if (usb_reset_configuration (dev) < 0) {
-		dev_err(&intf->dev, "reset_configuration failed\n");
+		err("reset_configuration failed");
 		ret = -EIO;
 		goto err_out_3;
 	}

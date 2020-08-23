@@ -48,12 +48,12 @@ void nv50_dma_push(struct nouveau_channel *, struct nouveau_bo *,
 
 /* Hardcoded object assignments to subchannels (subchannel id). */
 enum {
-	NvSubCtxSurf2D  = 0,
+	NvSubM2MF	= 0,
 	NvSubSw		= 1,
-	NvSubImageBlit  = 2,
-	NvSub2D		= 3,
+	NvSub2D		= 2,
+	NvSubCtxSurf2D  = 2,
 	NvSubGdiRect    = 3,
-	NvSubCopy	= 4,
+	NvSubImageBlit  = 4
 };
 
 /* Object handles. */
@@ -73,7 +73,6 @@ enum {
 	NvSema		= 0x8000000f,
 	NvEvoSema0	= 0x80000010,
 	NvEvoSema1	= 0x80000011,
-	NvNotify1       = 0x80000012,
 
 	/* G80+ display objects */
 	NvEvoVRAM	= 0x01000000,
@@ -128,33 +127,15 @@ extern void
 OUT_RINGp(struct nouveau_channel *chan, const void *data, unsigned nr_dwords);
 
 static inline void
-BEGIN_NV04(struct nouveau_channel *chan, int subc, int mthd, int size)
+BEGIN_NVC0(struct nouveau_channel *chan, int op, int subc, int mthd, int size)
 {
-	OUT_RING(chan, 0x00000000 | (subc << 13) | (size << 18) | mthd);
+	OUT_RING(chan, (op << 28) | (size << 16) | (subc << 13) | (mthd >> 2));
 }
 
 static inline void
-BEGIN_NI04(struct nouveau_channel *chan, int subc, int mthd, int size)
+BEGIN_RING(struct nouveau_channel *chan, int subc, int mthd, int size)
 {
-	OUT_RING(chan, 0x40000000 | (subc << 13) | (size << 18) | mthd);
-}
-
-static inline void
-BEGIN_NVC0(struct nouveau_channel *chan, int subc, int mthd, int size)
-{
-	OUT_RING(chan, 0x20000000 | (size << 16) | (subc << 13) | (mthd >> 2));
-}
-
-static inline void
-BEGIN_NIC0(struct nouveau_channel *chan, int subc, int mthd, int size)
-{
-	OUT_RING(chan, 0x60000000 | (size << 16) | (subc << 13) | (mthd >> 2));
-}
-
-static inline void
-BEGIN_IMC0(struct nouveau_channel *chan, int subc, int mthd, u16 data)
-{
-	OUT_RING(chan, 0x80000000 | (data << 16) | (subc << 13) | (mthd >> 2));
+	OUT_RING(chan, (subc << 13) | (size << 18) | mthd);
 }
 
 #define WRITE_PUT(val) do {                                                    \

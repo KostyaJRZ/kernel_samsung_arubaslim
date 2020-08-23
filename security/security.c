@@ -20,10 +20,6 @@
 #include <linux/ima.h>
 #include <linux/evm.h>
 #include <linux/fsnotify.h>
-#include <linux/mman.h>
-#include <linux/mount.h>
-#include <linux/personality.h>
-#include <linux/backing-dev.h>
 #include <net/flow.h>
 
 #define MAX_LSM_EVM_XATTR	2
@@ -133,6 +129,26 @@ int __init register_security(struct security_operations *ops)
 }
 
 /* Security operations */
+
+int security_binder_set_context_mgr(struct task_struct *mgr)
+{
+	return security_ops->binder_set_context_mgr(mgr);
+}
+
+int security_binder_transaction(struct task_struct *from, struct task_struct *to)
+{
+	return security_ops->binder_transaction(from, to);
+}
+
+int security_binder_transfer_binder(struct task_struct *from, struct task_struct *to)
+{
+	return security_ops->binder_transfer_binder(from, to);
+}
+
+int security_binder_transfer_file(struct task_struct *from, struct task_struct *to, struct file *file)
+{
+	return security_ops->binder_transfer_file(from, to, file);
+}
 
 int security_ptrace_access_check(struct task_struct *child, unsigned int mode)
 {
@@ -264,8 +280,8 @@ int security_sb_statfs(struct dentry *dentry)
 	return security_ops->sb_statfs(dentry);
 }
 
-int security_sb_mount(char *dev_name, struct path *path,
-                       char *type, unsigned long flags, void *data)
+int security_sb_mount(const char *dev_name, struct path *path,
+                       const char *type, unsigned long flags, void *data)
 {
 	return security_ops->sb_mount(dev_name, path, type, flags, data);
 }
@@ -661,54 +677,16 @@ int security_file_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return security_ops->file_ioctl(file, cmd, arg);
 }
 
-static inline unsigned long mmap_prot(struct file *file, unsigned long prot)
-{
-	/*
-	 * Does we have PROT_READ and does the application expect
-	 * it to imply PROT_EXEC?  If not, nothing to talk about...
-	 */
-	if ((prot & (PROT_READ | PROT_EXEC)) != PROT_READ)
-		return prot;
-	if (!(current->personality & READ_IMPLIES_EXEC))
-		return prot;
-	/*
-	 * if that's an anonymous mapping, let it.
-	 */
-	if (!file)
-		return prot | PROT_EXEC;
-	/*
-	 * ditto if it's not on noexec mount, except that on !MMU we need
-	 * BDI_CAP_EXEC_MMAP (== VM_MAYEXEC) in this case
-	 */
-	if (!(file->f_path.mnt->mnt_flags & MNT_NOEXEC)) {
-#ifndef CONFIG_MMU
-		unsigned long caps = 0;
-		struct address_space *mapping = file->f_mapping;
-		if (mapping && mapping->backing_dev_info)
-			caps = mapping->backing_dev_info->capabilities;
-		if (!(caps & BDI_CAP_EXEC_MAP))
-			return prot;
-#endif
-		return prot | PROT_EXEC;
-	}
-	/* anything on noexec mount won't get PROT_EXEC */
-	return prot;
-}
-
-int security_mmap_file(struct file *file, unsigned long prot,
-			unsigned long flags)
+int security_file_mmap(struct file *file, unsigned long reqprot,
+			unsigned long prot, unsigned long flags,
+			unsigned long addr, unsigned long addr_only)
 {
 	int ret;
-	ret = security_ops->mmap_file(file, prot,
-					mmap_prot(file, prot), flags);
+
+	ret = security_ops->file_mmap(file, reqprot, prot, flags, addr, addr_only);
 	if (ret)
 		return ret;
 	return ima_file_mmap(file, prot);
-}
-
-int security_mmap_addr(unsigned long addr)
-{
-	return security_ops->mmap_addr(addr);
 }
 
 int security_file_mprotect(struct vm_area_struct *vma, unsigned long reqprot,
@@ -743,11 +721,11 @@ int security_file_receive(struct file *file)
 	return security_ops->file_receive(file);
 }
 
-int security_file_open(struct file *file, const struct cred *cred)
+int security_dentry_open(struct file *file, const struct cred *cred)
 {
 	int ret;
 
-	ret = security_ops->file_open(file, cred);
+	ret = security_ops->dentry_open(file, cred);
 	if (ret)
 		return ret;
 
@@ -797,6 +775,11 @@ int security_kernel_create_files_as(struct cred *new, struct inode *inode)
 int security_kernel_module_request(char *kmod_name)
 {
 	return security_ops->kernel_module_request(kmod_name);
+}
+
+int security_kernel_module_from_file(struct file *file)
+{
+	return security_ops->kernel_module_from_file(file);
 }
 
 int security_task_fix_setuid(struct cred *new, const struct cred *old,

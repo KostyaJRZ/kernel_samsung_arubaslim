@@ -3,6 +3,12 @@
 
 struct target_core_fabric_ops {
 	struct configfs_subsystem *tf_subsys;
+	/*
+	 * Optional to signal struct se_task->task_sg[] padding entries
+	 * for scatterlist chaining using transport_do_task_sg_link(),
+	 * disabled by default
+	 */
+	bool task_sg_chaining;
 	char *(*get_fabric_name)(void);
 	u8 (*get_fabric_proto_ident)(struct se_portal_group *);
 	char *(*tpg_get_wwn)(struct se_portal_group *);
@@ -47,7 +53,6 @@ struct target_core_fabric_ops {
 	 */
 	int (*check_stop_free)(struct se_cmd *);
 	void (*release_cmd)(struct se_cmd *);
-	void (*put_session)(struct se_session *);
 	/*
 	 * Called with spin_lock_bh(struct se_portal_group->session_lock held.
 	 */
@@ -97,7 +102,7 @@ void	__transport_register_session(struct se_portal_group *,
 void	transport_register_session(struct se_portal_group *,
 		struct se_node_acl *, struct se_session *, void *);
 void	target_get_session(struct se_session *);
-void	target_put_session(struct se_session *);
+int	target_put_session(struct se_session *);
 void	transport_free_session(struct se_session *);
 void	target_put_nacl(struct se_node_acl *);
 void	transport_deregister_session_configfs(struct se_session *);
@@ -119,6 +124,7 @@ int	transport_generic_handle_cdb_map(struct se_cmd *);
 int	transport_generic_handle_data(struct se_cmd *);
 int	transport_generic_map_mem_to_cmd(struct se_cmd *cmd,
 		struct scatterlist *, u32, struct scatterlist *, u32);
+void	transport_do_task_sg_chain(struct se_cmd *);
 int	transport_generic_new_cmd(struct se_cmd *);
 
 void	transport_generic_process_write(struct se_cmd *);

@@ -45,7 +45,6 @@
 #include <linux/clk.h>
 #include <linux/dma-mapping.h>
 #include <linux/io.h>
-#include <linux/pinctrl/consumer.h>
 #include <mach/mxsfb.h>
 
 #define REG_SET	4
@@ -367,7 +366,8 @@ static void mxsfb_disable_controller(struct fb_info *fb_info)
 		loop--;
 	}
 
-	writel(VDCTRL4_SYNC_SIGNALS_ON, host->base + LCDC_VDCTRL4 + REG_CLR);
+	reg = readl(host->base + LCDC_VDCTRL4);
+	writel(reg & ~VDCTRL4_SYNC_SIGNALS_ON, host->base + LCDC_VDCTRL4);
 
 	clk_disable_unprepare(host->clk);
 
@@ -757,7 +757,6 @@ static int __devinit mxsfb_probe(struct platform_device *pdev)
 	struct mxsfb_info *host;
 	struct fb_info *fb_info;
 	struct fb_modelist *modelist;
-	struct pinctrl *pinctrl;
 	int i, ret;
 
 	if (!pdata) {
@@ -794,12 +793,6 @@ static int __devinit mxsfb_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, host);
 
 	host->devdata = &mxsfb_devdata[pdev->id_entry->driver_data];
-
-	pinctrl = devm_pinctrl_get_select_default(&pdev->dev);
-	if (IS_ERR(pinctrl)) {
-		ret = PTR_ERR(pinctrl);
-		goto error_getpin;
-	}
 
 	host->clk = clk_get(&host->pdev->dev, NULL);
 	if (IS_ERR(host->clk)) {
@@ -856,7 +849,6 @@ error_init_fb:
 error_pseudo_pallette:
 	clk_put(host->clk);
 error_getclock:
-error_getpin:
 	iounmap(host->base);
 error_ioremap:
 	framebuffer_release(fb_info);
@@ -889,18 +881,6 @@ static int __devexit mxsfb_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static void mxsfb_shutdown(struct platform_device *pdev)
-{
-	struct fb_info *fb_info = platform_get_drvdata(pdev);
-	struct mxsfb_info *host = to_imxfb_host(fb_info);
-
-	/*
-	 * Force stop the LCD controller as keeping it running during reboot
-	 * might interfere with the BootROM's boot mode pads sampling.
-	 */
-	writel(CTRL_RUN, host->base + LCDC_CTRL + REG_CLR);
-}
-
 static struct platform_device_id mxsfb_devtype[] = {
 	{
 		.name = "imx23-fb",
@@ -917,7 +897,6 @@ MODULE_DEVICE_TABLE(platform, mxsfb_devtype);
 static struct platform_driver mxsfb_driver = {
 	.probe = mxsfb_probe,
 	.remove = __devexit_p(mxsfb_remove),
-	.shutdown = mxsfb_shutdown,
 	.id_table = mxsfb_devtype,
 	.driver = {
 		   .name = DRIVER_NAME,

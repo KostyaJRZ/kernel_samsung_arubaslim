@@ -1380,7 +1380,6 @@ static void de_free_rings (struct de_private *de)
 static int de_open (struct net_device *dev)
 {
 	struct de_private *de = netdev_priv(dev);
-	const int irq = de->pdev->irq;
 	int rc;
 
 	netif_dbg(de, ifup, dev, "enabling interface\n");
@@ -1395,9 +1394,10 @@ static int de_open (struct net_device *dev)
 
 	dw32(IntrMask, 0);
 
-	rc = request_irq(irq, de_interrupt, IRQF_SHARED, dev->name, dev);
+	rc = request_irq(dev->irq, de_interrupt, IRQF_SHARED, dev->name, dev);
 	if (rc) {
-		netdev_err(dev, "IRQ %d request failure, err=%d\n", irq, rc);
+		netdev_err(dev, "IRQ %d request failure, err=%d\n",
+			   dev->irq, rc);
 		goto err_out_free;
 	}
 
@@ -1413,7 +1413,7 @@ static int de_open (struct net_device *dev)
 	return 0;
 
 err_out_free_irq:
-	free_irq(irq, dev);
+	free_irq(dev->irq, dev);
 err_out_free:
 	de_free_rings(de);
 	return rc;
@@ -1434,7 +1434,7 @@ static int de_close (struct net_device *dev)
 	netif_carrier_off(dev);
 	spin_unlock_irqrestore(&de->lock, flags);
 
-	free_irq(de->pdev->irq, dev);
+	free_irq(dev->irq, dev);
 
 	de_free_rings(de);
 	de_adapter_sleep(de);
@@ -1444,7 +1444,6 @@ static int de_close (struct net_device *dev)
 static void de_tx_timeout (struct net_device *dev)
 {
 	struct de_private *de = netdev_priv(dev);
-	const int irq = de->pdev->irq;
 
 	netdev_dbg(dev, "NIC status %08x mode %08x sia %08x desc %u/%u/%u\n",
 		   dr32(MacStatus), dr32(MacMode), dr32(SIAStatus),
@@ -1452,7 +1451,7 @@ static void de_tx_timeout (struct net_device *dev)
 
 	del_timer_sync(&de->media_timer);
 
-	disable_irq(irq);
+	disable_irq(dev->irq);
 	spin_lock_irq(&de->lock);
 
 	de_stop_hw(de);
@@ -1460,12 +1459,12 @@ static void de_tx_timeout (struct net_device *dev)
 	netif_carrier_off(dev);
 
 	spin_unlock_irq(&de->lock);
-	enable_irq(irq);
+	enable_irq(dev->irq);
 
 	/* Update the error counts. */
 	__de_get_stats(de);
 
-	synchronize_irq(irq);
+	synchronize_irq(dev->irq);
 	de_clean_rings(de);
 
 	de_init_rings(de);
@@ -2025,6 +2024,8 @@ static int __devinit de_init_one (struct pci_dev *pdev,
 		goto err_out_res;
 	}
 
+	dev->irq = pdev->irq;
+
 	/* obtain and check validity of PCI I/O address */
 	pciaddr = pci_resource_start(pdev, 1);
 	if (!pciaddr) {
@@ -2049,6 +2050,7 @@ static int __devinit de_init_one (struct pci_dev *pdev,
 		       pciaddr, pci_name(pdev));
 		goto err_out_res;
 	}
+	dev->base_addr = (unsigned long) regs;
 	de->regs = regs;
 
 	de_adapter_wake(de);
@@ -2076,9 +2078,11 @@ static int __devinit de_init_one (struct pci_dev *pdev,
 		goto err_out_iomap;
 
 	/* print info about board and interface just registered */
-	netdev_info(dev, "%s at %p, %pM, IRQ %d\n",
+	netdev_info(dev, "%s at 0x%lx, %pM, IRQ %d\n",
 		    de->de21040 ? "21040" : "21041",
-		    regs, dev->dev_addr, pdev->irq);
+		    dev->base_addr,
+		    dev->dev_addr,
+		    dev->irq);
 
 	pci_set_drvdata(pdev, dev);
 
@@ -2126,11 +2130,9 @@ static int de_suspend (struct pci_dev *pdev, pm_message_t state)
 
 	rtnl_lock();
 	if (netif_running (dev)) {
-		const int irq = pdev->irq;
-
 		del_timer_sync(&de->media_timer);
 
-		disable_irq(irq);
+		disable_irq(dev->irq);
 		spin_lock_irq(&de->lock);
 
 		de_stop_hw(de);
@@ -2139,12 +2141,12 @@ static int de_suspend (struct pci_dev *pdev, pm_message_t state)
 		netif_carrier_off(dev);
 
 		spin_unlock_irq(&de->lock);
-		enable_irq(irq);
+		enable_irq(dev->irq);
 
 		/* Update the error counts. */
 		__de_get_stats(de);
 
-		synchronize_irq(irq);
+		synchronize_irq(dev->irq);
 		de_clean_rings(de);
 
 		de_adapter_sleep(de);

@@ -667,4 +667,15 @@ static struct pci_driver p54p_driver = {
 	.driver.pm	= P54P_PM_OPS,
 };
 
-module_pci_driver(p54p_driver);
+static int __init p54p_init(void)
+{
+	return pci_register_driver(&p54p_driver);
+}
+
+static void __exit p54p_exit(void)
+{
+	pci_unregister_driver(&p54p_driver);
+}
+
+module_init(p54p_init);
+module_exit(p54p_exit);

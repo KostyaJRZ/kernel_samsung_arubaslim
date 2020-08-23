@@ -75,6 +75,13 @@
 #endif
 
 /*
+ * Store all idle threads, this can be reused instead of creating
+ * a new thread. Also avoids complicated thread destroy functionality
+ * for idle threads.
+ */
+struct task_struct *idle_thread_array[NR_CPUS];
+
+/*
  * Global array allocated for NR_CPUS at boot time
  */
 struct sal_to_os_boot sal_boot_rendez_state[NR_CPUS];
@@ -87,7 +94,13 @@ struct sal_to_os_boot *sal_state_for_booting_cpu = &sal_boot_rendez_state[0];
 
 #define set_brendez_area(x) (sal_state_for_booting_cpu = &sal_boot_rendez_state[(x)]);
 
+#define get_idle_for_cpu(x)		(idle_thread_array[(x)])
+#define set_idle_for_cpu(x,p)	(idle_thread_array[(x)] = (p))
+
 #else
+
+#define get_idle_for_cpu(x)		(NULL)
+#define set_idle_for_cpu(x,p)
 #define set_brendez_area(x)
 #endif
 
@@ -467,12 +480,54 @@ struct pt_regs * __cpuinit idle_regs(struct pt_regs *regs)
 	return NULL;
 }
 
+struct create_idle {
+	struct work_struct work;
+	struct task_struct *idle;
+	struct completion done;
+	int cpu;
+};
+
+void __cpuinit
+do_fork_idle(struct work_struct *work)
+{
+	struct create_idle *c_idle =
+		container_of(work, struct create_idle, work);
+
+	c_idle->idle = fork_idle(c_idle->cpu);
+	complete(&c_idle->done);
+}
+
 static int __cpuinit
-do_boot_cpu (int sapicid, int cpu, struct task_struct *idle)
+do_boot_cpu (int sapicid, int cpu)
 {
 	int timeout;
+	struct create_idle c_idle = {
+		.work = __WORK_INITIALIZER(c_idle.work, do_fork_idle),
+		.cpu	= cpu,
+		.done	= COMPLETION_INITIALIZER(c_idle.done),
+	};
 
-	task_for_booting_cpu = idle;
+	/*
+	 * We can't use kernel_thread since we must avoid to
+	 * reschedule the child.
+	 */
+ 	c_idle.idle = get_idle_for_cpu(cpu);
+ 	if (c_idle.idle) {
+		init_idle(c_idle.idle, cpu);
+ 		goto do_rest;
+	}
+
+	schedule_work(&c_idle.work);
+	wait_for_completion(&c_idle.done);
+
+	if (IS_ERR(c_idle.idle))
+		panic("failed fork for CPU %d", cpu);
+
+	set_idle_for_cpu(cpu, c_idle.idle);
+
+do_rest:
+	task_for_booting_cpu = c_idle.idle;
+
 	Dprintk("Sending wakeup vector %lu to AP 0x%x/0x%x.\n", ap_wakeup_vector, cpu, sapicid);
 
 	set_brendez_area(cpu);
@@ -738,7 +793,7 @@ set_cpu_sibling_map(int cpu)
 }
 
 int __cpuinit
-__cpu_up(unsigned int cpu, struct task_struct *tidle)
+__cpu_up (unsigned int cpu)
 {
 	int ret;
 	int sapicid;
@@ -756,7 +811,7 @@ __cpu_up(unsigned int cpu, struct task_struct *tidle)
 
 	per_cpu(cpu_state, cpu) = CPU_UP_PREPARE;
 	/* Processor goes to start_secondary(), sets online flag */
-	ret = do_boot_cpu(sapicid, cpu, tidle);
+	ret = do_boot_cpu(sapicid, cpu);
 	if (ret < 0)
 		return ret;
 

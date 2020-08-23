@@ -29,6 +29,7 @@
 #define _SUCCESS	1
 #define _FAIL		0
 
+#include <linux/version.h>
 #include <linux/spinlock.h>
 
 #include <linux/interrupt.h>
@@ -105,6 +106,8 @@ static inline void _set_workitem(_workitem *pwork)
 {
 	schedule_work(pwork);
 }
+
+#include "rtl871x_byteorder.h"
 
 #ifndef BIT
 	#define BIT(x)	(1 << (x))

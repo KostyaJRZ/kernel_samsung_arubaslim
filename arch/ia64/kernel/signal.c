@@ -30,6 +30,7 @@
 
 #define DEBUG_SIG	0
 #define STACK_ALIGN	16		/* minimal alignment for stack pointer */
+#define _BLOCKABLE	(~(sigmask(SIGKILL) | sigmask(SIGSTOP)))
 
 #if _NSIG_WORDS > 1
 # define PUT_SIGSET(k,u)	__copy_to_user((u)->sig, (k)->sig, sizeof(sigset_t))
@@ -199,7 +200,14 @@ ia64_rt_sigreturn (struct sigscratch *scr)
 	if (GET_SIGSET(&set, &sc->sc_mask))
 		goto give_sigsegv;
 
-	set_current_blocked(&set);
+	sigdelsetmask(&set, ~_BLOCKABLE);
+
+	spin_lock_irq(&current->sighand->siglock);
+	{
+		current->blocked = set;
+		recalc_sigpending();
+	}
+	spin_unlock_irq(&current->sighand->siglock);
 
 	if (restore_sigcontext(sc, scr))
 		goto give_sigsegv;
@@ -413,13 +421,23 @@ setup_frame (int sig, struct k_sigaction *ka, siginfo_t *info, sigset_t *set,
 }
 
 static long
-handle_signal (unsigned long sig, struct k_sigaction *ka, siginfo_t *info,
+handle_signal (unsigned long sig, struct k_sigaction *ka, siginfo_t *info, sigset_t *oldset,
 	       struct sigscratch *scr)
 {
-	if (!setup_frame(sig, ka, info, sigmask_to_save(), scr))
+	if (!setup_frame(sig, ka, info, oldset, scr))
 		return 0;
 
-	signal_delivered(sig, info, ka, &scr->pt,
+	spin_lock_irq(&current->sighand->siglock);
+	sigorsets(&current->blocked, &current->blocked, &ka->sa.sa_mask);
+	if (!(ka->sa.sa_flags & SA_NODEFER))
+		sigaddset(&current->blocked, sig);
+	recalc_sigpending();
+	spin_unlock_irq(&current->sighand->siglock);
+
+	/*
+	 * Let tracing know that we've done the handler setup.
+	 */
+	tracehook_signal_handler(sig, info, ka, &scr->pt,
 				 test_thread_flag(TIF_SINGLESTEP));
 
 	return 1;
@@ -433,6 +451,7 @@ void
 ia64_do_signal (struct sigscratch *scr, long in_syscall)
 {
 	struct k_sigaction ka;
+	sigset_t *oldset;
 	siginfo_t info;
 	long restart = in_syscall;
 	long errno = scr->pt.r8;
@@ -444,6 +463,11 @@ ia64_do_signal (struct sigscratch *scr, long in_syscall)
 	 */
 	if (!user_mode(&scr->pt))
 		return;
+
+	if (current_thread_info()->status & TS_RESTORE_SIGMASK)
+		oldset = &current->saved_sigmask;
+	else
+		oldset = &current->blocked;
 
 	/*
 	 * This only loops in the rare cases of handle_signal() failing, in which case we
@@ -494,8 +518,16 @@ ia64_do_signal (struct sigscratch *scr, long in_syscall)
 		 * Whee!  Actually deliver the signal.  If the delivery failed, we need to
 		 * continue to iterate in this loop so we can deliver the SIGSEGV...
 		 */
-		if (handle_signal(signr, &ka, &info, scr))
+		if (handle_signal(signr, &ka, &info, oldset, scr)) {
+			/*
+			 * A signal was successfully delivered; the saved
+			 * sigmask will have been stored in the signal frame,
+			 * and will be restored by sigreturn, so we can simply
+			 * clear the TS_RESTORE_SIGMASK flag.
+			 */
+			current_thread_info()->status &= ~TS_RESTORE_SIGMASK;
 			return;
+		}
 	}
 
 	/* Did we come from a system call? */
@@ -517,5 +549,8 @@ ia64_do_signal (struct sigscratch *scr, long in_syscall)
 
 	/* if there's no signal to deliver, we just put the saved sigmask
 	 * back */
-	restore_saved_sigmask();
+	if (current_thread_info()->status & TS_RESTORE_SIGMASK) {
+		current_thread_info()->status &= ~TS_RESTORE_SIGMASK;
+		sigprocmask(SIG_SETMASK, &current->saved_sigmask, NULL);
+	}
 }

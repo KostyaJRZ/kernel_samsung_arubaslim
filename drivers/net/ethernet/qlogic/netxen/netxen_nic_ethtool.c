@@ -834,7 +834,7 @@ netxen_get_dump_flag(struct net_device *netdev, struct ethtool_dump *dump)
 static int
 netxen_set_dump(struct net_device *netdev, struct ethtool_dump *val)
 {
-	int i;
+	int ret = 0;
 	struct netxen_adapter *adapter = netdev_priv(netdev);
 	struct netxen_minidump *mdump = &adapter->mdump;
 
@@ -844,7 +844,7 @@ netxen_set_dump(struct net_device *netdev, struct ethtool_dump *val)
 			mdump->md_enabled = 1;
 		if (adapter->fw_mdump_rdy) {
 			netdev_info(netdev, "Previous dump not cleared, not forcing dump\n");
-			return 0;
+			return ret;
 		}
 		netdev_info(netdev, "Forcing a fw dump\n");
 		nx_dev_request_reset(adapter);
@@ -867,21 +867,19 @@ netxen_set_dump(struct net_device *netdev, struct ethtool_dump *val)
 		adapter->flags &= ~NETXEN_FW_RESET_OWNER;
 		break;
 	default:
-		for (i = 0; i < ARRAY_SIZE(FW_DUMP_LEVELS); i++) {
-			if (val->flag == FW_DUMP_LEVELS[i]) {
-				mdump->md_capture_mask = val->flag;
-				netdev_info(netdev,
-					"Driver mask changed to: 0x%x\n",
+		if (val->flag <= NX_DUMP_MASK_MAX &&
+			val->flag >= NX_DUMP_MASK_MIN) {
+			mdump->md_capture_mask = val->flag & 0xff;
+			netdev_info(netdev, "Driver mask changed to: 0x%x\n",
 					mdump->md_capture_mask);
-				return 0;
-			}
+			break;
 		}
 		netdev_info(netdev,
 			"Invalid dump level: 0x%x\n", val->flag);
 		return -EINVAL;
 	}
 
-	return 0;
+	return ret;
 }
 
 static int

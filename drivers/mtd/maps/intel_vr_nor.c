@@ -260,7 +260,18 @@ static struct pci_driver vr_nor_pci_driver = {
 	.id_table = vr_nor_pci_ids,
 };
 
-module_pci_driver(vr_nor_pci_driver);
+static int __init vr_nor_mtd_init(void)
+{
+	return pci_register_driver(&vr_nor_pci_driver);
+}
+
+static void __exit vr_nor_mtd_exit(void)
+{
+	pci_unregister_driver(&vr_nor_pci_driver);
+}
+
+module_init(vr_nor_mtd_init);
+module_exit(vr_nor_mtd_exit);
 
 MODULE_AUTHOR("Andy Lowe");
 MODULE_DESCRIPTION("MTD map driver for NOR flash on Intel Vermilion Range");

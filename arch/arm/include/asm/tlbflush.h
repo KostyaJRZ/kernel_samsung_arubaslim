@@ -65,6 +65,21 @@
 #define MULTI_TLB 1
 #endif
 
+#define v3_tlb_flags	(TLB_V3_FULL | TLB_V3_PAGE)
+
+#ifdef CONFIG_CPU_TLB_V3
+# define v3_possible_flags	v3_tlb_flags
+# define v3_always_flags	v3_tlb_flags
+# ifdef _TLB
+#  define MULTI_TLB 1
+# else
+#  define _TLB v3
+# endif
+#else
+# define v3_possible_flags	0
+# define v3_always_flags	(-1UL)
+#endif
+
 #define v4_tlb_flags	(TLB_V4_U_FULL | TLB_V4_U_PAGE)
 
 #ifdef CONFIG_CPU_TLB_V4WT
@@ -283,7 +298,8 @@ extern struct cpu_tlb_fns cpu_tlb;
  * implemented the "%?" method, but this has been discontinued due to too
  * many people getting it wrong.
  */
-#define possible_tlb_flags	(v4_possible_flags | \
+#define possible_tlb_flags	(v3_possible_flags | \
+				 v4_possible_flags | \
 				 v4wbi_possible_flags | \
 				 fr_possible_flags | \
 				 v4wb_possible_flags | \
@@ -291,7 +307,8 @@ extern struct cpu_tlb_fns cpu_tlb;
 				 v6wbi_possible_flags | \
 				 v7wbi_possible_flags)
 
-#define always_tlb_flags	(v4_always_flags & \
+#define always_tlb_flags	(v3_always_flags & \
+				 v4_always_flags & \
 				 v4wbi_always_flags & \
 				 fr_always_flags & \
 				 v4wb_always_flags & \
@@ -392,7 +409,7 @@ local_flush_tlb_page(struct vm_area_struct *vma, unsigned long uaddr)
 	tlb_op(TLB_V6_U_PAGE, "c8, c7, 1", uaddr);
 	tlb_op(TLB_V6_D_PAGE, "c8, c6, 1", uaddr);
 	tlb_op(TLB_V6_I_PAGE, "c8, c5, 1", uaddr);
-#ifdef CONFIG_ARM_ERRATA_720789
+#if defined(CONFIG_ARM_ERRATA_720789) || defined(CONFIG_ARCH_MSM8X60)
 	tlb_op(TLB_V7_UIS_PAGE, "c8, c3, 3", uaddr & PAGE_MASK);
 #else
 	tlb_op(TLB_V7_UIS_PAGE, "c8, c3, 1", uaddr);
@@ -422,7 +439,11 @@ static inline void local_flush_tlb_kernel_page(unsigned long kaddr)
 	tlb_op(TLB_V6_U_PAGE, "c8, c7, 1", kaddr);
 	tlb_op(TLB_V6_D_PAGE, "c8, c6, 1", kaddr);
 	tlb_op(TLB_V6_I_PAGE, "c8, c5, 1", kaddr);
+#ifdef CONFIG_ARCH_MSM8X60
+	tlb_op(TLB_V7_UIS_PAGE, "c8, c3, 3", kaddr);
+#else
 	tlb_op(TLB_V7_UIS_PAGE, "c8, c3, 1", kaddr);
+#endif
 
 	if (tlb_flag(TLB_BARRIER)) {
 		dsb();

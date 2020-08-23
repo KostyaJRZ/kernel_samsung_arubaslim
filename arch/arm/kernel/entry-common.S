@@ -53,13 +53,9 @@ fast_work_pending:
 work_pending:
 	tst	r1, #_TIF_NEED_RESCHED
 	bne	work_resched
-	/*
-	 * TIF_SIGPENDING or TIF_NOTIFY_RESUME must've been set if we got here
-	 */
-	ldr	r2, [sp, #S_PSR]
+	tst	r1, #_TIF_SIGPENDING|_TIF_NOTIFY_RESUME
+	beq	no_work_pending
 	mov	r0, sp				@ 'regs'
-	tst	r2, #15				@ are we returning to user mode?
-	bne	no_work_pending			@ no?  just leave, then...
 	mov	r2, why				@ 'syscall'
 	tst	r1, #_TIF_SIGPENDING		@ delivering a signal?
 	movne	why, #0				@ prevent further restarts
@@ -339,6 +335,20 @@ ENDPROC(ftrace_stub)
  *-----------------------------------------------------------------------------
  */
 
+	/* If we're optimising for StrongARM the resulting code won't 
+	   run on an ARM7 and we can save a couple of instructions.  
+								--pb */
+#ifdef CONFIG_CPU_ARM710
+#define A710(code...) code
+.Larm710bug:
+	ldmia	sp, {r0 - lr}^			@ Get calling r0 - lr
+	mov	r0, r0
+	add	sp, sp, #S_FRAME_SIZE
+	subs	pc, lr, #4
+#else
+#define A710(code...)
+#endif
+
 	.align	5
 ENTRY(vector_swi)
 	sub	sp, sp, #S_FRAME_SIZE
@@ -369,6 +379,9 @@ ENTRY(vector_swi)
 	ldreq	r10, [lr, #-4]			@ get SWI instruction
 #else
 	ldr	r10, [lr, #-4]			@ get SWI instruction
+  A710(	and	ip, r10, #0x0f000000		@ check for SWI		)
+  A710(	teq	ip, #0x0f000000						)
+  A710(	bne	.Larm710bug						)
 #endif
 #ifdef CONFIG_CPU_ENDIAN_BE8
 	rev	r10, r10			@ little endian instruction
@@ -379,15 +392,26 @@ ENTRY(vector_swi)
 	/*
 	 * Pure EABI user space always put syscall number into scno (r7).
 	 */
+  A710(	ldr	ip, [lr, #-4]			@ get SWI instruction	)
+  A710(	and	ip, ip, #0x0f000000		@ check for SWI		)
+  A710(	teq	ip, #0x0f000000						)
+  A710(	bne	.Larm710bug						)
+
 #elif defined(CONFIG_ARM_THUMB)
+
 	/* Legacy ABI only, possibly thumb mode. */
 	tst	r8, #PSR_T_BIT			@ this is SPSR from save_user_regs
 	addne	scno, r7, #__NR_SYSCALL_BASE	@ put OS number in
 	ldreq	scno, [lr, #-4]
 
 #else
+
 	/* Legacy ABI only. */
 	ldr	scno, [lr, #-4]			@ get SWI instruction
+  A710(	and	ip, scno, #0x0f000000		@ check for SWI		)
+  A710(	teq	ip, #0x0f000000						)
+  A710(	bne	.Larm710bug						)
+
 #endif
 
 #ifdef CONFIG_ALIGNMENT_TRAP
@@ -420,12 +444,7 @@ ENTRY(vector_swi)
 
 #ifdef CONFIG_SECCOMP
 	tst	r10, #_TIF_SECCOMP
-	beq	1f
-	mov	r0, scno
-	bl	__secure_computing	
-	add	r0, sp, #S_R0 + S_OFF		@ pointer to regs
-	ldmia	r0, {r0 - r3}			@ have to reload r0 - r3
-1:
+	bne	__sys_trace
 #endif
 
 	tst	r10, #_TIF_SYSCALL_WORK		@ are we tracing syscalls?

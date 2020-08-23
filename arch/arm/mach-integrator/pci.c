@@ -70,10 +70,21 @@
  */
 static u8 __init integrator_swizzle(struct pci_dev *dev, u8 *pinp)
 {
-	if (*pinp == 0)
-		*pinp = 1;
+	int pin = *pinp;
 
-	return pci_common_swizzle(dev, pinp);
+	if (pin == 0)
+		pin = 1;
+
+	while (dev->bus->self) {
+		pin = pci_swizzle_interrupt_pin(dev, pin);
+		/*
+		 * move up the chain of bridges, swizzling as we go.
+		 */
+		dev = dev->bus->self;
+	}
+	*pinp = pin;
+
+	return PCI_SLOT(dev->devfn);
 }
 
 static int irq_tab[4] __initdata = {
@@ -98,7 +109,7 @@ static struct hw_pci integrator_pci __initdata = {
 	.map_irq		= integrator_map_irq,
 	.setup			= pci_v3_setup,
 	.nr_controllers		= 1,
-	.ops			= &pci_v3_ops,
+	.scan			= pci_v3_scan_bus,
 	.preinit		= pci_v3_preinit,
 	.postinit		= pci_v3_postinit,
 };

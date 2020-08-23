@@ -134,7 +134,12 @@ static int dm9161_config_init(struct phy_device *phydev)
 		return err;
 
 	/* Reconnect the PHY, and enable Autonegotiation */
-	return phy_write(phydev, MII_BMCR, BMCR_ANENABLE);
+	err = phy_write(phydev, MII_BMCR, BMCR_ANENABLE);
+
+	if (err < 0)
+		return err;
+
+	return 0;
 }
 
 static int dm9161_ack_interrupt(struct phy_device *phydev)

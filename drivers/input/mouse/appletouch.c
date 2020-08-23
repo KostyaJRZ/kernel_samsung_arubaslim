@@ -195,7 +195,6 @@ enum atp_status_bits {
 struct atp {
 	char			phys[64];
 	struct usb_device	*udev;		/* usb device */
-	struct usb_interface	*intf;		/* usb interface */
 	struct urb		*urb;		/* usb request block */
 	u8			*data;		/* transferred data */
 	struct input_dev	*input;		/* input dev */
@@ -254,9 +253,8 @@ MODULE_PARM_DESC(debug, "Activate debugging output");
  * packets (Report ID 2). This code changes device mode, so it
  * sends raw sensor reports (Report ID 5).
  */
-static int atp_geyser_init(struct atp *dev)
+static int atp_geyser_init(struct usb_device *udev)
 {
-	struct usb_device *udev = dev->udev;
 	char *data;
 	int size;
 	int i;
@@ -264,7 +262,7 @@ static int atp_geyser_init(struct atp *dev)
 
 	data = kmalloc(8, GFP_KERNEL);
 	if (!data) {
-		dev_err(&dev->intf->dev, "Out of memory\n");
+		err("Out of memory");
 		return -ENOMEM;
 	}
 
@@ -279,7 +277,7 @@ static int atp_geyser_init(struct atp *dev)
 		for (i = 0; i < 8; i++)
 			dprintk("appletouch[%d]: %d\n", i, data[i]);
 
-		dev_err(&dev->intf->dev, "Failed to read mode from device.\n");
+		err("Failed to read mode from device.");
 		ret = -EIO;
 		goto out_free;
 	}
@@ -298,7 +296,7 @@ static int atp_geyser_init(struct atp *dev)
 		for (i = 0; i < 8; i++)
 			dprintk("appletouch[%d]: %d\n", i, data[i]);
 
-		dev_err(&dev->intf->dev, "Failed to request geyser raw mode\n");
+		err("Failed to request geyser raw mode");
 		ret = -EIO;
 		goto out_free;
 	}
@@ -315,16 +313,16 @@ out_free:
 static void atp_reinit(struct work_struct *work)
 {
 	struct atp *dev = container_of(work, struct atp, work);
+	struct usb_device *udev = dev->udev;
 	int retval;
 
 	dprintk("appletouch: putting appletouch to sleep (reinit)\n");
-	atp_geyser_init(dev);
+	atp_geyser_init(udev);
 
 	retval = usb_submit_urb(dev->urb, GFP_ATOMIC);
 	if (retval)
-		dev_err(&dev->intf->dev,
-			"atp_reinit: usb_submit_urb failed with error %d\n",
-			retval);
+		err("atp_reinit: usb_submit_urb failed with error %d",
+		    retval);
 }
 
 static int atp_calculate_abs(int *xy_sensors, int nb_sensors, int fact,
@@ -402,7 +400,6 @@ static inline void atp_report_fingers(struct input_dev *input, int fingers)
 static int atp_status_check(struct urb *urb)
 {
 	struct atp *dev = urb->context;
-	struct usb_interface *intf = dev->intf;
 
 	switch (urb->status) {
 	case 0:
@@ -410,8 +407,8 @@ static int atp_status_check(struct urb *urb)
 		break;
 	case -EOVERFLOW:
 		if (!dev->overflow_warned) {
-			dev_warn(&intf->dev,
-				"appletouch: OVERFLOW with data length %d, actual length is %d\n",
+			printk(KERN_WARNING "appletouch: OVERFLOW with data "
+				"length %d, actual length is %d\n",
 				dev->info->datalen, dev->urb->actual_length);
 			dev->overflow_warned = true;
 		}
@@ -419,15 +416,13 @@ static int atp_status_check(struct urb *urb)
 	case -ENOENT:
 	case -ESHUTDOWN:
 		/* This urb is terminated, clean up */
-		dev_dbg(&intf->dev,
-			"atp_complete: urb shutting down with status: %d\n",
-			urb->status);
+		dbg("atp_complete: urb shutting down with status: %d",
+		    urb->status);
 		return ATP_URB_STATUS_ERROR_FATAL;
 
 	default:
-		dev_dbg(&intf->dev,
-			"atp_complete: nonzero urb status received: %d\n",
-			urb->status);
+		dbg("atp_complete: nonzero urb status received: %d",
+		    urb->status);
 		return ATP_URB_STATUS_ERROR;
 	}
 
@@ -450,8 +445,7 @@ static void atp_detect_size(struct atp *dev)
 	for (i = dev->info->xsensors; i < ATP_XSENSORS; i++) {
 		if (dev->xy_cur[i]) {
 
-			dev_info(&dev->intf->dev,
-				"appletouch: 17\" model detected.\n");
+			printk(KERN_INFO "appletouch: 17\" model detected.\n");
 
 			input_set_abs_params(dev->input, ABS_X, 0,
 					     (dev->info->xsensors_17 - 1) *
@@ -594,9 +588,8 @@ static void atp_complete_geyser_1_2(struct urb *urb)
  exit:
 	retval = usb_submit_urb(dev->urb, GFP_ATOMIC);
 	if (retval)
-		dev_err(&dev->intf->dev,
-			"atp_complete: usb_submit_urb failed with result %d\n",
-			retval);
+		err("atp_complete: usb_submit_urb failed with result %d",
+		    retval);
 }
 
 /* Interrupt function for older touchpads: GEYSER3/GEYSER4 */
@@ -729,9 +722,8 @@ static void atp_complete_geyser_3_4(struct urb *urb)
  exit:
 	retval = usb_submit_urb(dev->urb, GFP_ATOMIC);
 	if (retval)
-		dev_err(&dev->intf->dev,
-			"atp_complete: usb_submit_urb failed with result %d\n",
-			retval);
+		err("atp_complete: usb_submit_urb failed with result %d",
+		    retval);
 }
 
 static int atp_open(struct input_dev *input)
@@ -756,12 +748,14 @@ static void atp_close(struct input_dev *input)
 
 static int atp_handle_geyser(struct atp *dev)
 {
+	struct usb_device *udev = dev->udev;
+
 	if (dev->info != &fountain_info) {
 		/* switch to raw sensor mode */
-		if (atp_geyser_init(dev))
+		if (atp_geyser_init(udev))
 			return -EIO;
 
-		dev_info(&dev->intf->dev, "Geyser mode initialized.\n");
+		printk(KERN_INFO "appletouch: Geyser mode initialized.\n");
 	}
 
 	return 0;
@@ -791,7 +785,7 @@ static int atp_probe(struct usb_interface *iface,
 		}
 	}
 	if (!int_in_endpointAddr) {
-		dev_err(&iface->dev, "Could not find int-in endpoint\n");
+		err("Could not find int-in endpoint");
 		return -EIO;
 	}
 
@@ -799,12 +793,11 @@ static int atp_probe(struct usb_interface *iface,
 	dev = kzalloc(sizeof(struct atp), GFP_KERNEL);
 	input_dev = input_allocate_device();
 	if (!dev || !input_dev) {
-		dev_err(&iface->dev, "Out of memory\n");
+		err("Out of memory");
 		goto err_free_devs;
 	}
 
 	dev->udev = udev;
-	dev->intf = iface;
 	dev->input = input_dev;
 	dev->info = info;
 	dev->overflow_warned = false;
@@ -893,7 +886,7 @@ static void atp_disconnect(struct usb_interface *iface)
 		usb_free_urb(dev->urb);
 		kfree(dev);
 	}
-	dev_info(&iface->dev, "input: appletouch disconnected\n");
+	printk(KERN_INFO "input: appletouch disconnected\n");
 }
 
 static int atp_recover(struct atp *dev)

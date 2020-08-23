@@ -327,9 +327,7 @@ static void cm109_submit_buzz_toggle(struct cm109_dev *dev)
 
 	error = usb_submit_urb(dev->urb_ctl, GFP_ATOMIC);
 	if (error)
-		dev_err(&dev->intf->dev,
-			"%s: usb_submit_urb (urb_ctl) failed %d\n",
-			__func__, error);
+		err("%s: usb_submit_urb (urb_ctl) failed %d", __func__, error);
 }
 
 /*
@@ -341,7 +339,7 @@ static void cm109_urb_irq_callback(struct urb *urb)
 	const int status = urb->status;
 	int error;
 
-	dev_dbg(&dev->intf->dev, "### URB IRQ: [0x%02x 0x%02x 0x%02x 0x%02x] keybit=0x%02x\n",
+	dev_dbg(&urb->dev->dev, "### URB IRQ: [0x%02x 0x%02x 0x%02x 0x%02x] keybit=0x%02x\n",
 	     dev->irq_data->byte[0],
 	     dev->irq_data->byte[1],
 	     dev->irq_data->byte[2],
@@ -351,7 +349,7 @@ static void cm109_urb_irq_callback(struct urb *urb)
 	if (status) {
 		if (status == -ESHUTDOWN)
 			return;
-		dev_err(&dev->intf->dev, "%s: urb status %d\n", __func__, status);
+		err("%s: urb status %d", __func__, status);
 	}
 
 	/* Special keys */
@@ -398,8 +396,7 @@ static void cm109_urb_irq_callback(struct urb *urb)
 
 		error = usb_submit_urb(dev->urb_ctl, GFP_ATOMIC);
 		if (error)
-			dev_err(&dev->intf->dev,
-				"%s: usb_submit_urb (urb_ctl) failed %d\n",
+			err("%s: usb_submit_urb (urb_ctl) failed %d",
 				__func__, error);
 	}
 
@@ -412,14 +409,14 @@ static void cm109_urb_ctl_callback(struct urb *urb)
 	const int status = urb->status;
 	int error;
 
-	dev_dbg(&dev->intf->dev, "### URB CTL: [0x%02x 0x%02x 0x%02x 0x%02x]\n",
+	dev_dbg(&urb->dev->dev, "### URB CTL: [0x%02x 0x%02x 0x%02x 0x%02x]\n",
 	     dev->ctl_data->byte[0],
 	     dev->ctl_data->byte[1],
 	     dev->ctl_data->byte[2],
 	     dev->ctl_data->byte[3]);
 
 	if (status)
-		dev_err(&dev->intf->dev, "%s: urb status %d\n", __func__, status);
+		err("%s: urb status %d", __func__, status);
 
 	spin_lock(&dev->ctl_submit_lock);
 
@@ -436,8 +433,7 @@ static void cm109_urb_ctl_callback(struct urb *urb)
 			dev->irq_urb_pending = 1;
 			error = usb_submit_urb(dev->urb_irq, GFP_ATOMIC);
 			if (error)
-				dev_err(&dev->intf->dev,
-					"%s: usb_submit_urb (urb_irq) failed %d\n",
+				err("%s: usb_submit_urb (urb_irq) failed %d",
 					__func__, error);
 		}
 	}
@@ -480,8 +476,7 @@ static void cm109_toggle_buzzer_sync(struct cm109_dev *dev, int on)
 				dev->ctl_data,
 				USB_PKT_LEN, USB_CTRL_SET_TIMEOUT);
 	if (error < 0 && error != -EINTR)
-		dev_err(&dev->intf->dev, "%s: usb_control_msg() failed %d\n",
-			__func__, error);
+		err("%s: usb_control_msg() failed %d", __func__, error);
 }
 
 static void cm109_stop_traffic(struct cm109_dev *dev)
@@ -523,8 +518,8 @@ static int cm109_input_open(struct input_dev *idev)
 
 	error = usb_autopm_get_interface(dev->intf);
 	if (error < 0) {
-		dev_err(&idev->dev, "%s - cannot autoresume, result %d\n",
-			__func__, error);
+		err("%s - cannot autoresume, result %d",
+		    __func__, error);
 		return error;
 	}
 
@@ -542,8 +537,7 @@ static int cm109_input_open(struct input_dev *idev)
 
 	error = usb_submit_urb(dev->urb_ctl, GFP_KERNEL);
 	if (error)
-		dev_err(&dev->intf->dev, "%s: usb_submit_urb (urb_ctl) failed %d\n",
-			__func__, error);
+		err("%s: usb_submit_urb (urb_ctl) failed %d", __func__, error);
 	else
 		dev->open = 1;
 
@@ -579,7 +573,7 @@ static int cm109_input_ev(struct input_dev *idev, unsigned int type,
 {
 	struct cm109_dev *dev = input_get_drvdata(idev);
 
-	dev_dbg(&dev->intf->dev,
+	dev_dbg(&dev->udev->dev,
 		"input_ev: type=%u code=%u value=%d\n", type, code, value);
 
 	if (type != EV_SND)
@@ -716,8 +710,7 @@ static int cm109_usb_probe(struct usb_interface *intf,
 	pipe = usb_rcvintpipe(udev, endpoint->bEndpointAddress);
 	ret = usb_maxpacket(udev, pipe, usb_pipeout(pipe));
 	if (ret != USB_PKT_LEN)
-		dev_err(&intf->dev, "invalid payload size %d, expected %d\n",
-			ret, USB_PKT_LEN);
+		err("invalid payload size %d, expected %d", ret, USB_PKT_LEN);
 
 	/* initialise irq urb */
 	usb_fill_int_urb(dev->urb_irq, udev, pipe, dev->irq_data,

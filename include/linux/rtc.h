@@ -91,9 +91,6 @@ struct rtc_pll_info {
 #define RTC_PLL_GET	_IOR('p', 0x11, struct rtc_pll_info)  /* Get PLL correction */
 #define RTC_PLL_SET	_IOW('p', 0x12, struct rtc_pll_info)  /* Set PLL correction */
 
-#define RTC_VL_READ	_IOR('p', 0x13, int)	/* Voltage low detector */
-#define RTC_VL_CLR	_IO('p', 0x14)		/* Clear voltage low information */
-
 /* interrupt flags */
 #define RTC_IRQF 0x80	/* Any of the following is active */
 #define RTC_PF 0x40	/* Periodic interrupt */
@@ -151,6 +148,10 @@ struct rtc_class_ops {
 	int (*set_time)(struct device *, struct rtc_time *);
 	int (*read_alarm)(struct device *, struct rtc_wkalrm *);
 	int (*set_alarm)(struct device *, struct rtc_wkalrm *);
+#ifdef CONFIG_RTC_AUTO_PWRON
+	int (*read_bootalarm)(struct device *, struct rtc_wkalrm *);
+	int (*set_bootalarm)(struct device *, struct rtc_wkalrm *);
+#endif /* CONFIG_RTC_AUTO_PWRON */
 	int (*proc)(struct device *, struct seq_file *);
 	int (*set_mmss)(struct device *, unsigned long secs);
 	int (*read_callback)(struct device *, int data);

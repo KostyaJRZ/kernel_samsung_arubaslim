@@ -26,6 +26,7 @@
 #ifndef _WIFI_H_
 #define _WIFI_H_
 
+#include "rtl871x_byteorder.h"
 #include <linux/compiler.h>
 
 #ifdef BIT

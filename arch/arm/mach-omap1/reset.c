@@ -8,8 +8,6 @@
 
 #include <mach/hardware.h>
 
-#include "common.h"
-
 void omap1_restart(char mode, const char *cmd)
 {
 	/*

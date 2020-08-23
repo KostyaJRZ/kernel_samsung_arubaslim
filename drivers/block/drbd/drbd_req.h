@@ -105,7 +105,6 @@ enum drbd_req_event {
 	read_completed_with_error,
 	read_ahead_completed_with_error,
 	write_completed_with_error,
-	abort_disk_io,
 	completed_ok,
 	resend,
 	fail_frozen_disk_io,
@@ -119,21 +118,18 @@ enum drbd_req_event {
  * same time, so we should hold the request lock anyways.
  */
 enum drbd_req_state_bits {
-	/* 3210
-	 * 0000: no local possible
-	 * 0001: to be submitted
+	/* 210
+	 * 000: no local possible
+	 * 001: to be submitted
 	 *    UNUSED, we could map: 011: submitted, completion still pending
-	 * 0110: completed ok
-	 * 0010: completed with error
-	 * 1001: Aborted (before completion)
-	 * 1x10: Aborted and completed -> free
+	 * 110: completed ok
+	 * 010: completed with error
 	 */
 	__RQ_LOCAL_PENDING,
 	__RQ_LOCAL_COMPLETED,
 	__RQ_LOCAL_OK,
-	__RQ_LOCAL_ABORTED,
 
-	/* 87654
+	/* 76543
 	 * 00000: no network possible
 	 * 00001: to be send
 	 * 00011: to be send, on worker queue
@@ -203,9 +199,8 @@ enum drbd_req_state_bits {
 #define RQ_LOCAL_PENDING   (1UL << __RQ_LOCAL_PENDING)
 #define RQ_LOCAL_COMPLETED (1UL << __RQ_LOCAL_COMPLETED)
 #define RQ_LOCAL_OK        (1UL << __RQ_LOCAL_OK)
-#define RQ_LOCAL_ABORTED   (1UL << __RQ_LOCAL_ABORTED)
 
-#define RQ_LOCAL_MASK      ((RQ_LOCAL_ABORTED << 1)-1)
+#define RQ_LOCAL_MASK      ((RQ_LOCAL_OK << 1)-1) /* 0x07 */
 
 #define RQ_NET_PENDING     (1UL << __RQ_NET_PENDING)
 #define RQ_NET_QUEUED      (1UL << __RQ_NET_QUEUED)

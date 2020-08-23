@@ -1,7 +1,7 @@
 /*
  * Qualcomm Serial USB driver
  *
- *	Copyright (c) 2008 QUALCOMM Incorporated.
+ *	Copyright (c) 2008, 2012 Code Aurora Forum. All rights reserved.
  *	Copyright (c) 2009 Greg Kroah-Hartman <gregkh@suse.de>
  *	Copyright (c) 2009 Novell Inc.
  *
@@ -37,7 +37,13 @@ static const struct usb_device_id id_table[] = {
 	{DEVICE_G1K(0x04da, 0x250c)},	/* Panasonic Gobi QDL device */
 	{DEVICE_G1K(0x413c, 0x8172)},	/* Dell Gobi Modem device */
 	{DEVICE_G1K(0x413c, 0x8171)},	/* Dell Gobi QDL device */
-	{DEVICE_G1K(0x1410, 0xa001)},	/* Novatel Gobi Modem device */
+	{DEVICE_G1K(0x1410, 0xa001)},	/* Novatel/Verizon USB-1000 */
+	{DEVICE_G1K(0x1410, 0xa002)},	/* Novatel Gobi Modem device */
+	{DEVICE_G1K(0x1410, 0xa003)},	/* Novatel Gobi Modem device */
+	{DEVICE_G1K(0x1410, 0xa004)},	/* Novatel Gobi Modem device */
+	{DEVICE_G1K(0x1410, 0xa005)},	/* Novatel Gobi Modem device */
+	{DEVICE_G1K(0x1410, 0xa006)},	/* Novatel Gobi Modem device */
+	{DEVICE_G1K(0x1410, 0xa007)},	/* Novatel Gobi Modem device */
 	{DEVICE_G1K(0x1410, 0xa008)},	/* Novatel Gobi QDL device */
 	{DEVICE_G1K(0x0b05, 0x1776)},	/* Asus Gobi Modem device */
 	{DEVICE_G1K(0x0b05, 0x1774)},	/* Asus Gobi QDL device */
@@ -55,6 +61,7 @@ static const struct usb_device_id id_table[] = {
 	{DEVICE_G1K(0x05c6, 0x9221)},	/* Generic Gobi QDL device */
 	{DEVICE_G1K(0x05c6, 0x9231)},	/* Generic Gobi QDL device */
 	{DEVICE_G1K(0x1f45, 0x0001)},	/* Unknown Gobi QDL device */
+	{DEVICE_G1K(0x1bc7, 0x900e)},	/* Telit Gobi QDL device */
 
 	/* Gobi 2000 devices */
 	{USB_DEVICE(0x1410, 0xa010)},	/* Novatel Gobi 2000 QDL device */
@@ -114,26 +121,41 @@ static const struct usb_device_id id_table[] = {
 	{USB_DEVICE(0x1199, 0x9019)},	/* Sierra Wireless Gobi 3000 Modem device */
 	{USB_DEVICE(0x12D1, 0x14F0)},	/* Sony Gobi 3000 QDL */
 	{USB_DEVICE(0x12D1, 0x14F1)},	/* Sony Gobi 3000 Composite */
+	{USB_DEVICE(0x05c6, 0x9048)},	/* MDM9x15 device */
+	{USB_DEVICE(0x05c6, 0x904C)},	/* MDM9x15 device */
+	{USB_DEVICE(0x0AF0, 0x8120)},	/* Option GTM681W */
 	{ }				/* Terminating entry */
 };
 MODULE_DEVICE_TABLE(usb, id_table);
+
+#define EFS_SYNC_IFC_NUM	2
+
+static struct usb_driver qcdriver = {
+	.name			= "qcserial",
+	.probe			= usb_serial_probe,
+	.disconnect		= usb_serial_disconnect,
+	.id_table		= id_table,
+	.suspend		= usb_serial_suspend,
+	.resume			= usb_serial_resume,
+	.supports_autosuspend	= true,
+};
 
 static int qcprobe(struct usb_serial *serial, const struct usb_device_id *id)
 {
 	struct usb_wwan_intf_private *data;
 	struct usb_host_interface *intf = serial->interface->cur_altsetting;
-	struct device *dev = &serial->dev->dev;
 	int retval = -ENODEV;
 	__u8 nintf;
 	__u8 ifnum;
 	bool is_gobi1k = id->driver_info ? true : false;
 
-	dev_dbg(dev, "Is Gobi 1000 = %d\n", is_gobi1k);
+	dbg("%s", __func__);
+	dbg("Is Gobi 1000 = %d", is_gobi1k);
 
 	nintf = serial->dev->actconfig->desc.bNumInterfaces;
-	dev_dbg(dev, "Num Interfaces = %d\n", nintf);
+	dbg("Num Interfaces = %d", nintf);
 	ifnum = intf->desc.bInterfaceNumber;
-	dev_dbg(dev, "This Interface = %d\n", ifnum);
+	dbg("This Interface = %d", ifnum);
 
 	data = kzalloc(sizeof(struct usb_wwan_intf_private),
 					 GFP_KERNEL);
@@ -154,7 +176,7 @@ static int qcprobe(struct usb_serial *serial, const struct usb_device_id *id)
 		if (intf->desc.bNumEndpoints == 2 &&
 		    usb_endpoint_is_bulk_in(&intf->endpoint[0].desc) &&
 		    usb_endpoint_is_bulk_out(&intf->endpoint[1].desc)) {
-			dev_dbg(dev, "QDL port found\n");
+			dbg("QDL port found");
 
 			if (serial->interface->num_altsetting == 1) {
 				retval = 0; /* Success */
@@ -163,7 +185,7 @@ static int qcprobe(struct usb_serial *serial, const struct usb_device_id *id)
 
 			retval = usb_set_interface(serial->dev, ifnum, 1);
 			if (retval < 0) {
-				dev_err(dev,
+				dev_err(&serial->dev->dev,
 					"Could not set interface, error %d\n",
 					retval);
 				retval = -ENODEV;
@@ -192,20 +214,20 @@ static int qcprobe(struct usb_serial *serial, const struct usb_device_id *id)
 		 */
 
 		if (ifnum == 1 && !is_gobi1k) {
-			dev_dbg(dev, "Gobi 2K+ DM/DIAG interface found\n");
+			dbg("Gobi 2K+ DM/DIAG interface found");
 			retval = usb_set_interface(serial->dev, ifnum, 0);
 			if (retval < 0) {
-				dev_err(dev,
+				dev_err(&serial->dev->dev,
 					"Could not set interface, error %d\n",
 					retval);
 				retval = -ENODEV;
 				kfree(data);
 			}
 		} else if (ifnum == 2) {
-			dev_dbg(dev, "Modem port found\n");
+			dbg("Modem port found");
 			retval = usb_set_interface(serial->dev, ifnum, 0);
 			if (retval < 0) {
-				dev_err(dev,
+				dev_err(&serial->dev->dev,
 					"Could not set interface, error %d\n",
 					retval);
 				retval = -ENODEV;
@@ -217,10 +239,10 @@ static int qcprobe(struct usb_serial *serial, const struct usb_device_id *id)
 			 * # echo "\$GPS_START" > /dev/ttyUSBx
 			 * # echo "\$GPS_STOP"  > /dev/ttyUSBx
 			 */
-			dev_dbg(dev, "Gobi 2K+ NMEA GPS interface found\n");
+			dbg("Gobi 2K+ NMEA GPS interface found");
 			retval = usb_set_interface(serial->dev, ifnum, 0);
 			if (retval < 0) {
-				dev_err(dev,
+				dev_err(&serial->dev->dev,
 					"Could not set interface, error %d\n",
 					retval);
 				retval = -ENODEV;
@@ -229,8 +251,17 @@ static int qcprobe(struct usb_serial *serial, const struct usb_device_id *id)
 		}
 		break;
 
+	case 9:
+		if (ifnum != EFS_SYNC_IFC_NUM) {
+			kfree(data);
+			break;
+		}
+
+		retval = 0;
+		break;
 	default:
-		dev_err(dev, "unknown number of interfaces: %d\n", nintf);
+		dev_err(&serial->dev->dev,
+			"unknown number of interfaces: %d\n", nintf);
 		kfree(data);
 		retval = -ENODEV;
 	}
@@ -244,6 +275,8 @@ static int qcprobe(struct usb_serial *serial, const struct usb_device_id *id)
 static void qc_release(struct usb_serial *serial)
 {
 	struct usb_wwan_intf_private *priv = usb_get_serial_data(serial);
+
+	dbg("%s", __func__);
 
 	/* Call usb_wwan release & free the private data allocated in qcprobe */
 	usb_wwan_release(serial);
@@ -265,6 +298,8 @@ static struct usb_serial_driver qcdevice = {
 	.write		     = usb_wwan_write,
 	.write_room	     = usb_wwan_write_room,
 	.chars_in_buffer     = usb_wwan_chars_in_buffer,
+	.throttle            = usb_wwan_throttle,
+	.unthrottle          = usb_wwan_unthrottle,
 	.attach		     = usb_wwan_startup,
 	.disconnect	     = usb_wwan_disconnect,
 	.release	     = qc_release,
@@ -278,7 +313,7 @@ static struct usb_serial_driver * const serial_drivers[] = {
 	&qcdevice, NULL
 };
 
-module_usb_serial_driver(serial_drivers, id_table);
+module_usb_serial_driver(qcdriver, serial_drivers);
 
 MODULE_AUTHOR(DRIVER_AUTHOR);
 MODULE_DESCRIPTION(DRIVER_DESC);

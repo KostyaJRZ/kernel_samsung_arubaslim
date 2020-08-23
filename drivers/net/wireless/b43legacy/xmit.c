@@ -228,7 +228,6 @@ static int generate_txhdr_fw3(struct b43legacy_wldev *dev,
 	} else {
 		txhdr->dur_fb = ieee80211_generic_frame_duration(dev->wl->hw,
 							 info->control.vif,
-							 info->band,
 							 fragment_len,
 							 rate_fb);
 	}
@@ -278,7 +277,19 @@ static int generate_txhdr_fw3(struct b43legacy_wldev *dev,
 		phy_ctl |= B43legacy_TX4_PHY_ENC_OFDM;
 	if (info->control.rates[0].flags & IEEE80211_TX_RC_USE_SHORT_PREAMBLE)
 		phy_ctl |= B43legacy_TX4_PHY_SHORTPRMBL;
-	phy_ctl |= B43legacy_TX4_PHY_ANTLAST;
+	switch (info->antenna_sel_tx) {
+	case 0:
+		phy_ctl |= B43legacy_TX4_PHY_ANTLAST;
+		break;
+	case 1:
+		phy_ctl |= B43legacy_TX4_PHY_ANT0;
+		break;
+	case 2:
+		phy_ctl |= B43legacy_TX4_PHY_ANT1;
+		break;
+	default:
+		B43legacy_BUG_ON(1);
+	}
 
 	/* MAC control */
 	rates = info->control.rates;

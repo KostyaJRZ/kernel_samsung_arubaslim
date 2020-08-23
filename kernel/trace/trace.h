@@ -103,11 +103,6 @@ struct kretprobe_trace_entry_head {
 	unsigned long		ret_ip;
 };
 
-struct uprobe_trace_entry_head {
-	struct trace_entry	ent;
-	unsigned long		ip;
-};
-
 /*
  * trace_flag_type is an enumeration that holds different
  * states when a trace occurs. These are:
@@ -283,10 +278,14 @@ struct tracer {
 	enum print_line_t	(*print_line)(struct trace_iterator *iter);
 	/* If you handled the flag setting, return 0 */
 	int			(*set_flag)(u32 old_flags, u32 bit, int set);
+	/* Return 0 if OK with change, else return non-zero */
+	int			(*flag_changed)(struct tracer *tracer,
+						u32 mask, int set);
 	struct tracer		*next;
 	struct tracer_flags	*flags;
 	int			print_max;
 	int			use_max_tr;
+	bool			enabled;
 };
 
 
@@ -830,6 +829,9 @@ extern struct list_head ftrace_events;
 
 extern const char *__start___trace_bprintk_fmt[];
 extern const char *__stop___trace_bprintk_fmt[];
+
+int trace_keep_overwrite(struct tracer *tracer, u32 mask, int set);
+int set_tracer_flag(unsigned int mask, int enabled);
 
 void trace_printk_init_buffers(void);
 

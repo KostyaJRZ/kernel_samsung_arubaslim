@@ -244,6 +244,11 @@ static struct platform_device pnx833x_sata_device = {
 	.resource      = pnx833x_sata_resources,
 };
 
+static const char *part_probes[] = {
+	"cmdlinepart",
+	NULL
+};
+
 static void
 pnx833x_flash_nand_cmd_ctrl(struct mtd_info *mtd, int cmd, unsigned int ctrl)
 {
@@ -263,6 +268,7 @@ static struct platform_nand_data pnx833x_flash_nand_data = {
 	.chip = {
 		.nr_chips		= 1,
 		.chip_delay		= 25,
+		.part_probe_types 	= part_probes,
 	},
 	.ctrl = {
 		.cmd_ctrl 		= pnx833x_flash_nand_cmd_ctrl

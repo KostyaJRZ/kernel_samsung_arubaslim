@@ -41,7 +41,6 @@
 #include <mach/clock.h>
 #include <mach/hardware.h>
 
-#ifndef CONFIG_COMMON_CLK
 static LIST_HEAD(clocks);
 static DEFINE_MUTEX(clocks_mutex);
 
@@ -200,16 +199,6 @@ struct clk *clk_get_parent(struct clk *clk)
 	return clk->parent;
 }
 EXPORT_SYMBOL(clk_get_parent);
-
-#else
-
-/*
- * Lock to protect the clock module (ccm) registers. Used
- * on all i.MXs
- */
-DEFINE_SPINLOCK(imx_ccm_lock);
-
-#endif /* CONFIG_COMMON_CLK */
 
 /*
  * Get the resulting clock rate from a PLL register value and the input

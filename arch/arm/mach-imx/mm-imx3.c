@@ -19,7 +19,6 @@
 #include <linux/mm.h>
 #include <linux/init.h>
 #include <linux/err.h>
-#include <linux/pinctrl/machine.h>
 
 #include <asm/pgtable.h>
 #include <asm/system_misc.h>
@@ -31,10 +30,6 @@
 #include <mach/hardware.h>
 #include <mach/iomux-v3.h>
 #include <mach/irqs.h>
-
-#include "crmregs-imx3.h"
-
-void __iomem *mx3_ccm_base;
 
 static void imx3_idle(void)
 {
@@ -86,7 +81,6 @@ static void __iomem *imx3_ioremap_caller(unsigned long phys_addr, size_t size,
 
 void __init imx3_init_l2x0(void)
 {
-#ifdef CONFIG_CACHE_L2X0
 	void __iomem *l2x0_base;
 	void __iomem *clkctl_base;
 
@@ -116,7 +110,6 @@ void __init imx3_init_l2x0(void)
 	}
 
 	l2x0_init(l2x0_base, 0x00030024, 0x00000000);
-#endif
 }
 
 #ifdef CONFIG_SOC_IMX31
@@ -144,7 +137,6 @@ void __init imx31_init_early(void)
 	mxc_arch_reset_init(MX31_IO_ADDRESS(MX31_WDOG_BASE_ADDR));
 	arch_ioremap_caller = imx3_ioremap_caller;
 	arm_pm_idle = imx3_idle;
-	mx3_ccm_base = MX31_IO_ADDRESS(MX31_CCM_BASE_ADDR);
 }
 
 void __init mx31_init_irq(void)
@@ -180,8 +172,6 @@ void __init imx31_soc_init(void)
 	mxc_register_gpio("imx31-gpio", 0, MX31_GPIO1_BASE_ADDR, SZ_16K, MX31_INT_GPIO1, 0);
 	mxc_register_gpio("imx31-gpio", 1, MX31_GPIO2_BASE_ADDR, SZ_16K, MX31_INT_GPIO2, 0);
 	mxc_register_gpio("imx31-gpio", 2, MX31_GPIO3_BASE_ADDR, SZ_16K, MX31_INT_GPIO3, 0);
-
-	pinctrl_provide_dummies();
 
 	if (to_version == 1) {
 		strncpy(imx31_sdma_pdata.fw_name, "sdma-imx31-to1.bin",
@@ -220,7 +210,6 @@ void __init imx35_init_early(void)
 	mxc_arch_reset_init(MX35_IO_ADDRESS(MX35_WDOG_BASE_ADDR));
 	arm_pm_idle = imx3_idle;
 	arch_ioremap_caller = imx3_ioremap_caller;
-	mx3_ccm_base = MX35_IO_ADDRESS(MX35_CCM_BASE_ADDR);
 }
 
 void __init mx35_init_irq(void)
@@ -278,7 +267,6 @@ void __init imx35_soc_init(void)
 	mxc_register_gpio("imx31-gpio", 1, MX35_GPIO2_BASE_ADDR, SZ_16K, MX35_INT_GPIO2, 0);
 	mxc_register_gpio("imx31-gpio", 2, MX35_GPIO3_BASE_ADDR, SZ_16K, MX35_INT_GPIO3, 0);
 
-	pinctrl_provide_dummies();
 	if (to_version == 1) {
 		strncpy(imx35_sdma_pdata.fw_name, "sdma-imx35-to1.bin",
 			strlen(imx35_sdma_pdata.fw_name));

@@ -457,10 +457,10 @@ TRACE_EVENT(gfs2_bmap,
 /* Keep track of blocks as they are allocated/freed */
 TRACE_EVENT(gfs2_block_alloc,
 
-	TP_PROTO(const struct gfs2_inode *ip, struct gfs2_rgrpd *rgd,
-		 u64 block, unsigned len, u8 block_state),
+	TP_PROTO(const struct gfs2_inode *ip, u64 block, unsigned len,
+		u8 block_state),
 
-	TP_ARGS(ip, rgd, block, len, block_state),
+	TP_ARGS(ip, block, len, block_state),
 
 	TP_STRUCT__entry(
 		__field(        dev_t,  dev                     )
@@ -468,8 +468,6 @@ TRACE_EVENT(gfs2_block_alloc,
 		__field(	u64,	inum			)
 		__field(	u32,	len			)
 		__field(	u8,	block_state		)
-		__field(        u64,	rd_addr			)
-		__field(        u32,	rd_free_clone		)
 	),
 
 	TP_fast_assign(
@@ -478,18 +476,14 @@ TRACE_EVENT(gfs2_block_alloc,
 		__entry->inum		= ip->i_no_addr;
 		__entry->len		= len;
 		__entry->block_state	= block_state;
-		__entry->rd_addr	= rgd->rd_addr;
-		__entry->rd_free_clone	= rgd->rd_free_clone;
 	),
 
-	TP_printk("%u,%u bmap %llu alloc %llu/%lu %s rg:%llu rf:%u",
+	TP_printk("%u,%u bmap %llu alloc %llu/%lu %s",
 		  MAJOR(__entry->dev), MINOR(__entry->dev),
 		  (unsigned long long)__entry->inum,
 		  (unsigned long long)__entry->start,
 		  (unsigned long)__entry->len,
-		  block_state_name(__entry->block_state),
-		  (unsigned long long)__entry->rd_addr,
-		  __entry->rd_free_clone)
+		  block_state_name(__entry->block_state))
 );
 
 #endif /* _TRACE_GFS2_H */

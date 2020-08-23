@@ -159,17 +159,7 @@ int apply_relocate_add(Elf_Shdr *sechdrs,
 
 		switch (ELF_R_TYPE(rel[i].r_info)) {
 
-#ifdef __LITTLE_ENDIAN
-# define MUNGE(func) \
-	(*location = ((*location & ~func(-1)) | func(value)))
-#else
-/*
- * Instructions are always little-endian, so when we read them as data,
- * we have to swap them around before and after modifying them.
- */
-# define MUNGE(func) \
-	(*location = swab64((swab64(*location) & ~func(-1)) | func(value)))
-#endif
+#define MUNGE(func) (*location = ((*location & ~func(-1)) | func(value)))
 
 #ifndef __tilegx__
 		case R_TILE_32:

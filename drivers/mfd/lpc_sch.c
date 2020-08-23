@@ -36,7 +36,6 @@
 
 #define GPIOBASE	0x44
 #define GPIO_IO_SIZE	64
-#define GPIO_IO_SIZE_CENTERTON	128
 
 #define WDTBASE		0x84
 #define WDT_IO_SIZE	64
@@ -69,7 +68,7 @@ static struct resource wdt_sch_resource = {
 
 static struct mfd_cell tunnelcreek_cells[] = {
 	{
-		.name = "ie6xx_wdt",
+		.name = "tunnelcreek_wdt",
 		.num_resources = 1,
 		.resources = &wdt_sch_resource,
 	},
@@ -78,7 +77,6 @@ static struct mfd_cell tunnelcreek_cells[] = {
 static DEFINE_PCI_DEVICE_TABLE(lpc_sch_ids) = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_SCH_LPC) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_ITC_LPC) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_CENTERTON_ILB) },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, lpc_sch_ids);
@@ -117,11 +115,7 @@ static int __devinit lpc_sch_probe(struct pci_dev *dev,
 	}
 
 	gpio_sch_resource.start = base_addr;
-
-	if (id->device == PCI_DEVICE_ID_INTEL_CENTERTON_ILB)
-		gpio_sch_resource.end = base_addr + GPIO_IO_SIZE_CENTERTON - 1;
-	else
-		gpio_sch_resource.end = base_addr + GPIO_IO_SIZE - 1;
+	gpio_sch_resource.end = base_addr + GPIO_IO_SIZE - 1;
 
 	for (i=0; i < ARRAY_SIZE(lpc_sch_cells); i++)
 		lpc_sch_cells[i].id = id->device;
@@ -131,8 +125,7 @@ static int __devinit lpc_sch_probe(struct pci_dev *dev,
 	if (ret)
 		goto out_dev;
 
-	if (id->device == PCI_DEVICE_ID_INTEL_ITC_LPC
-	 || id->device == PCI_DEVICE_ID_INTEL_CENTERTON_ILB) {
+	if (id->device == PCI_DEVICE_ID_INTEL_ITC_LPC) {
 		pci_read_config_dword(dev, WDTBASE, &base_addr_cfg);
 		if (!(base_addr_cfg & (1 << 31))) {
 			dev_err(&dev->dev, "Decode of the WDT I/O range disabled\n");
@@ -174,7 +167,18 @@ static struct pci_driver lpc_sch_driver = {
 	.remove		= __devexit_p(lpc_sch_remove),
 };
 
-module_pci_driver(lpc_sch_driver);
+static int __init lpc_sch_init(void)
+{
+	return pci_register_driver(&lpc_sch_driver);
+}
+
+static void __exit lpc_sch_exit(void)
+{
+	pci_unregister_driver(&lpc_sch_driver);
+}
+
+module_init(lpc_sch_init);
+module_exit(lpc_sch_exit);
 
 MODULE_AUTHOR("Denis Turischev <denis@compulab.co.il>");
 MODULE_DESCRIPTION("LPC interface for Intel Poulsbo SCH");

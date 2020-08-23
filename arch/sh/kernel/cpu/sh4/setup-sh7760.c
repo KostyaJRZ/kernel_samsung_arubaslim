@@ -11,7 +11,6 @@
 #include <linux/init.h>
 #include <linux/serial.h>
 #include <linux/sh_timer.h>
-#include <linux/sh_intc.h>
 #include <linux/serial_sci.h>
 #include <linux/io.h>
 
@@ -133,10 +132,7 @@ static struct plat_sci_port scif0_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type		= PORT_SCIF,
-	.irqs		= { evt2irq(0x880),
-			    evt2irq(0x8a0),
-			    evt2irq(0x8e0),
-			    evt2irq(0x8c0) },
+	.irqs		= { 52, 53, 55, 54 },
 	.regtype	= SCIx_SH4_SCIF_FIFODATA_REGTYPE,
 };
 
@@ -154,10 +150,7 @@ static struct plat_sci_port scif1_platform_data = {
 	.type		= PORT_SCIF,
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
-	.irqs		= { evt2irq(0xb00),
-			    evt2irq(0xb20),
-			    evt2irq(0xb60),
-			    evt2irq(0xb40) },
+	.irqs		= { 72, 73, 75, 74 },
 	.regtype	= SCIx_SH4_SCIF_FIFODATA_REGTYPE,
 };
 
@@ -175,10 +168,7 @@ static struct plat_sci_port scif2_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type		= PORT_SCIF,
-	.irqs		= { evt2irq(0xb80),
-			    evt2irq(0xba0),
-			    evt2irq(0xbe0),
-			    evt2irq(0xbc0) },
+	.irqs		= { 76, 77, 79, 78 },
 	.regtype	= SCIx_SH4_SCIF_FIFODATA_REGTYPE,
 };
 
@@ -196,9 +186,7 @@ static struct plat_sci_port scif3_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type		= PORT_SCI,
-	.irqs		= { evt2irq(0xc00),
-			    evt2irq(0xc20),
-			    evt2irq(0xc40), },
+	.irqs		= { 80, 81, 82, 0 },
 	.regshift	= 2,
 };
 
@@ -223,7 +211,7 @@ static struct resource tmu0_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x400),
+		.start	= 16,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -251,7 +239,7 @@ static struct resource tmu1_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x420),
+		.start	= 17,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -278,7 +266,7 @@ static struct resource tmu2_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x440),
+		.start	= 18,
 		.flags	= IORESOURCE_IRQ,
 	},
 };

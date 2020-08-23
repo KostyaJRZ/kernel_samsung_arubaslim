@@ -28,9 +28,12 @@
 #include <asm/highmem.h>
 #include <asm/system_info.h>
 #include <asm/traps.h>
+#include <asm/mmu_writeable.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
+
+#include <asm/user_accessible_timer.h>
 
 #include "mm.h"
 
@@ -51,6 +54,9 @@ pmd_t *top_pmd;
 #define CPOLICY_WRITETHROUGH	2
 #define CPOLICY_WRITEBACK	3
 #define CPOLICY_WRITEALLOC	4
+
+#define RX_AREA_START           _text
+#define RX_AREA_END             __start_rodata
 
 static unsigned int cachepolicy __initdata = CPOLICY_WRITEBACK;
 static unsigned int ecc_mask __initdata = 0;
@@ -257,6 +263,18 @@ static struct mem_type mem_types[] = {
 		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE,
 		.domain    = DOMAIN_KERNEL,
 	},
+	[MT_MEMORY_R] = {
+		.prot_sect = PMD_TYPE_SECT | PMD_SECT_XN,
+		.domain    = DOMAIN_KERNEL,
+	},
+	[MT_MEMORY_RW] = {
+		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE | PMD_SECT_XN,
+		.domain    = DOMAIN_KERNEL,
+	},
+	[MT_MEMORY_RX] = {
+		.prot_sect = PMD_TYPE_SECT,
+		.domain    = DOMAIN_KERNEL,
+	},
 	[MT_ROM] = {
 		.prot_sect = PMD_TYPE_SECT,
 		.domain    = DOMAIN_KERNEL,
@@ -289,9 +307,17 @@ static struct mem_type mem_types[] = {
 		.domain    = DOMAIN_KERNEL,
 	},
 	[MT_MEMORY_DMA_READY] = {
-		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY,
+		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
+				L_PTE_XN,
 		.prot_l1   = PMD_TYPE_TABLE,
 		.domain    = DOMAIN_KERNEL,
+	},
+	[MT_DEVICE_USER_ACCESSIBLE] = {
+		.prot_pte  = PROT_PTE_DEVICE | L_PTE_MT_DEV_SHARED |
+				L_PTE_SHARED | L_PTE_USER | L_PTE_RDONLY,
+		.prot_l1   = PMD_TYPE_TABLE,
+		.prot_sect = PROT_SECT_DEVICE | PMD_SECT_S,
+		.domain    = DOMAIN_IO,
 	},
 };
 
@@ -448,6 +474,8 @@ static void __init build_mem_type_table(void)
 		 * from SVC mode and no access from userspace.
 		 */
 		mem_types[MT_ROM].prot_sect |= PMD_SECT_APX|PMD_SECT_AP_WRITE;
+		mem_types[MT_MEMORY_RX].prot_sect |= PMD_SECT_APX|PMD_SECT_AP_WRITE;
+		mem_types[MT_MEMORY_R].prot_sect |= PMD_SECT_APX|PMD_SECT_AP_WRITE;
 		mem_types[MT_MINICLEAN].prot_sect |= PMD_SECT_APX|PMD_SECT_AP_WRITE;
 		mem_types[MT_CACHECLEAN].prot_sect |= PMD_SECT_APX|PMD_SECT_AP_WRITE;
 #endif
@@ -468,6 +496,9 @@ static void __init build_mem_type_table(void)
 			mem_types[MT_MEMORY].prot_pte |= L_PTE_SHARED;
 			mem_types[MT_MEMORY_DMA_READY].prot_pte |= L_PTE_SHARED;
 			mem_types[MT_MEMORY_NONCACHED].prot_sect |= PMD_SECT_S;
+			mem_types[MT_MEMORY_R].prot_sect |= PMD_SECT_S;
+			mem_types[MT_MEMORY_RW].prot_sect |= PMD_SECT_S;
+			mem_types[MT_MEMORY_RX].prot_sect |= PMD_SECT_S;
 			mem_types[MT_MEMORY_NONCACHED].prot_pte |= L_PTE_SHARED;
 		}
 	}
@@ -504,7 +535,7 @@ static void __init build_mem_type_table(void)
 #endif
 
 	for (i = 0; i < 16; i++) {
-		unsigned long v = pgprot_val(protection_map[i]);
+		pteval_t v = pgprot_val(protection_map[i]);
 		protection_map[i] = __pgprot(v | user_pgprot);
 	}
 
@@ -521,6 +552,9 @@ static void __init build_mem_type_table(void)
 	mem_types[MT_MEMORY].prot_pte |= kern_pgprot;
 	mem_types[MT_MEMORY_DMA_READY].prot_pte |= kern_pgprot;
 	mem_types[MT_MEMORY_NONCACHED].prot_sect |= ecc_mask;
+	mem_types[MT_MEMORY_R].prot_sect |= ecc_mask | cp->pmd;
+	mem_types[MT_MEMORY_RW].prot_sect |= ecc_mask | cp->pmd;
+	mem_types[MT_MEMORY_RX].prot_sect |= ecc_mask | cp->pmd;
 	mem_types[MT_ROM].prot_sect |= cp->pmd;
 
 	switch (cp->pmd) {
@@ -716,7 +750,9 @@ static void __init create_mapping(struct map_desc *md)
 	const struct mem_type *type;
 	pgd_t *pgd;
 
-	if (md->virtual != vectors_base() && md->virtual < TASK_SIZE) {
+	if ((md->virtual != vectors_base() &&
+		md->virtual != get_user_accessible_timers_base()) &&
+			md->virtual < TASK_SIZE) {
 		printk(KERN_WARNING "BUG: not creating mapping for 0x%08llx"
 		       " at 0x%08lx in user region\n",
 		       (long long)__pfn_to_phys((u64)md->pfn), md->virtual);
@@ -773,6 +809,7 @@ void __init iotable_init(struct map_desc *io_desc, int nr)
 {
 	struct map_desc *md;
 	struct vm_struct *vm;
+	int rc = 0;
 
 	if (!nr)
 		return;
@@ -783,11 +820,13 @@ void __init iotable_init(struct map_desc *io_desc, int nr)
 		create_mapping(md);
 		vm->addr = (void *)(md->virtual & PAGE_MASK);
 		vm->size = PAGE_ALIGN(md->length + (md->virtual & ~PAGE_MASK));
-		vm->phys_addr = __pfn_to_phys(md->pfn); 
-		vm->flags = VM_IOREMAP | VM_ARM_STATIC_MAPPING; 
+		vm->phys_addr = __pfn_to_phys(md->pfn);
+		vm->flags = VM_IOREMAP | VM_ARM_STATIC_MAPPING;
 		vm->flags |= VM_ARM_MTYPE(md->type);
 		vm->caller = iotable_init;
-		vm_area_add_early(vm++);
+		rc = vm_area_check_early(vm);
+		if (!rc)
+			vm_area_add_early(vm++);
 	}
 }
 
@@ -813,7 +852,7 @@ static void __init pmd_empty_section_gap(unsigned long addr)
 	vm = early_alloc_aligned(sizeof(*vm), __alignof__(*vm));
 	vm->addr = (void *)addr;
 	vm->size = SECTION_SIZE;
-	vm->flags = VM_IOREMAP | VM_ARM_STATIC_MAPPING;
+	vm->flags = VM_IOREMAP | VM_ARM_EMPTY_MAPPING;
 	vm->caller = pmd_empty_section_gap;
 	vm_area_add_early(vm);
 }
@@ -826,7 +865,7 @@ static void __init fill_pmd_gaps(void)
 
 	/* we're still single threaded hence no lock needed here */
 	for (vm = vmlist; vm; vm = vm->next) {
-		if (!(vm->flags & VM_ARM_STATIC_MAPPING))
+		if (!(vm->flags & (VM_ARM_STATIC_MAPPING | VM_ARM_EMPTY_MAPPING)))
 			continue;
 		addr = (unsigned long)vm->addr;
 		if (addr < next)
@@ -900,6 +939,10 @@ phys_addr_t arm_lowmem_limit __initdata = 0;
 void __init sanity_check_meminfo(void)
 {
 	int i, j, highmem = 0;
+
+#ifdef CONFIG_DONT_MAP_HOLE_AFTER_MEMBANK0
+	find_membank0_hole();
+#endif
 
 	for (i = 0, j = 0; i < meminfo.nr_banks; i++) {
 		struct membank *bank = &meminfo.bank[j];
@@ -1086,7 +1129,7 @@ static void __init devicemaps_init(struct machine_desc *mdesc)
 	/*
 	 * Allocate the vector page early.
 	 */
-	vectors = early_alloc(PAGE_SIZE);
+	vectors = early_alloc(PAGE_SIZE * 2);
 
 	early_trap_init(vectors);
 
@@ -1131,14 +1174,26 @@ static void __init devicemaps_init(struct machine_desc *mdesc)
 	map.pfn = __phys_to_pfn(virt_to_phys(vectors));
 	map.virtual = 0xffff0000;
 	map.length = PAGE_SIZE;
+#ifdef CONFIG_KUSER_HELPERS
 	map.type = MT_HIGH_VECTORS;
+#else
+	map.type = MT_LOW_VECTORS;
+#endif
 	create_mapping(&map);
 
 	if (!vectors_high()) {
 		map.virtual = 0;
+		map.length = PAGE_SIZE * 2;
 		map.type = MT_LOW_VECTORS;
 		create_mapping(&map);
 	}
+
+	/* Now create a kernel read-only mapping */
+	map.pfn += 1;
+	map.virtual = 0xffff0000 + PAGE_SIZE;
+	map.length = PAGE_SIZE;
+	map.type = MT_LOW_VECTORS;
+	create_mapping(&map);
 
 	/*
 	 * Ask the machine support to map in the statically mapped devices.
@@ -1146,6 +1201,20 @@ static void __init devicemaps_init(struct machine_desc *mdesc)
 	if (mdesc->map_io)
 		mdesc->map_io();
 	fill_pmd_gaps();
+
+	if (use_user_accessible_timers()) {
+		/*
+		 * Generate a mapping for the timer page.
+		 */
+		int page_addr = get_timer_page_address();
+		if (page_addr != ARM_USER_ACCESSIBLE_TIMERS_INVALID_PAGE) {
+			map.pfn = __phys_to_pfn(page_addr);
+			map.virtual = CONFIG_ARM_USER_ACCESSIBLE_TIMER_BASE;
+			map.length = PAGE_SIZE;
+			map.type = MT_DEVICE_USER_ACCESSIBLE;
+			create_mapping(&map);
+		}
+	}
 
 	/*
 	 * Finally flush the caches and tlb to ensure that we're in a
@@ -1165,15 +1234,122 @@ static void __init kmap_init(void)
 #endif
 }
 
+#ifdef CONFIG_STRICT_MEMORY_RWX
+static struct {
+	pmd_t *pmd_to_flush;
+	pmd_t *pmd;
+	unsigned long addr;
+	pmd_t saved_pmd;
+	bool made_writeable;
+} mem_unprotect;
+
+static DEFINE_SPINLOCK(mem_text_writeable_lock);
+
+void mem_text_writeable_spinlock(unsigned long *flags)
+{
+	spin_lock_irqsave(&mem_text_writeable_lock, *flags);
+}
+
+void mem_text_writeable_spinunlock(unsigned long *flags)
+{
+	spin_unlock_irqrestore(&mem_text_writeable_lock, *flags);
+}
+
+/*
+ * mem_text_address_writeable() and mem_text_address_restore()
+ * should be called as a pair. They are used to make the
+ * specified address in the kernel text section temporarily writeable
+ * when it has been marked read-only by STRICT_MEMORY_RWX.
+ * Used by kprobes and other debugging tools to set breakpoints etc.
+ * mem_text_address_writeable() is invoked before writing.
+ * After the write, mem_text_address_restore() must be called
+ * to restore the original state.
+ * This is only effective when used on the kernel text section
+ * marked as MEMORY_RX by map_lowmem()
+ *
+ * They must each be called with mem_text_writeable_lock locked
+ * by the caller, with no unlocking between the calls.
+ * The caller should release mem_text_writeable_lock immediately
+ * after the call to mem_text_address_restore().
+ * Only the write and associated cache operations should be performed
+ * between the calls.
+ */
+
+/* this function must be called with mem_text_writeable_lock held */
+void mem_text_address_writeable(unsigned long addr)
+{
+	struct task_struct *tsk = current;
+	struct mm_struct *mm = tsk->active_mm;
+	pgd_t *pgd = pgd_offset(mm, addr);
+	pud_t *pud = pud_offset(pgd, addr);
+
+	mem_unprotect.made_writeable = 0;
+
+	if ((addr < (unsigned long)RX_AREA_START) ||
+	    (addr >= (unsigned long)RX_AREA_END))
+		return;
+
+	mem_unprotect.pmd = pmd_offset(pud, addr);
+	mem_unprotect.pmd_to_flush = mem_unprotect.pmd;
+	mem_unprotect.addr = addr & PAGE_MASK;
+
+	if (addr & SECTION_SIZE)
+			mem_unprotect.pmd++;
+
+	mem_unprotect.saved_pmd = *mem_unprotect.pmd;
+	if ((mem_unprotect.saved_pmd & PMD_TYPE_MASK) != PMD_TYPE_SECT)
+		return;
+
+	*mem_unprotect.pmd &= ~PMD_SECT_APX;
+
+	flush_pmd_entry(mem_unprotect.pmd_to_flush);
+	flush_tlb_kernel_page(mem_unprotect.addr);
+	mem_unprotect.made_writeable = 1;
+}
+
+/* this function must be called with mem_text_writeable_lock held */
+void mem_text_address_restore(void)
+{
+	if (mem_unprotect.made_writeable) {
+		*mem_unprotect.pmd = mem_unprotect.saved_pmd;
+		flush_pmd_entry(mem_unprotect.pmd_to_flush);
+		flush_tlb_kernel_page(mem_unprotect.addr);
+	}
+}
+#endif
+
+void mem_text_write_kernel_word(unsigned long *addr, unsigned long word)
+{
+	unsigned long flags;
+
+	mem_text_writeable_spinlock(&flags);
+	mem_text_address_writeable((unsigned long)addr);
+	*addr = word;
+	flush_icache_range((unsigned long)addr,
+			   ((unsigned long)addr + sizeof(long)));
+	mem_text_address_restore();
+	mem_text_writeable_spinunlock(&flags);
+}
+EXPORT_SYMBOL(mem_text_write_kernel_word);
+
 static void __init map_lowmem(void)
 {
 	struct memblock_region *reg;
+	struct vm_struct *vm;
+	phys_addr_t start;
+	phys_addr_t end;
+	unsigned long vaddr;
+	unsigned long pfn;
+	unsigned long length;
+	unsigned int type;
+	int nr = 0;
 
 	/* Map all the lowmem memory banks. */
 	for_each_memblock(memory, reg) {
-		phys_addr_t start = reg->base;
-		phys_addr_t end = start + reg->size;
 		struct map_desc map;
+		nr++;
+		start = reg->base;
+		end = start + reg->size;
 
 		if (end > arm_lowmem_limit)
 			end = arm_lowmem_limit;
@@ -1182,10 +1358,77 @@ static void __init map_lowmem(void)
 
 		map.pfn = __phys_to_pfn(start);
 		map.virtual = __phys_to_virt(start);
+#ifdef CONFIG_STRICT_MEMORY_RWX
+		if (start <= __pa(_text) && __pa(_text) < end) {
+			map.length = SECTION_SIZE;
+			map.type = MT_MEMORY_RW;
+
+			create_mapping(&map);
+
+			map.pfn = __phys_to_pfn(start + SECTION_SIZE);
+			map.virtual = __phys_to_virt(start + SECTION_SIZE);
+			map.length = (unsigned long)RX_AREA_END - map.virtual;
+			map.type = MT_MEMORY_RX;
+
+			create_mapping(&map);
+
+			map.pfn = __phys_to_pfn(__pa(__start_rodata));
+			map.virtual = (unsigned long)__start_rodata;
+			map.length = __init_begin - __start_rodata;
+			map.type = MT_MEMORY_R;
+
+			create_mapping(&map);
+
+			map.pfn = __phys_to_pfn(__pa(__init_begin));
+			map.virtual = (unsigned long)__init_begin;
+			map.length = (char *)__arch_info_begin - __init_begin;
+			map.type = MT_MEMORY_RX;
+
+			create_mapping(&map);
+
+			map.pfn = __phys_to_pfn(__pa(__arch_info_begin));
+			map.virtual = (unsigned long)__arch_info_begin;
+			map.length = __phys_to_virt(end) -
+				(unsigned long)__arch_info_begin;
+			map.type = MT_MEMORY_RW;
+		} else {
+			map.length = end - start;
+			map.type = MT_MEMORY_RW;
+		}
+#else
 		map.length = end - start;
 		map.type = MT_MEMORY;
+#endif
 
 		create_mapping(&map);
+	}
+
+	vm = early_alloc_aligned(sizeof(*vm) * nr, __alignof__(*vm));
+
+	for_each_memblock(memory, reg) {
+
+		start = reg->base;
+		end = start + reg->size;
+
+		if (end > arm_lowmem_limit)
+			end = arm_lowmem_limit;
+		if (start >= end)
+			break;
+
+		pfn = __phys_to_pfn(start);
+		vaddr = __phys_to_virt(start);
+		length = end - start;
+		type = MT_MEMORY;
+
+		vm->addr = (void *)(vaddr & PAGE_MASK);
+		vm->size = PAGE_ALIGN(length + (vaddr & ~PAGE_MASK));
+		vm->phys_addr = __pfn_to_phys(pfn);
+		vm->flags = VM_LOWMEM | VM_ARM_STATIC_MAPPING;
+		vm->flags |= VM_ARM_MTYPE(type);
+		vm->caller = map_lowmem;
+		vm_area_add_early(vm);
+		mark_vmalloc_reserved_area(vm->addr, vm->size);
+		vm++;
 	}
 }
 

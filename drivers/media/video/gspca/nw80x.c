@@ -2001,8 +2001,6 @@ static int sd_setautogain(struct gspca_dev *gspca_dev, __s32 val)
 	return gspca_dev->usb_err;
 }
 
-#define WANT_REGULAR_AUTOGAIN
-#define WANT_COARSE_EXPO_AUTOGAIN
 #include "autogain_functions.h"
 
 static void do_autogain(struct gspca_dev *gspca_dev)

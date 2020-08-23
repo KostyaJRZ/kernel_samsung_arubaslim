@@ -11,7 +11,7 @@
 #include <linux/types.h>
 
 #ifdef CONFIG_EXPORT_UASM
-#include <linux/export.h>
+#include <linux/module.h>
 #define __uasminit
 #define __uasminitdata
 #define UASM_EXPORT_SYMBOL(sym) EXPORT_SYMBOL(sym)

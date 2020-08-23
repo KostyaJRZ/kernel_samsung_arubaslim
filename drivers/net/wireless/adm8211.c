@@ -1991,4 +1991,19 @@ static struct pci_driver adm8211_driver = {
 #endif /* CONFIG_PM */
 };
 
-module_pci_driver(adm8211_driver);
+
+
+static int __init adm8211_init(void)
+{
+	return pci_register_driver(&adm8211_driver);
+}
+
+
+static void __exit adm8211_exit(void)
+{
+	pci_unregister_driver(&adm8211_driver);
+}
+
+
+module_init(adm8211_init);
+module_exit(adm8211_exit);

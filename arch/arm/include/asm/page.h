@@ -34,6 +34,7 @@
  *	processor(s) we're building for.
  *
  *	We have the following to choose from:
+ *	  v3		- ARMv3
  *	  v4wt		- ARMv4 with writethrough cache, without minicache
  *	  v4wb		- ARMv4 with writeback cache, without minicache
  *	  v4_mc		- ARMv4 with minicache
@@ -42,6 +43,14 @@
  */
 #undef _USER
 #undef MULTI_USER
+
+#ifdef CONFIG_CPU_COPY_V3
+# ifdef _USER
+#  define MULTI_USER 1
+# else
+#  define _USER v3
+# endif
+#endif
 
 #ifdef CONFIG_CPU_COPY_V4WT
 # ifdef _USER
@@ -142,7 +151,9 @@ extern void __cpu_copy_user_highpage(struct page *to, struct page *from,
 #define clear_page(page)	memset((void *)(page), 0, PAGE_SIZE)
 extern void copy_page(void *to, const void *from);
 
+#ifdef CONFIG_KUSER_HELPERS
 #define __HAVE_ARCH_GATE_AREA 1
+#endif
 
 #ifdef CONFIG_ARM_LPAE
 #include <asm/pgtable-3level-types.h>
@@ -156,6 +167,11 @@ typedef struct page *pgtable_t;
 
 #ifdef CONFIG_HAVE_ARCH_PFN_VALID
 extern int pfn_valid(unsigned long);
+#endif
+
+#ifdef CONFIG_MEMORY_HOTPLUG_SPARSE
+extern int _early_pfn_valid(unsigned long);
+#define early_pfn_valid(pfn) (_early_pfn_valid(pfn))
 #endif
 
 #include <asm/memory.h>

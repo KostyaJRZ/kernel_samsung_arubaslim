@@ -14,7 +14,7 @@
 #include <asm/futex.h>
 #include "uaccess.h"
 
-#ifndef CONFIG_64BIT
+#ifndef __s390x__
 #define AHI	"ahi"
 #define ALR	"alr"
 #define CLR	"clr"

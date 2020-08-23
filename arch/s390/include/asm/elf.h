@@ -107,11 +107,11 @@
 /*
  * These are used to set parameters in the core dumps.
  */
-#ifndef CONFIG_64BIT
+#ifndef __s390x__
 #define ELF_CLASS	ELFCLASS32
-#else /* CONFIG_64BIT */
+#else /* __s390x__ */
 #define ELF_CLASS	ELFCLASS64
-#endif /* CONFIG_64BIT */
+#endif /* __s390x__ */
 #define ELF_DATA	ELFDATA2MSB
 #define ELF_ARCH	EM_S390
 
@@ -181,9 +181,9 @@ extern unsigned long elf_hwcap;
 extern char elf_platform[];
 #define ELF_PLATFORM (elf_platform)
 
-#ifndef CONFIG_64BIT
+#ifndef __s390x__
 #define SET_PERSONALITY(ex) set_personality(PER_LINUX)
-#else /* CONFIG_64BIT */
+#else /* __s390x__ */
 #define SET_PERSONALITY(ex)					\
 do {								\
 	if (personality(current->personality) != PER_LINUX32)	\
@@ -194,7 +194,7 @@ do {								\
 	else							\
 		clear_thread_flag(TIF_31BIT);			\
 } while (0)
-#endif /* CONFIG_64BIT */
+#endif /* __s390x__ */
 
 #define STACK_RND_MASK	0x7ffUL
 

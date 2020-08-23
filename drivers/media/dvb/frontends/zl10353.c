@@ -525,7 +525,7 @@ static int zl10353_read_snr(struct dvb_frontend *fe, u16 *snr)
 		zl10353_dump_regs(fe);
 
 	_snr = zl10353_read_register(state, SNR);
-	*snr = 10 * _snr / 8;
+	*snr = (_snr << 8) | _snr;
 
 	return 0;
 }
@@ -559,6 +559,7 @@ static int zl10353_init(struct dvb_frontend *fe)
 {
 	struct zl10353_state *state = fe->demodulator_priv;
 	u8 zl10353_reset_attach[6] = { 0x50, 0x03, 0x64, 0x46, 0x15, 0x0F };
+	int rc = 0;
 
 	if (debug_regs)
 		zl10353_dump_regs(fe);
@@ -572,7 +573,7 @@ static int zl10353_init(struct dvb_frontend *fe)
 	/* Do a "hard" reset if not already done */
 	if (zl10353_read_register(state, 0x50) != zl10353_reset_attach[1] ||
 	    zl10353_read_register(state, 0x51) != zl10353_reset_attach[2]) {
-		zl10353_write(fe, zl10353_reset_attach,
+		rc = zl10353_write(fe, zl10353_reset_attach,
 				   sizeof(zl10353_reset_attach));
 		if (debug_regs)
 			zl10353_dump_regs(fe);

@@ -377,6 +377,7 @@ extern enum system_states {
 	SYSTEM_HALT,
 	SYSTEM_POWER_OFF,
 	SYSTEM_RESTART,
+	SYSTEM_SUSPEND_DISK,
 } system_state;
 
 #define TAINT_PROPRIETARY_MODULE	0
@@ -402,11 +403,6 @@ static inline char *hex_byte_pack(char *buf, u8 byte)
 	*buf++ = hex_asc_hi(byte);
 	*buf++ = hex_asc_lo(byte);
 	return buf;
-}
-
-static inline char * __deprecated pack_hex_byte(char *buf, u8 byte)
-{
-	return hex_byte_pack(buf, byte);
 }
 
 extern int hex_to_bin(char ch);
@@ -708,6 +704,12 @@ static inline void ftrace_dump(enum ftrace_dump_mode oops_dump_mode) { }
 
 extern int do_sysinfo(struct sysinfo *info);
 
+/* To identify board information in panic logs, set this */
+extern char *mach_panic_string;
+
 #endif /* __KERNEL__ */
+
+/* To identify board information in panic logs, set this */
+extern char *mach_panic_string;
 
 #endif

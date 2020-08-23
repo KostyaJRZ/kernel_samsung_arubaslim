@@ -2,7 +2,6 @@
 #define _ASM_MODULE_H
 
 #include <linux/list.h>
-#include <linux/elf.h>
 #include <asm/uaccess.h>
 
 struct mod_arch_specific {

@@ -4,7 +4,7 @@
  * Support of SDHCI platform devices for spear soc family
  *
  * Copyright (C) 2010 ST Microelectronics
- * Viresh Kumar <viresh.linux@gmail.com>
+ * Viresh Kumar<viresh.kumar@st.com>
  *
  * Inspired by sdhci-pltfm.c
  *
@@ -75,6 +75,8 @@ static int __devinit sdhci_probe(struct platform_device *pdev)
 	struct spear_sdhci *sdhci;
 	int ret;
 
+	BUG_ON(pdev == NULL);
+
 	iomem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!iomem) {
 		ret = -ENOMEM;
@@ -82,18 +84,18 @@ static int __devinit sdhci_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	if (!devm_request_mem_region(&pdev->dev, iomem->start,
-				resource_size(iomem), "spear-sdhci")) {
+	if (!request_mem_region(iomem->start, resource_size(iomem),
+				"spear-sdhci")) {
 		ret = -EBUSY;
 		dev_dbg(&pdev->dev, "cannot request region\n");
 		goto err;
 	}
 
-	sdhci = devm_kzalloc(&pdev->dev, sizeof(*sdhci), GFP_KERNEL);
+	sdhci = kzalloc(sizeof(*sdhci), GFP_KERNEL);
 	if (!sdhci) {
 		ret = -ENOMEM;
 		dev_dbg(&pdev->dev, "cannot allocate memory for sdhci\n");
-		goto err;
+		goto err_kzalloc;
 	}
 
 	/* clk enable */
@@ -101,13 +103,13 @@ static int __devinit sdhci_probe(struct platform_device *pdev)
 	if (IS_ERR(sdhci->clk)) {
 		ret = PTR_ERR(sdhci->clk);
 		dev_dbg(&pdev->dev, "Error getting clock\n");
-		goto err;
+		goto err_clk_get;
 	}
 
 	ret = clk_enable(sdhci->clk);
 	if (ret) {
 		dev_dbg(&pdev->dev, "Error enabling clock\n");
-		goto put_clk;
+		goto err_clk_enb;
 	}
 
 	/* overwrite platform_data */
@@ -122,7 +124,7 @@ static int __devinit sdhci_probe(struct platform_device *pdev)
 	if (IS_ERR(host)) {
 		ret = PTR_ERR(host);
 		dev_dbg(&pdev->dev, "error allocating host\n");
-		goto disable_clk;
+		goto err_alloc_host;
 	}
 
 	host->hw_name = "sdhci";
@@ -130,18 +132,17 @@ static int __devinit sdhci_probe(struct platform_device *pdev)
 	host->irq = platform_get_irq(pdev, 0);
 	host->quirks = SDHCI_QUIRK_BROKEN_ADMA;
 
-	host->ioaddr = devm_ioremap(&pdev->dev, iomem->start,
-			resource_size(iomem));
+	host->ioaddr = ioremap(iomem->start, resource_size(iomem));
 	if (!host->ioaddr) {
 		ret = -ENOMEM;
 		dev_dbg(&pdev->dev, "failed to remap registers\n");
-		goto free_host;
+		goto err_ioremap;
 	}
 
 	ret = sdhci_add_host(host);
 	if (ret) {
 		dev_dbg(&pdev->dev, "error adding host\n");
-		goto free_host;
+		goto err_add_host;
 	}
 
 	platform_set_drvdata(pdev, host);
@@ -160,12 +161,11 @@ static int __devinit sdhci_probe(struct platform_device *pdev)
 	if (sdhci->data->card_power_gpio >= 0) {
 		int val = 0;
 
-		ret = devm_gpio_request(&pdev->dev,
-				sdhci->data->card_power_gpio, "sdhci");
+		ret = gpio_request(sdhci->data->card_power_gpio, "sdhci");
 		if (ret < 0) {
 			dev_dbg(&pdev->dev, "gpio request fail: %d\n",
 					sdhci->data->card_power_gpio);
-			goto set_drvdata;
+			goto err_pgpio_request;
 		}
 
 		if (sdhci->data->power_always_enb)
@@ -177,48 +177,60 @@ static int __devinit sdhci_probe(struct platform_device *pdev)
 		if (ret) {
 			dev_dbg(&pdev->dev, "gpio set direction fail: %d\n",
 					sdhci->data->card_power_gpio);
-			goto set_drvdata;
+			goto err_pgpio_direction;
 		}
 	}
 
 	if (sdhci->data->card_int_gpio >= 0) {
-		ret = devm_gpio_request(&pdev->dev, sdhci->data->card_int_gpio,
-				"sdhci");
+		ret = gpio_request(sdhci->data->card_int_gpio, "sdhci");
 		if (ret < 0) {
 			dev_dbg(&pdev->dev, "gpio request fail: %d\n",
 					sdhci->data->card_int_gpio);
-			goto set_drvdata;
+			goto err_igpio_request;
 		}
 
 		ret = gpio_direction_input(sdhci->data->card_int_gpio);
 		if (ret) {
 			dev_dbg(&pdev->dev, "gpio set direction fail: %d\n",
 					sdhci->data->card_int_gpio);
-			goto set_drvdata;
+			goto err_igpio_direction;
 		}
-		ret = devm_request_irq(&pdev->dev,
-				gpio_to_irq(sdhci->data->card_int_gpio),
+		ret = request_irq(gpio_to_irq(sdhci->data->card_int_gpio),
 				sdhci_gpio_irq, IRQF_TRIGGER_LOW,
 				mmc_hostname(host->mmc), pdev);
 		if (ret) {
 			dev_dbg(&pdev->dev, "gpio request irq fail: %d\n",
 					sdhci->data->card_int_gpio);
-			goto set_drvdata;
+			goto err_igpio_request_irq;
 		}
 
 	}
 
 	return 0;
 
-set_drvdata:
+err_igpio_request_irq:
+err_igpio_direction:
+	if (sdhci->data->card_int_gpio >= 0)
+		gpio_free(sdhci->data->card_int_gpio);
+err_igpio_request:
+err_pgpio_direction:
+	if (sdhci->data->card_power_gpio >= 0)
+		gpio_free(sdhci->data->card_power_gpio);
+err_pgpio_request:
 	platform_set_drvdata(pdev, NULL);
 	sdhci_remove_host(host, 1);
-free_host:
+err_add_host:
+	iounmap(host->ioaddr);
+err_ioremap:
 	sdhci_free_host(host);
-disable_clk:
+err_alloc_host:
 	clk_disable(sdhci->clk);
-put_clk:
+err_clk_enb:
 	clk_put(sdhci->clk);
+err_clk_get:
+	kfree(sdhci);
+err_kzalloc:
+	release_mem_region(iomem->start, resource_size(iomem));
 err:
 	dev_err(&pdev->dev, "spear-sdhci probe failed: %d\n", ret);
 	return ret;
@@ -227,19 +239,35 @@ err:
 static int __devexit sdhci_remove(struct platform_device *pdev)
 {
 	struct sdhci_host *host = platform_get_drvdata(pdev);
+	struct resource *iomem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	struct spear_sdhci *sdhci = dev_get_platdata(&pdev->dev);
-	int dead = 0;
+	int dead;
 	u32 scratch;
 
+	if (sdhci->data) {
+		if (sdhci->data->card_int_gpio >= 0) {
+			free_irq(gpio_to_irq(sdhci->data->card_int_gpio), pdev);
+			gpio_free(sdhci->data->card_int_gpio);
+		}
+
+		if (sdhci->data->card_power_gpio >= 0)
+			gpio_free(sdhci->data->card_power_gpio);
+	}
+
 	platform_set_drvdata(pdev, NULL);
+	dead = 0;
 	scratch = readl(host->ioaddr + SDHCI_INT_STATUS);
 	if (scratch == (u32)-1)
 		dead = 1;
 
 	sdhci_remove_host(host, dead);
+	iounmap(host->ioaddr);
 	sdhci_free_host(host);
 	clk_disable(sdhci->clk);
 	clk_put(sdhci->clk);
+	kfree(sdhci);
+	if (iomem)
+		release_mem_region(iomem->start, resource_size(iomem));
 
 	return 0;
 }
@@ -289,5 +317,5 @@ static struct platform_driver sdhci_driver = {
 module_platform_driver(sdhci_driver);
 
 MODULE_DESCRIPTION("SPEAr Secure Digital Host Controller Interface driver");
-MODULE_AUTHOR("Viresh Kumar <viresh.linux@gmail.com>");
+MODULE_AUTHOR("Viresh Kumar <viresh.kumar@st.com>");
 MODULE_LICENSE("GPL v2");

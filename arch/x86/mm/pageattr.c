@@ -122,7 +122,7 @@ within(unsigned long addr, unsigned long start, unsigned long end)
 
 /**
  * clflush_cache_range - flush a cache range with clflush
- * @vaddr:	virtual start address
+ * @addr:	virtual start address
  * @size:	number of bytes to flush
  *
  * clflush is an unordered instruction which needs fencing with mfence

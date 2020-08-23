@@ -324,10 +324,9 @@ static int atmel_nand_calculate(struct mtd_info *mtd,
  * mtd:        mtd info structure
  * chip:       nand chip info structure
  * buf:        buffer to store read data
- * oob_required:    caller expects OOB data read to chip->oob_poi
  */
-static int atmel_nand_read_page(struct mtd_info *mtd, struct nand_chip *chip,
-				uint8_t *buf, int oob_required, int page)
+static int atmel_nand_read_page(struct mtd_info *mtd,
+		struct nand_chip *chip, uint8_t *buf, int page)
 {
 	int eccsize = chip->ecc.size;
 	int eccbytes = chip->ecc.bytes;
@@ -336,7 +335,6 @@ static int atmel_nand_read_page(struct mtd_info *mtd, struct nand_chip *chip,
 	uint8_t *oob = chip->oob_poi;
 	uint8_t *ecc_pos;
 	int stat;
-	unsigned int max_bitflips = 0;
 
 	/*
 	 * Errata: ALE is incorrectly wired up to the ECC controller
@@ -373,12 +371,10 @@ static int atmel_nand_read_page(struct mtd_info *mtd, struct nand_chip *chip,
 	/* check if there's an error */
 	stat = chip->ecc.correct(mtd, p, oob, NULL);
 
-	if (stat < 0) {
+	if (stat < 0)
 		mtd->ecc_stats.failed++;
-	} else {
+	else
 		mtd->ecc_stats.corrected += stat;
-		max_bitflips = max_t(unsigned int, max_bitflips, stat);
-	}
 
 	/* get back to oob start (end of page) */
 	chip->cmdfunc(mtd, NAND_CMD_RNDOUT, mtd->writesize, -1);
@@ -386,7 +382,7 @@ static int atmel_nand_read_page(struct mtd_info *mtd, struct nand_chip *chip,
 	/* read the oob */
 	chip->read_buf(mtd, oob, mtd->oobsize);
 
-	return max_bitflips;
+	return 0;
 }
 
 /*

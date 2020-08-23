@@ -19,7 +19,6 @@
 #include <linux/mmc/sh_mmcif.h>
 #include <linux/mmc/sh_mobile_sdhi.h>
 #include <linux/sh_eth.h>
-#include <linux/sh_intc.h>
 #include <linux/usb/renesas_usbhs.h>
 #include <cpu/sh7757.h>
 #include <asm/heartbeat.h>
@@ -66,8 +65,8 @@ static struct resource sh_eth0_resources[] = {
 		.end    = 0xfef001ff,
 		.flags  = IORESOURCE_MEM,
 	}, {
-		.start  = evt2irq(0xc80),
-		.end    = evt2irq(0xc80),
+		.start  = 84,
+		.end    = 84,
 		.flags  = IORESOURCE_IRQ,
 	},
 };
@@ -95,8 +94,8 @@ static struct resource sh_eth1_resources[] = {
 		.end    = 0xfef009ff,
 		.flags  = IORESOURCE_MEM,
 	}, {
-		.start  = evt2irq(0xc80),
-		.end    = evt2irq(0xc80),
+		.start  = 84,
+		.end    = 84,
 		.flags  = IORESOURCE_IRQ,
 	},
 };
@@ -140,8 +139,8 @@ static struct resource sh_eth_giga0_resources[] = {
 		.end    = 0xfee01fff,
 		.flags  = IORESOURCE_MEM,
 	}, {
-		.start  = evt2irq(0x2960),
-		.end    = evt2irq(0x2960),
+		.start  = 315,
+		.end    = 315,
 		.flags  = IORESOURCE_IRQ,
 	},
 };
@@ -175,8 +174,8 @@ static struct resource sh_eth_giga1_resources[] = {
 		.end    = 0xfee01fff,
 		.flags  = IORESOURCE_MEM,
 	}, {
-		.start  = evt2irq(0x2980),
-		.end    = evt2irq(0x2980),
+		.start  = 316,
+		.end    = 316,
 		.flags  = IORESOURCE_IRQ,
 	},
 };
@@ -207,11 +206,11 @@ static struct resource sh_mmcif_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x1c60),
+		.start	= 211,
 		.flags	= IORESOURCE_IRQ,
 	},
 	[2] = {
-		.start	= evt2irq(0x1c80),
+		.start	= 212,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -249,7 +248,7 @@ static struct resource sdhi_resources[] = {
 		.flags  = IORESOURCE_MEM,
 	},
 	[1] = {
-		.start  = evt2irq(0x480),
+		.start  = 20,
 		.flags  = IORESOURCE_IRQ,
 	},
 };
@@ -285,8 +284,8 @@ static struct resource usb0_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x840),
-		.end	= evt2irq(0x840),
+		.start	= 50,
+		.end	= 50,
 		.flags	= IORESOURCE_IRQ,
 	},
 };

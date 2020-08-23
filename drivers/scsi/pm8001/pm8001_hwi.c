@@ -192,7 +192,7 @@ init_default_table_values(struct pm8001_hba_info *pm8001_ha)
 	pm8001_ha->main_cfg_tbl.fatal_err_interrupt		= 0x01;
 	for (i = 0; i < qn; i++) {
 		pm8001_ha->inbnd_q_tbl[i].element_pri_size_cnt	=
-			PM8001_MPI_QUEUE | (64 << 16) | (0x00<<30);
+			0x00000100 | (0x00000040 << 16) | (0x00<<30);
 		pm8001_ha->inbnd_q_tbl[i].upper_base_addr	=
 			pm8001_ha->memoryMap.region[IB].phys_addr_hi;
 		pm8001_ha->inbnd_q_tbl[i].lower_base_addr	=
@@ -218,7 +218,7 @@ init_default_table_values(struct pm8001_hba_info *pm8001_ha)
 	}
 	for (i = 0; i < qn; i++) {
 		pm8001_ha->outbnd_q_tbl[i].element_size_cnt	=
-			PM8001_MPI_QUEUE | (64 << 16) | (0x01<<30);
+			256 | (64 << 16) | (1<<30);
 		pm8001_ha->outbnd_q_tbl[i].upper_base_addr	=
 			pm8001_ha->memoryMap.region[OB].phys_addr_hi;
 		pm8001_ha->outbnd_q_tbl[i].lower_base_addr	=
@@ -1245,7 +1245,7 @@ static int mpi_msg_free_get(struct inbound_queue_table *circularQ,
 	/* Stores the new consumer index */
 	consumer_index = pm8001_read_32(circularQ->ci_virt);
 	circularQ->consumer_index = cpu_to_le32(consumer_index);
-	if (((circularQ->producer_idx + bcCount) % PM8001_MPI_QUEUE) ==
+	if (((circularQ->producer_idx + bcCount) % 256) ==
 		le32_to_cpu(circularQ->consumer_index)) {
 		*messagePtr = NULL;
 		return -1;
@@ -1253,8 +1253,7 @@ static int mpi_msg_free_get(struct inbound_queue_table *circularQ,
 	/* get memory IOMB buffer address */
 	offset = circularQ->producer_idx * 64;
 	/* increment to next bcCount element */
-	circularQ->producer_idx = (circularQ->producer_idx + bcCount)
-				% PM8001_MPI_QUEUE;
+	circularQ->producer_idx = (circularQ->producer_idx + bcCount) % 256;
 	/* Adds that distance to the base of the region virtual address plus
 	the message header size*/
 	msgHeader = (struct mpi_msg_hdr *)(circularQ->base_virt	+ offset);
@@ -1327,8 +1326,7 @@ static u32 mpi_msg_free_set(struct pm8001_hba_info *pm8001_ha, void *pMsg,
 		return 0;
 	}
 	/* free the circular queue buffer elements associated with the message*/
-	circularQ->consumer_idx = (circularQ->consumer_idx + bc)
-				% PM8001_MPI_QUEUE;
+	circularQ->consumer_idx = (circularQ->consumer_idx + bc) % 256;
 	/* update the CI of outbound queue */
 	pm8001_cw32(pm8001_ha, circularQ->ci_pci_bar, circularQ->ci_offset,
 		circularQ->consumer_idx);
@@ -1385,8 +1383,7 @@ static u32 mpi_msg_consume(struct pm8001_hba_info *pm8001_ha,
 					circularQ->consumer_idx =
 						(circularQ->consumer_idx +
 						((le32_to_cpu(msgHeader_tmp)
-						 >> 24) & 0x1f))
-							% PM8001_MPI_QUEUE;
+						>> 24) & 0x1f)) % 256;
 					msgHeader_tmp = 0;
 					pm8001_write_32(msgHeader, 0, 0);
 					/* update the CI of outbound queue */
@@ -1399,7 +1396,7 @@ static u32 mpi_msg_consume(struct pm8001_hba_info *pm8001_ha,
 				circularQ->consumer_idx =
 					(circularQ->consumer_idx +
 					((le32_to_cpu(msgHeader_tmp) >> 24) &
-					0x1f)) % PM8001_MPI_QUEUE;
+					0x1f)) % 256;
 				msgHeader_tmp = 0;
 				pm8001_write_32(msgHeader, 0, 0);
 				/* update the CI of outbound queue */
@@ -3360,7 +3357,7 @@ mpi_fw_flash_update_resp(struct pm8001_hba_info *pm8001_ha, void *piomb)
 	struct fw_control_ex	fw_control_context;
 	struct fw_flash_Update_resp *ppayload =
 		(struct fw_flash_Update_resp *)(piomb + 4);
-	u32 tag = le32_to_cpu(ppayload->tag);
+	u32 tag = ppayload->tag;
 	struct pm8001_ccb_info *ccb = &pm8001_ha->ccb_info[tag];
 	status = le32_to_cpu(ppayload->status);
 	memcpy(&fw_control_context,
@@ -3706,8 +3703,8 @@ static int mpi_hw_event(struct pm8001_hba_info *pm8001_ha, void* piomb)
  */
 static void process_one_iomb(struct pm8001_hba_info *pm8001_ha, void *piomb)
 {
-	__le32 pHeader = *(__le32 *)piomb;
-	u8 opc = (u8)((le32_to_cpu(pHeader)) & 0xFFF);
+	u32 pHeader = (u32)*(u32 *)piomb;
+	u8 opc = (u8)(pHeader & 0xFFF);
 
 	PM8001_MSG_DBG(pm8001_ha, pm8001_printk("process_one_iomb:"));
 

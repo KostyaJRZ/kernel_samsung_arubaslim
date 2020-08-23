@@ -633,9 +633,10 @@ static int it913x_fe_read_snr(struct dvb_frontend *fe, u16 *snr)
 static int it913x_fe_read_ber(struct dvb_frontend *fe, u32 *ber)
 {
 	struct it913x_fe_state *state = fe->demodulator_priv;
+	int ret;
 	u8 reg[5];
 	/* Read Aborted Packets and Pre-Viterbi error rate 5 bytes */
-	it913x_read_reg(state, RSD_ABORT_PKT_LSB, reg, sizeof(reg));
+	ret = it913x_read_reg(state, RSD_ABORT_PKT_LSB, reg, sizeof(reg));
 	state->ucblocks += (u32)(reg[1] << 8) | reg[0];
 	*ber = (u32)(reg[4] << 16) | (reg[3] << 8) | reg[2];
 	return 0;
@@ -657,9 +658,10 @@ static int it913x_fe_get_frontend(struct dvb_frontend *fe)
 {
 	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 	struct it913x_fe_state *state = fe->demodulator_priv;
+	int ret;
 	u8 reg[8];
 
-	it913x_read_reg(state, REG_TPSD_TX_MODE, reg, sizeof(reg));
+	ret = it913x_read_reg(state, REG_TPSD_TX_MODE, reg, sizeof(reg));
 
 	if (reg[3] < 3)
 		p->modulation = fe_con[reg[3]];
@@ -689,25 +691,25 @@ static int it913x_fe_set_frontend(struct dvb_frontend *fe)
 {
 	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 	struct it913x_fe_state *state = fe->demodulator_priv;
-	int i;
+	int ret, i;
 	u8 empty_ch, last_ch;
 
 	state->it913x_status = 0;
 
 	/* Set bw*/
-	it913x_fe_select_bw(state, p->bandwidth_hz,
+	ret = it913x_fe_select_bw(state, p->bandwidth_hz,
 		state->adcFrequency);
 
 	/* Training Mode Off */
-	it913x_write_reg(state, PRO_LINK, TRAINING_MODE, 0x0);
+	ret = it913x_write_reg(state, PRO_LINK, TRAINING_MODE, 0x0);
 
 	/* Clear Empty Channel */
-	it913x_write_reg(state, PRO_DMOD, EMPTY_CHANNEL_STATUS, 0x0);
+	ret = it913x_write_reg(state, PRO_DMOD, EMPTY_CHANNEL_STATUS, 0x0);
 
 	/* Clear bits */
-	it913x_write_reg(state, PRO_DMOD, MP2IF_SYNC_LK, 0x0);
+	ret = it913x_write_reg(state, PRO_DMOD, MP2IF_SYNC_LK, 0x0);
 	/* LED on */
-	it913x_write_reg(state, PRO_LINK, GPIOH3_O, 0x1);
+	ret = it913x_write_reg(state, PRO_LINK, GPIOH3_O, 0x1);
 	/* Select Band*/
 	if ((p->frequency >= 51000000) && (p->frequency <= 230000000))
 		i = 0;
@@ -718,7 +720,7 @@ static int it913x_fe_set_frontend(struct dvb_frontend *fe)
 	else
 		return -EOPNOTSUPP;
 
-	it913x_write_reg(state, PRO_DMOD, FREE_BAND, i);
+	ret = it913x_write_reg(state, PRO_DMOD, FREE_BAND, i);
 
 	deb_info("Frontend Set Tuner Type %02x", state->tuner_type);
 	switch (state->tuner_type) {
@@ -728,7 +730,7 @@ static int it913x_fe_set_frontend(struct dvb_frontend *fe)
 	case IT9135_60:
 	case IT9135_61:
 	case IT9135_62:
-		it9137_set_tuner(state,
+		ret = it9137_set_tuner(state,
 			p->bandwidth_hz, p->frequency);
 		break;
 	default:
@@ -740,9 +742,9 @@ static int it913x_fe_set_frontend(struct dvb_frontend *fe)
 		break;
 	}
 	/* LED off */
-	it913x_write_reg(state, PRO_LINK, GPIOH3_O, 0x0);
+	ret = it913x_write_reg(state, PRO_LINK, GPIOH3_O, 0x0);
 	/* Trigger ofsm */
-	it913x_write_reg(state, PRO_DMOD, TRIGGER_OFSM, 0x0);
+	ret = it913x_write_reg(state, PRO_DMOD, TRIGGER_OFSM, 0x0);
 	last_ch = 2;
 	for (i = 0; i < 40; ++i) {
 		empty_ch = it913x_read_reg_u8(state, EMPTY_CHANNEL_STATUS);

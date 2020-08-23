@@ -23,7 +23,6 @@
 #include <linux/i2c.h>
 #include <linux/usb/r8a66597.h>
 #include <linux/videodev2.h>
-#include <linux/sh_intc.h>
 #include <media/rj54n1cb0c.h>
 #include <media/soc_camera.h>
 #include <media/sh_mobile_ceu.h>
@@ -111,7 +110,7 @@ static struct resource kfr2r09_sh_keysc_resources[] = {
 		.flags  = IORESOURCE_MEM,
 	},
 	[1] = {
-		.start  = evt2irq(0xbe0),
+		.start  = 79,
 		.flags  = IORESOURCE_IRQ,
 	},
 };
@@ -176,7 +175,7 @@ static struct resource kfr2r09_sh_lcdc_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xf40),
+		.start	= 106,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -201,8 +200,8 @@ static struct resource kfr2r09_usb0_gadget_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xa20),
-		.end	= evt2irq(0xa20),
+		.start	= 65,
+		.end	= 65,
 		.flags	= IORESOURCE_IRQ | IRQF_TRIGGER_LOW,
 	},
 };
@@ -231,8 +230,8 @@ static struct resource kfr2r09_ceu_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start  = evt2irq(0x880),
-		.end	= evt2irq(0x880),
+		.start  = 52,
+		.end  = 52,
 		.flags  = IORESOURCE_IRQ,
 	},
 	[2] = {
@@ -349,7 +348,7 @@ static struct resource kfr2r09_sh_sdhi0_resources[] = {
 		.flags  = IORESOURCE_MEM,
 	},
 	[1] = {
-		.start  = evt2irq(0xe80),
+		.start  = 100,
 		.flags  = IORESOURCE_IRQ,
 	},
 };

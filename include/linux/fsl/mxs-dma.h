@@ -15,6 +15,14 @@ struct mxs_dma_data {
 	int chan_irq;
 };
 
-extern int mxs_dma_is_apbh(struct dma_chan *chan);
-extern int mxs_dma_is_apbx(struct dma_chan *chan);
+static inline int mxs_dma_is_apbh(struct dma_chan *chan)
+{
+	return !strcmp(dev_name(chan->device->dev), "mxs-dma-apbh");
+}
+
+static inline int mxs_dma_is_apbx(struct dma_chan *chan)
+{
+	return !strcmp(dev_name(chan->device->dev), "mxs-dma-apbx");
+}
+
 #endif /* __MACH_MXS_DMA_H__ */

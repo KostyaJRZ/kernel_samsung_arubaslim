@@ -187,6 +187,8 @@ static int __init xusbatm_init(void)
 {
 	int i;
 
+	dbg("xusbatm_init");
+
 	if (!num_vendor ||
 	    num_vendor != num_product ||
 	    num_vendor != num_rx_endpoint ||
@@ -219,6 +221,8 @@ module_init(xusbatm_init);
 
 static void __exit xusbatm_exit(void)
 {
+	dbg("xusbatm_exit entered");
+
 	usb_deregister(&xusbatm_usb_driver);
 }
 module_exit(xusbatm_exit);

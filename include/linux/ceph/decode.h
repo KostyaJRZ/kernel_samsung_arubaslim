@@ -46,14 +46,9 @@ static inline void ceph_decode_copy(void **p, void *pv, size_t n)
 /*
  * bounds check input.
  */
-static inline int ceph_has_room(void **p, void *end, size_t n)
-{
-	return end >= *p && n <= end - *p;
-}
-
 #define ceph_decode_need(p, end, n, bad)		\
 	do {						\
-		if (!likely(ceph_has_room(p, end, n)))	\
+		if (unlikely(*(p) + (n) > (end))) 	\
 			goto bad;			\
 	} while (0)
 
@@ -172,7 +167,7 @@ static inline void ceph_encode_string(void **p, void *end,
 
 #define ceph_encode_need(p, end, n, bad)		\
 	do {						\
-		if (!likely(ceph_has_room(p, end, n)))	\
+		if (unlikely(*(p) + (n) > (end))) 	\
 			goto bad;			\
 	} while (0)
 

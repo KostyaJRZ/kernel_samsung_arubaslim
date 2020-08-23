@@ -19,7 +19,6 @@
 #include <linux/io.h>
 #include <linux/serial_sci.h>
 #include <linux/sh_timer.h>
-#include <linux/sh_intc.h>
 #include <asm/rtc.h>
 #include <cpu/serial.h>
 
@@ -31,7 +30,7 @@ static struct resource rtc_resources[] = {
 	},
 	[1] = {
 		/* Shared Period/Carry/Alarm IRQ */
-		.start	= evt2irq(0x480),
+		.start	= 20,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -56,7 +55,7 @@ static struct plat_sci_port scif0_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE,
 	.scbrr_algo_id	= SCBRR_ALGO_4,
 	.type		= PORT_SCIF,
-	.irqs		= SCIx_IRQ_MUXED(evt2irq(0xc00)),
+	.irqs		= { 80, 80, 80, 80 },
 	.ops		= &sh7720_sci_port_ops,
 	.regtype	= SCIx_SH7705_SCIF_REGTYPE,
 };
@@ -75,7 +74,7 @@ static struct plat_sci_port scif1_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE,
 	.scbrr_algo_id	= SCBRR_ALGO_4,
 	.type		= PORT_SCIF,
-	.irqs           = SCIx_IRQ_MUXED(evt2irq(0xc20)),
+	.irqs           = { 81, 81, 81, 81 },
 	.ops		= &sh7720_sci_port_ops,
 	.regtype	= SCIx_SH7705_SCIF_REGTYPE,
 };
@@ -95,14 +94,13 @@ static struct resource usb_ohci_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xa60),
-		.end	= evt2irq(0xa60),
+		.start	= 67,
+		.end	= 67,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
 
 static u64 usb_ohci_dma_mask = 0xffffffffUL;
-
 static struct platform_device usb_ohci_device = {
 	.name		= "sh_ohci",
 	.id		= -1,
@@ -123,8 +121,8 @@ static struct resource usbf_resources[] = {
 	},
 	[1] = {
 		.name	= "sh_udc",
-		.start	= evt2irq(0xa20),
-		.end	= evt2irq(0xa20),
+		.start	= 65,
+		.end	= 65,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -154,7 +152,7 @@ static struct resource cmt0_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xf00),
+		.start	= 104,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -181,7 +179,7 @@ static struct resource cmt1_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xf00),
+		.start	= 104,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -208,7 +206,7 @@ static struct resource cmt2_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xf00),
+		.start	= 104,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -235,7 +233,7 @@ static struct resource cmt3_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xf00),
+		.start	= 104,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -262,7 +260,7 @@ static struct resource cmt4_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xf00),
+		.start	= 104,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -290,7 +288,7 @@ static struct resource tmu0_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x400),
+		.start	= 16,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -318,7 +316,7 @@ static struct resource tmu1_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x420),
+		.start	= 17,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -345,7 +343,7 @@ static struct resource tmu2_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x440),
+		.start	= 18,
 		.flags	= IORESOURCE_IRQ,
 	},
 };

@@ -186,9 +186,7 @@ int omap3isp_csiphy_acquire(struct isp_csiphy *phy)
 	if (rval < 0)
 		goto done;
 
-	rval = omap3isp_csi2_reset(phy->csi2);
-	if (rval < 0)
-		goto done;
+	omap3isp_csi2_reset(phy->csi2);
 
 	csiphy_dphy_config(phy);
 	csiphy_lanes_config(phy);

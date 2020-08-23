@@ -48,6 +48,10 @@ __initcall(init_syscall_regs);
 
 extern int proc_mm;
 
+int single_count = 0;
+int multi_count = 0;
+int multi_op_count = 0;
+
 static inline long do_syscall_stub(struct mm_id * mm_idp, void **addr)
 {
 	int n, i;
@@ -59,6 +63,8 @@ static inline long do_syscall_stub(struct mm_id * mm_idp, void **addr)
 	if (proc_mm)
 		/* FIXME: Need to look up userspace_pid by cpu */
 		pid = userspace_pid[0];
+
+	multi_count++;
 
 	n = ptrace_setregs(pid, syscall_regs);
 	if (n < 0) {
@@ -120,6 +126,9 @@ long run_syscall_stub(struct mm_id * mm_idp, int syscall,
 {
 	unsigned long *stack = check_init_stack(mm_idp, *addr);
 
+	if (done && *addr == NULL)
+		single_count++;
+
 	*stack += sizeof(long);
 	stack += *stack / sizeof(long);
 
@@ -132,6 +141,7 @@ long run_syscall_stub(struct mm_id * mm_idp, int syscall,
 	*stack++ = args[5];
 	*stack++ = expected;
 	*stack = 0;
+	multi_op_count++;
 
 	if (!done && ((((unsigned long) stack) & ~UM_KERN_PAGE_MASK) <
 		     UM_KERN_PAGE_SIZE - 10 * sizeof(long))) {

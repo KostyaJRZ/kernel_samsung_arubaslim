@@ -15,7 +15,6 @@
 #include <linux/errno.h>
 #include <linux/err.h>
 #include <linux/io.h>
-#include <linux/irq.h>
 
 #include "common.h"
 #include <plat/cpu.h>
@@ -304,15 +303,8 @@ void omap3xxx_prm_restore_irqen(u32 *saved_mask)
 
 static int __init omap3xxx_prcm_init(void)
 {
-	int ret = 0;
-
-	if (cpu_is_omap34xx()) {
-		ret = omap_prcm_register_chain_handler(&omap3_prcm_irq_setup);
-		if (!ret)
-			irq_set_status_flags(omap_prcm_event_to_irq("io"),
-					     IRQ_NOAUTOEN);
-	}
-
-	return ret;
+	if (cpu_is_omap34xx())
+		return omap_prcm_register_chain_handler(&omap3_prcm_irq_setup);
+	return 0;
 }
 subsys_initcall(omap3xxx_prcm_init);

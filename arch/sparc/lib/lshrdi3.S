@@ -1,6 +1,6 @@
-#include <linux/linkage.h>
 
-ENTRY(__lshrdi3)
+	.globl	__lshrdi3
+__lshrdi3:
 	cmp	%o2, 0
 	be	3f
 	 mov	0x20, %g2
@@ -24,4 +24,3 @@ ENTRY(__lshrdi3)
 3:
 	retl 
 	 nop 
-ENDPROC(__lshrdi3)

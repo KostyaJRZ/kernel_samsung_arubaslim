@@ -481,6 +481,7 @@ static int tt_no_collision (
 
 static int enable_periodic (struct ehci_hcd *ehci)
 {
+	u32	cmd;
 	int	status;
 
 	if (ehci->periodic_sched++)
@@ -496,8 +497,8 @@ static int enable_periodic (struct ehci_hcd *ehci)
 		return status;
 	}
 
-	ehci->command |= CMD_PSE;
-	ehci_writel(ehci, ehci->command, &ehci->regs->command);
+	cmd = ehci_readl(ehci, &ehci->regs->command) | CMD_PSE;
+	ehci_writel(ehci, cmd, &ehci->regs->command);
 	/* posted write ... PSS happens later */
 
 	/* make sure ehci_work scans these */
@@ -510,6 +511,7 @@ static int enable_periodic (struct ehci_hcd *ehci)
 
 static int disable_periodic (struct ehci_hcd *ehci)
 {
+	u32	cmd;
 	int	status;
 
 	if (--ehci->periodic_sched)
@@ -535,8 +537,8 @@ static int disable_periodic (struct ehci_hcd *ehci)
 		return status;
 	}
 
-	ehci->command &= ~CMD_PSE;
-	ehci_writel(ehci, ehci->command, &ehci->regs->command);
+	cmd = ehci_readl(ehci, &ehci->regs->command) & ~CMD_PSE;
+	ehci_writel(ehci, cmd, &ehci->regs->command);
 	/* posted write ... */
 
 	free_cached_lists(ehci);
@@ -827,7 +829,7 @@ static int qh_schedule(struct ehci_hcd *ehci, struct ehci_qh *qh)
 {
 	int		status;
 	unsigned	uframe;
-	__hc32		c_mask;
+	__hc32		c_mask = 0;
 	unsigned	frame;		/* 0..(qh->period - 1), or NO_FRAME */
 	struct ehci_qh_hw	*hw = qh->hw;
 
@@ -1331,35 +1333,33 @@ sitd_slot_ok (
 	if (mask & ~0xffff)
 		return 0;
 
-	/* check bandwidth */
-	uframe %= period_uframes;
-	frame = uframe >> 3;
-
-#ifdef CONFIG_USB_EHCI_TT_NEWSCHED
-	/* The tt's fullspeed bus bandwidth must be available.
-	 * tt_available scheduling guarantees 10+% for control/bulk.
-	 */
-	uf = uframe & 7;
-	if (!tt_available(ehci, period_uframes >> 3,
-			stream->udev, frame, uf, stream->tt_usecs))
-		return 0;
-#else
-	/* tt must be idle for start(s), any gap, and csplit.
-	 * assume scheduling slop leaves 10+% for control/bulk.
-	 */
-	if (!tt_no_collision(ehci, period_uframes >> 3,
-			stream->udev, frame, mask))
-		return 0;
-#endif
-
 	/* this multi-pass logic is simple, but performance may
 	 * suffer when the schedule data isn't cached.
 	 */
+
+	/* check bandwidth */
+	uframe %= period_uframes;
 	do {
 		u32		max_used;
 
 		frame = uframe >> 3;
 		uf = uframe & 7;
+
+#ifdef CONFIG_USB_EHCI_TT_NEWSCHED
+		/* The tt's fullspeed bus bandwidth must be available.
+		 * tt_available scheduling guarantees 10+% for control/bulk.
+		 */
+		if (!tt_available (ehci, period_uframes << 3,
+				stream->udev, frame, uf, stream->tt_usecs))
+			return 0;
+#else
+		/* tt must be idle for start(s), any gap, and csplit.
+		 * assume scheduling slop leaves 10+% for control/bulk.
+		 */
+		if (!tt_no_collision (ehci, period_uframes << 3,
+				stream->udev, frame, mask))
+			return 0;
+#endif
 
 		/* check starts (OUT uses more than one) */
 		max_used = ehci->uframe_periodic_max - stream->usecs;
@@ -1684,7 +1684,7 @@ itd_link_urb (
 
 	/* don't need that schedule data any more */
 	iso_sched_free (stream, iso_sched);
-	urb->hcpriv = NULL;
+	urb->hcpriv = stream;
 
 	timer_action (ehci, TIMER_IO_WATCHDOG);
 	return enable_periodic(ehci);
@@ -2094,7 +2094,7 @@ sitd_link_urb (
 
 	/* don't need that schedule data any more */
 	iso_sched_free (stream, sched);
-	urb->hcpriv = NULL;
+	urb->hcpriv = stream;
 
 	timer_action (ehci, TIMER_IO_WATCHDOG);
 	return enable_periodic(ehci);
@@ -2358,8 +2358,7 @@ restart:
 				 * in the previous frame for completions.
 				 */
 				if (q.fstn->hw_prev != EHCI_LIST_END(ehci)) {
-					ehci_dbg(ehci,
-						"ignoring completions from FSTNs\n");
+					dbg ("ignoring completions from FSTNs");
 				}
 				type = Q_NEXT_TYPE(ehci, q.fstn->hw_next);
 				q = q.fstn->fstn_next;
@@ -2442,7 +2441,7 @@ restart:
 				q = *q_p;
 				break;
 			default:
-				ehci_dbg(ehci, "corrupt type %d frame %d shadow %p\n",
+				dbg ("corrupt type %d frame %d shadow %p",
 					type, frame, q.ptr);
 				// BUG ();
 				q.ptr = NULL;

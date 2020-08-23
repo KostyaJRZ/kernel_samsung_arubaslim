@@ -88,8 +88,6 @@
 #define USB_REQ_GET_INTERFACE		0x0A
 #define USB_REQ_SET_INTERFACE		0x0B
 #define USB_REQ_SYNCH_FRAME		0x0C
-#define USB_REQ_SET_SEL			0x30
-#define USB_REQ_SET_ISOCH_DELAY		0x31
 
 #define USB_REQ_SET_ENCRYPTION		0x0D	/* Wireless USB */
 #define USB_REQ_GET_ENCRYPTION		0x0E
@@ -136,6 +134,12 @@
 #define	TEST_PACKET	4
 #define	TEST_FORCE_EN	5
 
+/* OTG test mode feature bits
+ * See ECN OTG2.0 spec Table 6-8
+ */
+#define TEST_OTG_SRP_REQD	6
+#define TEST_OTG_HNP_REQD	7
+
 /*
  * New Feature Selectors as added by USB 3.0
  * See USB 3.0 spec Table 9-6
@@ -152,7 +156,20 @@
 #define USB_INTRF_FUNC_SUSPEND_LP	(1 << (8 + 0))
 #define USB_INTRF_FUNC_SUSPEND_RW	(1 << (8 + 1))
 
+/*
+ * Interface status, Figure 9-5 USB 3.0 spec
+ */
+#define USB_INTRF_STAT_FUNC_RW_CAP     1
+#define USB_INTRF_STAT_FUNC_RW         2
+
 #define USB_ENDPOINT_HALT		0	/* IN/OUT will STALL */
+
+#define OTG_STATUS_SELECTOR		0xF000
+#define HOST_REQUEST_FLAG		0
+#define THOST_REQ_POLL			1500    /* msec (1000 - 2000) */
+#define OTG_TTST_SUSP			70	/* msec (0 - 100) */
+
+#define OTG_TTST_VBUS_OFF               1
 
 /* Bit array elements as returned by the USB_REQ_GET_STATUS request. */
 #define USB_DEV_STAT_U1_ENABLED		2	/* transition into U1 state */
@@ -392,11 +409,6 @@ struct usb_endpoint_descriptor {
 #define USB_ENDPOINT_XFER_INT		3
 #define USB_ENDPOINT_MAX_ADJUSTABLE	0x80
 
-/* The USB 3.0 spec redefines bits 5:4 of bmAttributes as interrupt ep type. */
-#define USB_ENDPOINT_INTRTYPE		0x30
-#define USB_ENDPOINT_INTR_PERIODIC	(0 << 4)
-#define USB_ENDPOINT_INTR_NOTIFICATION	(1 << 4)
-
 #define USB_ENDPOINT_SYNCTYPE		0x0c
 #define USB_ENDPOINT_SYNC_NONE		(0 << 2)
 #define USB_ENDPOINT_SYNC_ASYNC		(1 << 2)
@@ -599,12 +611,6 @@ static inline int usb_endpoint_maxp(const struct usb_endpoint_descriptor *epd)
 	return __le16_to_cpu(epd->wMaxPacketSize);
 }
 
-static inline int usb_endpoint_interrupt_type(
-		const struct usb_endpoint_descriptor *epd)
-{
-	return epd->bmAttributes & USB_ENDPOINT_INTRTYPE;
-}
-
 /*-------------------------------------------------------------------------*/
 
 /* USB_DT_SS_ENDPOINT_COMP: SuperSpeed Endpoint Companion descriptor */
@@ -666,8 +672,10 @@ struct usb_otg_descriptor {
 	__u8  bDescriptorType;
 
 	__u8  bmAttributes;	/* support for HNP, SRP, etc */
+	__le16 bcdOTG;
 } __attribute__ ((packed));
 
+#define USB_DT_OTG_SIZE		5
 /* from usb_otg_descriptor.bmAttributes */
 #define USB_OTG_SRP		(1 << 0)
 #define USB_OTG_HNP		(1 << 1)	/* swap host/device roles */
@@ -945,51 +953,6 @@ enum usb_device_state {
 	 * suspend states.  (L2 being original USB 1.1 suspend.)
 	 */
 };
-
-enum usb3_link_state {
-	USB3_LPM_U0 = 0,
-	USB3_LPM_U1,
-	USB3_LPM_U2,
-	USB3_LPM_U3
-};
-
-/*
- * A U1 timeout of 0x0 means the parent hub will reject any transitions to U1.
- * 0xff means the parent hub will accept transitions to U1, but will not
- * initiate a transition.
- *
- * A U1 timeout of 0x1 to 0x7F also causes the hub to initiate a transition to
- * U1 after that many microseconds.  Timeouts of 0x80 to 0xFE are reserved
- * values.
- *
- * A U2 timeout of 0x0 means the parent hub will reject any transitions to U2.
- * 0xff means the parent hub will accept transitions to U2, but will not
- * initiate a transition.
- *
- * A U2 timeout of 0x1 to 0xFE also causes the hub to initiate a transition to
- * U2 after N*256 microseconds.  Therefore a U2 timeout value of 0x1 means a U2
- * idle timer of 256 microseconds, 0x2 means 512 microseconds, 0xFE means
- * 65.024ms.
- */
-#define USB3_LPM_DISABLED		0x0
-#define USB3_LPM_U1_MAX_TIMEOUT		0x7F
-#define USB3_LPM_U2_MAX_TIMEOUT		0xFE
-#define USB3_LPM_DEVICE_INITIATED	0xFF
-
-struct usb_set_sel_req {
-	__u8	u1_sel;
-	__u8	u1_pel;
-	__le16	u2_sel;
-	__le16	u2_pel;
-} __attribute__ ((packed));
-
-/*
- * The Set System Exit Latency control transfer provides one byte each for
- * U1 SEL and U1 PEL, so the max exit latency is 0xFF.  U2 SEL and U2 PEL each
- * are two bytes long.
- */
-#define USB3_LPM_MAX_U1_SEL_PEL		0xFF
-#define USB3_LPM_MAX_U2_SEL_PEL		0xFFFF
 
 /*-------------------------------------------------------------------------*/
 

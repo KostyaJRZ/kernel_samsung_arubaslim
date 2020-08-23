@@ -15,7 +15,6 @@
  *  GNU General Public License for more details.
  */
 #include <linux/kernel.h>
-#include <linux/export.h>
 #include <linux/init.h>
 #include <linux/ctype.h>
 #include <linux/string.h>
@@ -293,6 +292,7 @@ static void __init rb532_nand_setup(void)
 	rb532_nand_data.chip.nr_partitions = ARRAY_SIZE(rb532_partition_info);
 	rb532_nand_data.chip.partitions = rb532_partition_info;
 	rb532_nand_data.chip.chip_delay = NAND_CHIP_DELAY;
+	rb532_nand_data.chip.options = NAND_NO_AUTOINCR;
 }
 
 

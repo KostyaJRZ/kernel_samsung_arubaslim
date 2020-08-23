@@ -111,7 +111,7 @@ static inline unsigned Filter_Enable(unsigned port)
 
 static int ni_65xx_attach(struct comedi_device *dev,
 			  struct comedi_devconfig *it);
-static void ni_65xx_detach(struct comedi_device *dev);
+static int ni_65xx_detach(struct comedi_device *dev);
 static struct comedi_driver driver_ni_65xx = {
 	.driver_name = "ni_65xx",
 	.module = THIS_MODULE,
@@ -411,29 +411,25 @@ static int ni_65xx_dio_insn_bits(struct comedi_device *dev,
 				 struct comedi_subdevice *s,
 				 struct comedi_insn *insn, unsigned int *data)
 {
-	unsigned base_bitfield_channel;
-	const unsigned max_ports_per_bitfield = 5;
+	int base_bitfield_channel;
 	unsigned read_bits = 0;
-	unsigned j;
+	int last_port_offset = ni_65xx_port_by_channel(s->n_chan - 1);
+	int port_offset;
+
 	if (insn->n != 2)
 		return -EINVAL;
 	base_bitfield_channel = CR_CHAN(insn->chanspec);
-	for (j = 0; j < max_ports_per_bitfield; ++j) {
-		const unsigned port_offset =
-			ni_65xx_port_by_channel(base_bitfield_channel) + j;
-		const unsigned port =
-			sprivate(s)->base_port + port_offset;
-		unsigned base_port_channel;
+	for (port_offset = ni_65xx_port_by_channel(base_bitfield_channel);
+	     port_offset <= last_port_offset; port_offset++) {
+		unsigned port = sprivate(s)->base_port + port_offset;
+		int base_port_channel = port_offset * ni_65xx_channels_per_port;
 		unsigned port_mask, port_data, port_read_bits;
-		int bitshift;
-		if (port >= ni_65xx_total_num_ports(board(dev)))
+		int bitshift = base_port_channel - base_bitfield_channel;
+
+		if (bitshift >= 32)
 			break;
-		base_port_channel = port_offset * ni_65xx_channels_per_port;
 		port_mask = data[0];
 		port_data = data[1];
-		bitshift = base_port_channel - base_bitfield_channel;
-		if (bitshift >= 32 || bitshift <= -32)
-			break;
 		if (bitshift > 0) {
 			port_mask >>= bitshift;
 			port_data >>= bitshift;
@@ -784,7 +780,7 @@ static int ni_65xx_attach(struct comedi_device *dev,
 	return 0;
 }
 
-static void ni_65xx_detach(struct comedi_device *dev)
+static int ni_65xx_detach(struct comedi_device *dev)
 {
 	if (private(dev) && private(dev)->mite
 	    && private(dev)->mite->daq_io_addr) {
@@ -792,8 +788,10 @@ static void ni_65xx_detach(struct comedi_device *dev)
 		       private(dev)->mite->daq_io_addr +
 		       Master_Interrupt_Control);
 	}
+
 	if (dev->irq)
 		free_irq(dev->irq, dev);
+
 	if (private(dev)) {
 		unsigned i;
 		for (i = 0; i < dev->n_subdevices; ++i) {
@@ -803,6 +801,7 @@ static void ni_65xx_detach(struct comedi_device *dev)
 		if (private(dev)->mite)
 			mite_unsetup(private(dev)->mite);
 	}
+	return 0;
 }
 
 static int ni_65xx_find_device(struct comedi_device *dev, int bus, int slot)
@@ -834,7 +833,7 @@ static int ni_65xx_find_device(struct comedi_device *dev, int bus, int slot)
 static int __devinit driver_ni_65xx_pci_probe(struct pci_dev *dev,
 					      const struct pci_device_id *ent)
 {
-	return comedi_pci_auto_config(dev, &driver_ni_65xx);
+	return comedi_pci_auto_config(dev, driver_ni_65xx.driver_name);
 }
 
 static void __devexit driver_ni_65xx_pci_remove(struct pci_dev *dev)

@@ -76,7 +76,12 @@ static int rx_alloc_method = RX_ALLOC_METHOD_AUTO;
 /* This is the percentage fill level below which new RX descriptors
  * will be added to the RX descriptor ring.
  */
-static unsigned int rx_refill_threshold;
+static unsigned int rx_refill_threshold = 90;
+
+/* This is the percentage fill level to which an RX queue will be refilled
+ * when the "RX refill threshold" is reached.
+ */
+static unsigned int rx_refill_limit = 95;
 
 /*
  * RX maximum head room required.
@@ -90,11 +95,7 @@ static unsigned int rx_refill_threshold;
 static inline unsigned int efx_rx_buf_offset(struct efx_nic *efx,
 					     struct efx_rx_buffer *buf)
 {
-	/* Offset is always within one page, so we don't need to consider
-	 * the page order.
-	 */
-	return ((unsigned int) buf->dma_addr & (PAGE_SIZE - 1)) +
-		efx->type->rx_buffer_hash_size;
+	return buf->page_offset + efx->type->rx_buffer_hash_size;
 }
 static inline unsigned int efx_rx_buf_size(struct efx_nic *efx)
 {
@@ -188,6 +189,7 @@ static int efx_init_rx_buffers_page(struct efx_rx_queue *rx_queue)
 	struct efx_rx_buffer *rx_buf;
 	struct page *page;
 	void *page_addr;
+	unsigned int page_offset;
 	struct efx_rx_page_state *state;
 	dma_addr_t dma_addr;
 	unsigned index, count;
@@ -214,12 +216,14 @@ static int efx_init_rx_buffers_page(struct efx_rx_queue *rx_queue)
 
 		page_addr += sizeof(struct efx_rx_page_state);
 		dma_addr += sizeof(struct efx_rx_page_state);
+		page_offset = sizeof(struct efx_rx_page_state);
 
 	split:
 		index = rx_queue->added_count & rx_queue->ptr_mask;
 		rx_buf = efx_rx_buffer(rx_queue, index);
 		rx_buf->dma_addr = dma_addr + EFX_PAGE_IP_ALIGN;
 		rx_buf->u.page = page;
+		rx_buf->page_offset = page_offset + EFX_PAGE_IP_ALIGN;
 		rx_buf->len = efx->rx_buffer_len - EFX_PAGE_IP_ALIGN;
 		rx_buf->flags = EFX_RX_BUF_PAGE;
 		++rx_queue->added_count;
@@ -231,6 +235,7 @@ static int efx_init_rx_buffers_page(struct efx_rx_queue *rx_queue)
 			get_page(page);
 			dma_addr += (PAGE_SIZE >> 1);
 			page_addr += (PAGE_SIZE >> 1);
+			page_offset += (PAGE_SIZE >> 1);
 			++count;
 			goto split;
 		}
@@ -240,7 +245,8 @@ static int efx_init_rx_buffers_page(struct efx_rx_queue *rx_queue)
 }
 
 static void efx_unmap_rx_buffer(struct efx_nic *efx,
-				struct efx_rx_buffer *rx_buf)
+				struct efx_rx_buffer *rx_buf,
+				unsigned int used_len)
 {
 	if ((rx_buf->flags & EFX_RX_BUF_PAGE) && rx_buf->u.page) {
 		struct efx_rx_page_state *state;
@@ -251,6 +257,10 @@ static void efx_unmap_rx_buffer(struct efx_nic *efx,
 				       state->dma_addr,
 				       efx_rx_buf_size(efx),
 				       PCI_DMA_FROMDEVICE);
+		} else if (used_len) {
+			dma_sync_single_for_cpu(&efx->pci_dev->dev,
+						rx_buf->dma_addr, used_len,
+						DMA_FROM_DEVICE);
 		}
 	} else if (!(rx_buf->flags & EFX_RX_BUF_PAGE) && rx_buf->u.skb) {
 		pci_unmap_single(efx->pci_dev, rx_buf->dma_addr,
@@ -273,7 +283,7 @@ static void efx_free_rx_buffer(struct efx_nic *efx,
 static void efx_fini_rx_buffer(struct efx_rx_queue *rx_queue,
 			       struct efx_rx_buffer *rx_buf)
 {
-	efx_unmap_rx_buffer(rx_queue->efx, rx_buf);
+	efx_unmap_rx_buffer(rx_queue->efx, rx_buf, 0);
 	efx_free_rx_buffer(rx_queue->efx, rx_buf);
 }
 
@@ -301,8 +311,9 @@ static void efx_resurrect_rx_buffer(struct efx_rx_queue *rx_queue,
 
 	index = rx_queue->added_count & rx_queue->ptr_mask;
 	new_buf = efx_rx_buffer(rx_queue, index);
-	new_buf->dma_addr = rx_buf->dma_addr ^ (PAGE_SIZE >> 1);
 	new_buf->u.page = rx_buf->u.page;
+	new_buf->page_offset = rx_buf->page_offset ^ (PAGE_SIZE >> 1);
+	new_buf->dma_addr = state->dma_addr + new_buf->page_offset;
 	new_buf->len = rx_buf->len;
 	new_buf->flags = EFX_RX_BUF_PAGE;
 	++rx_queue->added_count;
@@ -337,7 +348,7 @@ static void efx_recycle_rx_buffer(struct efx_channel *channel,
  * efx_fast_push_rx_descriptors - push new RX descriptors quickly
  * @rx_queue:		RX descriptor queue
  * This will aim to fill the RX descriptor queue up to
- * @rx_queue->@max_fill. If there is insufficient atomic
+ * @rx_queue->@fast_fill_limit. If there is insufficient atomic
  * memory to do so, a slow fill will be scheduled.
  *
  * The caller must provide serialisation (none is used here). In practise,
@@ -362,14 +373,15 @@ void efx_fast_push_rx_descriptors(struct efx_rx_queue *rx_queue)
 			rx_queue->min_fill = fill_level;
 	}
 
-	space = rx_queue->max_fill - fill_level;
-	EFX_BUG_ON_PARANOID(space < EFX_RX_BATCH);
+	space = rx_queue->fast_fill_limit - fill_level;
+	if (space < EFX_RX_BATCH)
+		goto out;
 
 	netif_vdbg(rx_queue->efx, rx_status, rx_queue->efx->net_dev,
 		   "RX queue %d fast-filling descriptor ring from"
 		   " level %d to level %d using %s allocation\n",
 		   efx_rx_queue_index(rx_queue), fill_level,
-		   rx_queue->max_fill,
+		   rx_queue->fast_fill_limit,
 		   channel->rx_alloc_push_pages ? "page" : "skb");
 
 	do {
@@ -538,10 +550,10 @@ void efx_rx_packet(struct efx_rx_queue *rx_queue, unsigned int index,
 		goto out;
 	}
 
-	/* Release card resources - assumes all RX buffers consumed in-order
-	 * per RX queue
+	/* Release and/or sync DMA mapping - assumes all RX buffers
+	 * consumed in-order per RX queue
 	 */
-	efx_unmap_rx_buffer(efx, rx_buf);
+	efx_unmap_rx_buffer(efx, rx_buf, len);
 
 	/* Prefetch nice and early so data will (hopefully) be in cache by
 	 * the time we look at it.
@@ -675,7 +687,7 @@ int efx_probe_rx_queue(struct efx_rx_queue *rx_queue)
 void efx_init_rx_queue(struct efx_rx_queue *rx_queue)
 {
 	struct efx_nic *efx = rx_queue->efx;
-	unsigned int max_fill, trigger, max_trigger;
+	unsigned int max_fill, trigger, limit;
 
 	netif_dbg(rx_queue->efx, drv, rx_queue->efx->net_dev,
 		  "initialising RX queue %d\n", efx_rx_queue_index(rx_queue));
@@ -688,17 +700,12 @@ void efx_init_rx_queue(struct efx_rx_queue *rx_queue)
 
 	/* Initialise limit fields */
 	max_fill = efx->rxq_entries - EFX_RXD_HEAD_ROOM;
-	max_trigger = max_fill - EFX_RX_BATCH;
-	if (rx_refill_threshold != 0) {
-		trigger = max_fill * min(rx_refill_threshold, 100U) / 100U;
-		if (trigger > max_trigger)
-			trigger = max_trigger;
-	} else {
-		trigger = max_trigger;
-	}
+	trigger = max_fill * min(rx_refill_threshold, 100U) / 100U;
+	limit = max_fill * min(rx_refill_limit, 100U) / 100U;
 
 	rx_queue->max_fill = max_fill;
 	rx_queue->fast_fill_trigger = trigger;
+	rx_queue->fast_fill_limit = limit;
 
 	/* Set up RX descriptor ring */
 	rx_queue->enabled = true;
@@ -745,5 +752,5 @@ MODULE_PARM_DESC(rx_alloc_method, "Allocation method used for RX buffers");
 
 module_param(rx_refill_threshold, uint, 0444);
 MODULE_PARM_DESC(rx_refill_threshold,
-		 "RX descriptor ring refill threshold (%)");
+		 "RX descriptor ring fast/slow fill threshold (%)");
 

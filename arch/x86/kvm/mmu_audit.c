@@ -192,8 +192,7 @@ static void audit_write_protection(struct kvm *kvm, struct kvm_mmu_page *sp)
 {
 	struct kvm_memory_slot *slot;
 	unsigned long *rmapp;
-	u64 *sptep;
-	struct rmap_iterator iter;
+	u64 *spte;
 
 	if (sp->role.direct || sp->unsync || sp->role.invalid)
 		return;
@@ -201,12 +200,13 @@ static void audit_write_protection(struct kvm *kvm, struct kvm_mmu_page *sp)
 	slot = gfn_to_memslot(kvm, sp->gfn);
 	rmapp = &slot->rmap[sp->gfn - slot->base_gfn];
 
-	for (sptep = rmap_get_first(*rmapp, &iter); sptep;
-	     sptep = rmap_get_next(&iter)) {
-		if (is_writable_pte(*sptep))
+	spte = rmap_next(rmapp, NULL);
+	while (spte) {
+		if (is_writable_pte(*spte))
 			audit_printk(kvm, "shadow page has writable "
 				     "mappings: gfn %llx role %x\n",
 				     sp->gfn, sp->role.word);
+		spte = rmap_next(rmapp, spte);
 	}
 }
 

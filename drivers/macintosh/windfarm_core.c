@@ -164,27 +164,13 @@ static ssize_t wf_show_control(struct device *dev,
 			       struct device_attribute *attr, char *buf)
 {
 	struct wf_control *ctrl = container_of(attr, struct wf_control, attr);
-	const char *typestr;
 	s32 val = 0;
 	int err;
 
 	err = ctrl->ops->get_value(ctrl, &val);
-	if (err < 0) {
-		if (err == -EFAULT)
-			return sprintf(buf, "<HW FAULT>\n");
+	if (err < 0)
 		return err;
-	}
-	switch(ctrl->type) {
-	case WF_CONTROL_RPM_FAN:
-		typestr = " RPM";
-		break;
-	case WF_CONTROL_PWM_FAN:
-		typestr = " %";
-		break;
-	default:
-		typestr = "";
-	}
-	return sprintf(buf, "%d%s\n", val, typestr);
+	return sprintf(buf, "%d\n", val);
 }
 
 /* This is really only for debugging... */
@@ -435,7 +421,7 @@ int wf_unregister_client(struct notifier_block *nb)
 {
 	mutex_lock(&wf_lock);
 	blocking_notifier_chain_unregister(&wf_client_list, nb);
-	wf_client_count++;
+	wf_client_count--;
 	if (wf_client_count == 0)
 		wf_stop_thread();
 	mutex_unlock(&wf_lock);
@@ -484,6 +470,11 @@ static int __init windfarm_core_init(void)
 {
 	DBG("wf: core loaded\n");
 
+	/* Don't register on old machines that use therm_pm72 for now */
+	if (of_machine_is_compatible("PowerMac7,2") ||
+	    of_machine_is_compatible("PowerMac7,3") ||
+	    of_machine_is_compatible("RackMac3,1"))
+		return -ENODEV;
 	platform_device_register(&wf_platform_device);
 	return 0;
 }

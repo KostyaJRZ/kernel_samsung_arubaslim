@@ -15,7 +15,6 @@
 #include <linux/uio_driver.h>
 #include <linux/usb/r8a66597.h>
 #include <linux/sh_timer.h>
-#include <linux/sh_intc.h>
 #include <linux/io.h>
 #include <asm/clock.h>
 #include <asm/mmzone.h>
@@ -29,7 +28,7 @@ static struct plat_sci_port scif0_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type           = PORT_SCIF,
-	.irqs           = SCIx_IRQ_MUXED(evt2irq(0xc00)),
+	.irqs           = { 80, 80, 80, 80 },
 	.regtype	= SCIx_SH4_SCIF_NO_SCSPTR_REGTYPE,
 };
 
@@ -48,7 +47,7 @@ static struct plat_sci_port scif1_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type           = PORT_SCIF,
-	.irqs           = SCIx_IRQ_MUXED(evt2irq(0xc20)),
+	.irqs           = { 81, 81, 81, 81 },
 	.regtype	= SCIx_SH4_SCIF_NO_SCSPTR_REGTYPE,
 };
 
@@ -67,7 +66,7 @@ static struct plat_sci_port scif2_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_2,
 	.type           = PORT_SCIF,
-	.irqs           = SCIx_IRQ_MUXED(evt2irq(0xc40)),
+	.irqs           = { 82, 82, 82, 82 },
 	.regtype	= SCIx_SH4_SCIF_NO_SCSPTR_REGTYPE,
 };
 
@@ -86,7 +85,7 @@ static struct plat_sci_port scif3_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_3,
 	.type           = PORT_SCIFA,
-	.irqs           = SCIx_IRQ_MUXED(evt2irq(0x900)),
+	.irqs           = { 56, 56, 56, 56 },
 };
 
 static struct platform_device scif3_device = {
@@ -104,7 +103,7 @@ static struct plat_sci_port scif4_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_3,
 	.type           = PORT_SCIFA,
-	.irqs           = SCIx_IRQ_MUXED(evt2irq(0xd00)),
+	.irqs           = { 88, 88, 88, 88 },
 };
 
 static struct platform_device scif4_device = {
@@ -122,7 +121,7 @@ static struct plat_sci_port scif5_platform_data = {
 	.scscr		= SCSCR_RE | SCSCR_TE | SCSCR_REIE,
 	.scbrr_algo_id	= SCBRR_ALGO_3,
 	.type           = PORT_SCIFA,
-	.irqs           = SCIx_IRQ_MUXED(evt2irq(0xfa0)),
+	.irqs           = { 109, 109, 109, 109 },
 };
 
 static struct platform_device scif5_device = {
@@ -136,7 +135,7 @@ static struct platform_device scif5_device = {
 static struct uio_info vpu_platform_data = {
 	.name = "VPU5",
 	.version = "0",
-	.irq = evt2irq(0x980),
+	.irq = 60,
 };
 
 static struct resource vpu_resources[] = {
@@ -164,7 +163,7 @@ static struct platform_device vpu_device = {
 static struct uio_info veu0_platform_data = {
 	.name = "VEU2H",
 	.version = "0",
-	.irq = evt2irq(0x8c0),
+	.irq = 54,
 };
 
 static struct resource veu0_resources[] = {
@@ -192,7 +191,7 @@ static struct platform_device veu0_device = {
 static struct uio_info veu1_platform_data = {
 	.name = "VEU2H",
 	.version = "0",
-	.irq = evt2irq(0x560),
+	.irq = 27,
 };
 
 static struct resource veu1_resources[] = {
@@ -231,7 +230,7 @@ static struct resource cmt_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xf00),
+		.start	= 104,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -259,7 +258,7 @@ static struct resource tmu0_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x400),
+		.start	= 16,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -287,7 +286,7 @@ static struct resource tmu1_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x420),
+		.start	= 17,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -314,7 +313,7 @@ static struct resource tmu2_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x440),
+		.start	= 18,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -341,7 +340,7 @@ static struct resource tmu3_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x920),
+		.start	= 57,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -368,7 +367,7 @@ static struct resource tmu4_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x940),
+		.start	= 58,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -395,7 +394,7 @@ static struct resource tmu5_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0x920),
+		.start	= 57,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -418,17 +417,17 @@ static struct resource rtc_resources[] = {
 	},
 	[1] = {
 		/* Period IRQ */
-		.start	= evt2irq(0xaa0),
+		.start	= 69,
 		.flags	= IORESOURCE_IRQ,
 	},
 	[2] = {
 		/* Carry IRQ */
-		.start	= evt2irq(0xac0),
+		.start	= 70,
 		.flags	= IORESOURCE_IRQ,
 	},
 	[3] = {
 		/* Alarm IRQ */
-		.start	= evt2irq(0xa80),
+		.start	= 68,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -451,8 +450,8 @@ static struct resource sh7723_usb_host_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= evt2irq(0xa20),
-		.end	= evt2irq(0xa20),
+		.start	= 65,
+		.end	= 65,
 		.flags	= IORESOURCE_IRQ | IRQF_TRIGGER_LOW,
 	},
 };
@@ -477,8 +476,8 @@ static struct resource iic_resources[] = {
 		.flags  = IORESOURCE_MEM,
 	},
 	[1] = {
-		.start  = evt2irq(0xe00),
-		.end    = evt2irq(0xe60),
+		.start  = 96,
+		.end    = 99,
 		.flags  = IORESOURCE_IRQ,
        },
 };

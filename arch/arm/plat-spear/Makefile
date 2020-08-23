@@ -3,7 +3,6 @@
 #
 
 # Common support
-obj-y	:= restart.o time.o
+obj-y	:= clock.o restart.o time.o
 
-obj-$(CONFIG_ARCH_SPEAR3XX)	+= pl080.o shirq.o
-obj-$(CONFIG_ARCH_SPEAR6XX)	+= pl080.o
+obj-$(CONFIG_ARCH_SPEAR3XX)	+= shirq.o padmux.o

@@ -1,8 +1,6 @@
 #ifndef __I8254_H
 #define __I8254_H
 
-#include <linux/kthread.h>
-
 #include "iodev.h"
 
 struct kvm_kpit_channel_state {
@@ -41,9 +39,8 @@ struct kvm_pit {
 	struct kvm_kpit_state pit_state;
 	int irq_source_id;
 	struct kvm_irq_mask_notifier mask_notifier;
-	struct kthread_worker worker;
-	struct task_struct *worker_task;
-	struct kthread_work expired;
+	struct workqueue_struct *wq;
+	struct work_struct expired;
 };
 
 #define KVM_PIT_BASE_ADDRESS	    0x40

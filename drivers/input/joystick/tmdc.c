@@ -436,4 +436,15 @@ static struct gameport_driver tmdc_drv = {
 	.disconnect	= tmdc_disconnect,
 };
 
-module_gameport_driver(tmdc_drv);
+static int __init tmdc_init(void)
+{
+	return gameport_register_driver(&tmdc_drv);
+}
+
+static void __exit tmdc_exit(void)
+{
+	gameport_unregister_driver(&tmdc_drv);
+}
+
+module_init(tmdc_init);
+module_exit(tmdc_exit);

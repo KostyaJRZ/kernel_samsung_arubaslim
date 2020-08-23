@@ -1420,7 +1420,7 @@ init_card(struct l1oip *hc, int pri, int bundle)
 		bch->nr = i + ch;
 		bch->slot = i + ch;
 		bch->debug = debug;
-		mISDN_initbchannel(bch, MAX_DATA_MEM, 0);
+		mISDN_initbchannel(bch, MAX_DATA_MEM);
 		bch->hw = hc;
 		bch->ch.send = handle_bmsg;
 		bch->ch.ctrl = l1oip_bctrl;

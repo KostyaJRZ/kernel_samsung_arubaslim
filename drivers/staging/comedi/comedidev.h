@@ -180,18 +180,13 @@ struct comedi_async {
 			unsigned int x);
 };
 
-struct pci_dev;
-struct usb_interface;
-
 struct comedi_driver {
 	struct comedi_driver *next;
 
 	const char *driver_name;
 	struct module *module;
 	int (*attach) (struct comedi_device *, struct comedi_devconfig *);
-	void (*detach) (struct comedi_device *);
-	int (*attach_pci) (struct comedi_device *, struct pci_dev *);
-	int (*attach_usb) (struct comedi_device *, struct usb_interface *);
+	int (*detach) (struct comedi_device *);
 
 	/* number of elements in board_name and board_id arrays */
 	unsigned int num_names;
@@ -234,11 +229,6 @@ struct comedi_device {
 	int (*open) (struct comedi_device *dev);
 	void (*close) (struct comedi_device *dev);
 };
-
-static inline const void *comedi_board(struct comedi_device *dev)
-{
-	return dev->board_ptr;
-}
 
 struct comedi_device_file_info {
 	struct comedi_device *device;
@@ -297,56 +287,6 @@ int comedi_device_attach(struct comedi_device *dev,
 			 struct comedi_devconfig *it);
 int comedi_driver_register(struct comedi_driver *);
 int comedi_driver_unregister(struct comedi_driver *);
-
-/**
- * module_comedi_driver() - Helper macro for registering a comedi driver
- * @__comedi_driver: comedi_driver struct
- *
- * Helper macro for comedi drivers which do not do anything special in module
- * init/exit. This eliminates a lot of boilerplate. Each module may only use
- * this macro once, and calling it replaces module_init() and module_exit().
- */
-#define module_comedi_driver(__comedi_driver) \
-	module_driver(__comedi_driver, comedi_driver_register, \
-			comedi_driver_unregister)
-
-struct pci_driver;
-
-int comedi_pci_driver_register(struct comedi_driver *, struct pci_driver *);
-void comedi_pci_driver_unregister(struct comedi_driver *, struct pci_driver *);
-
-/**
- * module_comedi_pci_driver() - Helper macro for registering a comedi PCI driver
- * @__comedi_driver: comedi_driver struct
- * @__pci_driver: pci_driver struct
- *
- * Helper macro for comedi PCI drivers which do not do anything special
- * in module init/exit. This eliminates a lot of boilerplate. Each
- * module may only use this macro once, and calling it replaces
- * module_init() and module_exit()
- */
-#define module_comedi_pci_driver(__comedi_driver, __pci_driver) \
-	module_driver(__comedi_driver, comedi_pci_driver_register, \
-			comedi_pci_driver_unregister, &(__pci_driver))
-
-struct usb_driver;
-
-int comedi_usb_driver_register(struct comedi_driver *, struct usb_driver *);
-void comedi_usb_driver_unregister(struct comedi_driver *, struct usb_driver *);
-
-/**
- * module_comedi_usb_driver() - Helper macro for registering a comedi USB driver
- * @__comedi_driver: comedi_driver struct
- * @__usb_driver: usb_driver struct
- *
- * Helper macro for comedi USB drivers which do not do anything special
- * in module init/exit. This eliminates a lot of boilerplate. Each
- * module may only use this macro once, and calling it replaces
- * module_init() and module_exit()
- */
-#define module_comedi_usb_driver(__comedi_driver, __usb_driver) \
-	module_driver(__comedi_driver, comedi_usb_driver_register, \
-			comedi_usb_driver_unregister, &(__usb_driver))
 
 void init_polling(void);
 void cleanup_polling(void);
@@ -517,12 +457,11 @@ static inline void *comedi_aux_data(int options[], int n)
 int comedi_alloc_subdevice_minor(struct comedi_device *dev,
 				 struct comedi_subdevice *s);
 void comedi_free_subdevice_minor(struct comedi_subdevice *s);
-int comedi_pci_auto_config(struct pci_dev *pcidev,
-			   struct comedi_driver *driver);
+int comedi_pci_auto_config(struct pci_dev *pcidev, const char *board_name);
 void comedi_pci_auto_unconfig(struct pci_dev *pcidev);
-int comedi_usb_auto_config(struct usb_interface *intf,
-			   struct comedi_driver *driver);
-void comedi_usb_auto_unconfig(struct usb_interface *intf);
+struct usb_device;		/* forward declaration */
+int comedi_usb_auto_config(struct usb_device *usbdev, const char *board_name);
+void comedi_usb_auto_unconfig(struct usb_device *usbdev);
 
 #ifdef CONFIG_COMEDI_PCI_DRIVERS
 #define CONFIG_COMEDI_PCI

@@ -33,7 +33,7 @@
 #include "rt2x00.h"
 #include "rt2x00lib.h"
 
-struct sk_buff *rt2x00queue_alloc_rxskb(struct queue_entry *entry, gfp_t gfp)
+struct sk_buff *rt2x00queue_alloc_rxskb(struct queue_entry *entry)
 {
 	struct rt2x00_dev *rt2x00dev = entry->queue->rt2x00dev;
 	struct sk_buff *skb;
@@ -68,7 +68,7 @@ struct sk_buff *rt2x00queue_alloc_rxskb(struct queue_entry *entry, gfp_t gfp)
 	/*
 	 * Allocate skbuffer.
 	 */
-	skb = __dev_alloc_skb(frame_size + head_size + tail_size, gfp);
+	skb = dev_alloc_skb(frame_size + head_size + tail_size);
 	if (!skb)
 		return NULL;
 
@@ -148,55 +148,29 @@ void rt2x00queue_align_frame(struct sk_buff *skb)
 	skb_trim(skb, frame_length);
 }
 
-void rt2x00queue_insert_l2pad(struct sk_buff *skb, unsigned int header_length)
+/*
+ * H/W needs L2 padding between the header and the paylod if header size
+ * is not 4 bytes aligned.
+ */
+void rt2x00queue_insert_l2pad(struct sk_buff *skb, unsigned int hdr_len)
 {
-	unsigned int payload_length = skb->len - header_length;
-	unsigned int header_align = ALIGN_SIZE(skb, 0);
-	unsigned int payload_align = ALIGN_SIZE(skb, header_length);
-	unsigned int l2pad = payload_length ? L2PAD_SIZE(header_length) : 0;
-
-	/*
-	 * Adjust the header alignment if the payload needs to be moved more
-	 * than the header.
-	 */
-	if (payload_align > header_align)
-		header_align += 4;
-
-	/* There is nothing to do if no alignment is needed */
-	if (!header_align)
-		return;
-
-	/* Reserve the amount of space needed in front of the frame */
-	skb_push(skb, header_align);
-
-	/*
-	 * Move the header.
-	 */
-	memmove(skb->data, skb->data + header_align, header_length);
-
-	/* Move the payload, if present and if required */
-	if (payload_length && payload_align)
-		memmove(skb->data + header_length + l2pad,
-			skb->data + header_length + l2pad + payload_align,
-			payload_length);
-
-	/* Trim the skb to the correct size */
-	skb_trim(skb, header_length + l2pad + payload_length);
-}
-
-void rt2x00queue_remove_l2pad(struct sk_buff *skb, unsigned int header_length)
-{
-	/*
-	 * L2 padding is only present if the skb contains more than just the
-	 * IEEE 802.11 header.
-	 */
-	unsigned int l2pad = (skb->len > header_length) ?
-				L2PAD_SIZE(header_length) : 0;
+	unsigned int l2pad = (skb->len > hdr_len) ? L2PAD_SIZE(hdr_len) : 0;
 
 	if (!l2pad)
 		return;
 
-	memmove(skb->data + l2pad, skb->data, header_length);
+	skb_push(skb, l2pad);
+	memmove(skb->data, skb->data + l2pad, hdr_len);
+}
+
+void rt2x00queue_remove_l2pad(struct sk_buff *skb, unsigned int hdr_len)
+{
+	unsigned int l2pad = (skb->len > hdr_len) ? L2PAD_SIZE(hdr_len) : 0;
+
+	if (!l2pad)
+		return;
+
+	memmove(skb->data + l2pad, skb->data, hdr_len);
 	skb_pull(skb, l2pad);
 }
 
@@ -214,19 +188,8 @@ static void rt2x00queue_create_tx_descriptor_seq(struct rt2x00_dev *rt2x00dev,
 
 	__set_bit(ENTRY_TXD_GENERATE_SEQ, &txdesc->flags);
 
-	if (!test_bit(REQUIRE_SW_SEQNO, &rt2x00dev->cap_flags)) {
-		/*
-		 * rt2800 has a H/W (or F/W) bug, device incorrectly increase
-		 * seqno on retransmited data (non-QOS) frames. To workaround
-		 * the problem let's generate seqno in software if QOS is
-		 * disabled.
-		 */
-		if (test_bit(CONFIG_QOS_DISABLED, &rt2x00dev->flags))
-			__clear_bit(ENTRY_TXD_GENERATE_SEQ, &txdesc->flags);
-		else
-			/* H/W will generate sequence number */
-			return;
-	}
+	if (!test_bit(REQUIRE_SW_SEQNO, &rt2x00dev->cap_flags))
+		return;
 
 	/*
 	 * The hardware is not able to insert a sequence number. Assign a
@@ -330,6 +293,14 @@ static void rt2x00queue_create_tx_descriptor_ht(struct rt2x00_dev *rt2x00dev,
 		txdesc->u.ht.wcid = sta_priv->wcid;
 	}
 
+	txdesc->u.ht.ba_size = 7;	/* FIXME: What value is needed? */
+
+	/*
+	 * Only one STBC stream is supported for now.
+	 */
+	if (tx_info->flags & IEEE80211_TX_CTL_STBC)
+		txdesc->u.ht.stbc = 1;
+
 	/*
 	 * If IEEE80211_TX_RC_MCS is set txrate->idx just contains the
 	 * mcs rate to be used
@@ -352,24 +323,6 @@ static void rt2x00queue_create_tx_descriptor_ht(struct rt2x00_dev *rt2x00dev,
 		if (txrate->flags & IEEE80211_TX_RC_USE_SHORT_PREAMBLE)
 			txdesc->u.ht.mcs |= 0x08;
 	}
-
-	if (test_bit(CONFIG_HT_DISABLED, &rt2x00dev->flags)) {
-		if (!(tx_info->flags & IEEE80211_TX_CTL_FIRST_FRAGMENT))
-			txdesc->u.ht.txop = TXOP_SIFS;
-		else
-			txdesc->u.ht.txop = TXOP_BACKOFF;
-
-		/* Left zero on all other settings. */
-		return;
-	}
-
-	txdesc->u.ht.ba_size = 7;	/* FIXME: What value is needed? */
-
-	/*
-	 * Only one STBC stream is supported for now.
-	 */
-	if (tx_info->flags & IEEE80211_TX_CTL_STBC)
-		txdesc->u.ht.stbc = 1;
 
 	/*
 	 * This frame is eligible for an AMPDU, however, don't aggregate
@@ -877,13 +830,8 @@ void rt2x00queue_index_inc(struct queue_entry *entry, enum queue_index index)
 	spin_unlock_irqrestore(&queue->index_lock, irqflags);
 }
 
-void rt2x00queue_pause_queue(struct data_queue *queue)
+void rt2x00queue_pause_queue_nocheck(struct data_queue *queue)
 {
-	if (!test_bit(DEVICE_STATE_PRESENT, &queue->rt2x00dev->flags) ||
-	    !test_bit(QUEUE_STARTED, &queue->flags) ||
-	    test_and_set_bit(QUEUE_PAUSED, &queue->flags))
-		return;
-
 	switch (queue->qid) {
 	case QID_AC_VO:
 	case QID_AC_VI:
@@ -898,6 +846,15 @@ void rt2x00queue_pause_queue(struct data_queue *queue)
 	default:
 		break;
 	}
+}
+void rt2x00queue_pause_queue(struct data_queue *queue)
+{
+	if (!test_bit(DEVICE_STATE_PRESENT, &queue->rt2x00dev->flags) ||
+	    !test_bit(QUEUE_STARTED, &queue->flags) ||
+	    test_and_set_bit(QUEUE_PAUSED, &queue->flags))
+		return;
+
+	rt2x00queue_pause_queue_nocheck(queue);
 }
 EXPORT_SYMBOL_GPL(rt2x00queue_pause_queue);
 
@@ -960,7 +917,7 @@ void rt2x00queue_stop_queue(struct data_queue *queue)
 		return;
 	}
 
-	rt2x00queue_pause_queue(queue);
+	rt2x00queue_pause_queue_nocheck(queue);
 
 	queue->rt2x00dev->ops->lib->stop_queue(queue);
 
@@ -1162,7 +1119,7 @@ static int rt2x00queue_alloc_rxskbs(struct data_queue *queue)
 	struct sk_buff *skb;
 
 	for (i = 0; i < queue->limit; i++) {
-		skb = rt2x00queue_alloc_rxskb(&queue->entries[i], GFP_KERNEL);
+		skb = rt2x00queue_alloc_rxskb(&queue->entries[i]);
 		if (!skb)
 			return -ENOMEM;
 		queue->entries[i].skb = skb;

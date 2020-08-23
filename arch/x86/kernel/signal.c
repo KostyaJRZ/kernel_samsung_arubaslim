@@ -18,7 +18,6 @@
 #include <linux/personality.h>
 #include <linux/uaccess.h>
 #include <linux/user-return-notifier.h>
-#include <linux/uprobes.h>
 
 #include <asm/processor.h>
 #include <asm/ucontext.h>
@@ -479,8 +478,18 @@ asmlinkage int
 sys_sigsuspend(int history0, int history1, old_sigset_t mask)
 {
 	sigset_t blocked;
+
+	current->saved_sigmask = current->blocked;
+
+	mask &= _BLOCKABLE;
 	siginitset(&blocked, mask);
-	return sigsuspend(&blocked);
+	set_current_blocked(&blocked);
+
+	current->state = TASK_INTERRUPTIBLE;
+	schedule();
+
+	set_restore_sigmask();
+	return -ERESTARTNOHAND;
 }
 
 asmlinkage int
@@ -555,6 +564,7 @@ unsigned long sys_sigreturn(struct pt_regs *regs)
 				    sizeof(frame->extramask))))
 		goto badframe;
 
+	sigdelsetmask(&set, ~_BLOCKABLE);
 	set_current_blocked(&set);
 
 	if (restore_sigcontext(regs, &frame->sc, &ax))
@@ -580,6 +590,7 @@ long sys_rt_sigreturn(struct pt_regs *regs)
 	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
 		goto badframe;
 
+	sigdelsetmask(&set, ~_BLOCKABLE);
 	set_current_blocked(&set);
 
 	if (restore_sigcontext(regs, &frame->uc.uc_mcontext, &ax))
@@ -645,28 +656,42 @@ setup_rt_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
 		struct pt_regs *regs)
 {
 	int usig = signr_convert(sig);
-	sigset_t *set = sigmask_to_save();
+	sigset_t *set = &current->blocked;
+	int ret;
+
+	if (current_thread_info()->status & TS_RESTORE_SIGMASK)
+		set = &current->saved_sigmask;
 
 	/* Set up the stack frame */
 	if (is_ia32) {
 		if (ka->sa.sa_flags & SA_SIGINFO)
-			return ia32_setup_rt_frame(usig, ka, info, set, regs);
+			ret = ia32_setup_rt_frame(usig, ka, info, set, regs);
 		else
-			return ia32_setup_frame(usig, ka, set, regs);
+			ret = ia32_setup_frame(usig, ka, set, regs);
 #ifdef CONFIG_X86_X32_ABI
 	} else if (is_x32) {
-		return x32_setup_rt_frame(usig, ka, info,
+		ret = x32_setup_rt_frame(usig, ka, info,
 					 (compat_sigset_t *)set, regs);
 #endif
 	} else {
-		return __setup_rt_frame(sig, ka, info, set, regs);
+		ret = __setup_rt_frame(sig, ka, info, set, regs);
 	}
+
+	if (ret) {
+		force_sigsegv(sig, current);
+		return -EFAULT;
+	}
+
+	current_thread_info()->status &= ~TS_RESTORE_SIGMASK;
+	return ret;
 }
 
-static void
+static int
 handle_signal(unsigned long sig, siginfo_t *info, struct k_sigaction *ka,
 		struct pt_regs *regs)
 {
+	int ret;
+
 	/* Are we from a system call? */
 	if (syscall_get_nr(current, regs) >= 0) {
 		/* If so, check system call restarting.. */
@@ -697,10 +722,10 @@ handle_signal(unsigned long sig, siginfo_t *info, struct k_sigaction *ka,
 	    likely(test_and_clear_thread_flag(TIF_FORCED_TF)))
 		regs->flags &= ~X86_EFLAGS_TF;
 
-	if (setup_rt_frame(sig, ka, info, regs) < 0) {
-		force_sigsegv(sig, current);
-		return;
-	}
+	ret = setup_rt_frame(sig, ka, info, regs);
+
+	if (ret)
+		return ret;
 
 	/*
 	 * Clear the direction flag as per the ABI for function entry.
@@ -715,8 +740,12 @@ handle_signal(unsigned long sig, siginfo_t *info, struct k_sigaction *ka,
 	 */
 	regs->flags &= ~X86_EFLAGS_TF;
 
-	signal_delivered(sig, info, ka, regs,
-			 test_thread_flag(TIF_SINGLESTEP));
+	block_sigmask(ka, sig);
+
+	tracehook_signal_handler(sig, info, ka, regs,
+				 test_thread_flag(TIF_SINGLESTEP));
+
+	return 0;
 }
 
 #ifdef CONFIG_X86_32
@@ -736,6 +765,16 @@ static void do_signal(struct pt_regs *regs)
 	struct k_sigaction ka;
 	siginfo_t info;
 	int signr;
+
+	/*
+	 * We want the common case to go fast, which is why we may in certain
+	 * cases get here from kernel mode. Just return without doing anything
+	 * if so.
+	 * X86_32: vm86 regs switched out by assembly code before reaching
+	 * here, so testing against kernel CS suffices.
+	 */
+	if (!user_mode(regs))
+		return;
 
 	signr = get_signal_to_deliver(&info, &ka, regs, NULL);
 	if (signr > 0) {
@@ -766,7 +805,10 @@ static void do_signal(struct pt_regs *regs)
 	 * If there's no signal to deliver, we just put the saved sigmask
 	 * back.
 	 */
-	restore_saved_sigmask();
+	if (current_thread_info()->status & TS_RESTORE_SIGMASK) {
+		current_thread_info()->status &= ~TS_RESTORE_SIGMASK;
+		set_current_blocked(&current->saved_sigmask);
+	}
 }
 
 /*
@@ -782,11 +824,6 @@ do_notify_resume(struct pt_regs *regs, void *unused, __u32 thread_info_flags)
 		mce_notify_process();
 #endif /* CONFIG_X86_64 && CONFIG_X86_MCE */
 
-	if (thread_info_flags & _TIF_UPROBE) {
-		clear_thread_flag(TIF_UPROBE);
-		uprobe_notify_resume(regs);
-	}
-
 	/* deal with pending signal delivery */
 	if (thread_info_flags & _TIF_SIGPENDING)
 		do_signal(regs);
@@ -794,6 +831,8 @@ do_notify_resume(struct pt_regs *regs, void *unused, __u32 thread_info_flags)
 	if (thread_info_flags & _TIF_NOTIFY_RESUME) {
 		clear_thread_flag(TIF_NOTIFY_RESUME);
 		tracehook_notify_resume(regs);
+		if (current->replacement_session_keyring)
+			key_replace_session_keyring();
 	}
 	if (thread_info_flags & _TIF_USER_RETURN_NOTIFY)
 		fire_user_return_notifiers();
@@ -901,6 +940,7 @@ asmlinkage long sys32_x32_rt_sigreturn(struct pt_regs *regs)
 	if (__copy_from_user(&set, &frame->uc.uc_sigmask, sizeof(set)))
 		goto badframe;
 
+	sigdelsetmask(&set, ~_BLOCKABLE);
 	set_current_blocked(&set);
 
 	if (restore_sigcontext(regs, &frame->uc.uc_mcontext, &ax))

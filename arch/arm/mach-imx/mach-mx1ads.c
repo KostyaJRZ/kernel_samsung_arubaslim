@@ -134,7 +134,7 @@ static void __init mx1ads_timer_init(void)
 	mx1_clocks_init(32000);
 }
 
-static struct sys_timer mx1ads_timer = {
+struct sys_timer mx1ads_timer = {
 	.init	= mx1ads_timer_init,
 };
 

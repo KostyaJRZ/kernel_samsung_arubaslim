@@ -335,11 +335,7 @@ static void jl2005c_dostream(struct work_struct *work)
 		goto quit_stream;
 	}
 
-	while (gspca_dev->dev && gspca_dev->streaming) {
-#ifdef CONFIG_PM
-		if (gspca_dev->frozen)
-			break;
-#endif
+	while (gspca_dev->present && gspca_dev->streaming) {
 		/* Check if this is a new frame. If so, start the frame first */
 		if (!header_read) {
 			mutex_lock(&gspca_dev->usb_lock);
@@ -371,7 +367,7 @@ static void jl2005c_dostream(struct work_struct *work)
 					buffer, act_len);
 			header_read = 1;
 		}
-		while (bytes_left > 0 && gspca_dev->dev) {
+		while (bytes_left > 0 && gspca_dev->present) {
 			data_len = bytes_left > JL2005C_MAX_TRANSFER ?
 				JL2005C_MAX_TRANSFER : bytes_left;
 			ret = usb_bulk_msg(gspca_dev->dev,
@@ -394,7 +390,7 @@ static void jl2005c_dostream(struct work_struct *work)
 		}
 	}
 quit_stream:
-	if (gspca_dev->dev) {
+	if (gspca_dev->present) {
 		mutex_lock(&gspca_dev->usb_lock);
 		jl2005c_stop(gspca_dev);
 		mutex_unlock(&gspca_dev->usb_lock);
@@ -514,7 +510,7 @@ static const struct sd_desc sd_desc = {
 };
 
 /* -- module initialisation -- */
-static const __devinitdata struct usb_device_id device_table[] = {
+static const struct usb_device_id device_table[] = {
 	{USB_DEVICE(0x0979, 0x0227)},
 	{}
 };

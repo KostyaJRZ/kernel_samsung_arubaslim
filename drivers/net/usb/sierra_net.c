@@ -484,7 +484,8 @@ static void sierra_net_kevent(struct work_struct *work)
 			netdev_err(dev->net,
 				"usb_control_msg failed, status %d\n", len);
 		} else {
-			struct hip_hdr	hh;
+			struct hip_hdr hh;
+			hh.extmsgid.word = 0;
 
 			dev_dbg(&dev->udev->dev, "%s: Received status message,"
 				" %04x bytes", __func__, len);
@@ -678,7 +679,7 @@ static int sierra_net_get_fw_attr(struct usbnet *dev, u16 *datap)
 		return -EIO;
 	}
 
-	*datap = *attrdata;
+	*datap = le16_to_cpu(*attrdata);
 
 	kfree(attrdata);
 	return result;
@@ -845,8 +846,9 @@ static struct sk_buff *sierra_net_skb_clone(struct usbnet *dev,
 static int sierra_net_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
 {
 	int err;
-	struct hip_hdr  hh;
+	struct hip_hdr hh;
 	struct sk_buff *new_skb;
+	hh.extmsgid.word = 0;
 
 	dev_dbg(&dev->udev->dev, "%s", __func__);
 
@@ -988,7 +990,6 @@ static struct usb_driver sierra_net_driver = {
 	.suspend = usbnet_suspend,
 	.resume = usbnet_resume,
 	.no_dynamic_id = 1,
-	.disable_hub_initiated_lpm = 1,
 };
 
 module_usb_driver(sierra_net_driver);

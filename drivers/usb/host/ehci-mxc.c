@@ -32,7 +32,7 @@
 #define ULPI_VIEWPORT_OFFSET	0x170
 
 struct ehci_mxc_priv {
-	struct clk *usbclk, *ahbclk, *phyclk;
+	struct clk *usbclk, *ahbclk, *phy1clk;
 	struct usb_hcd *hcd;
 };
 
@@ -166,26 +166,31 @@ static int ehci_mxc_drv_probe(struct platform_device *pdev)
 	}
 
 	/* enable clocks */
-	priv->usbclk = clk_get(dev, "ipg");
+	priv->usbclk = clk_get(dev, "usb");
 	if (IS_ERR(priv->usbclk)) {
 		ret = PTR_ERR(priv->usbclk);
 		goto err_clk;
 	}
-	clk_prepare_enable(priv->usbclk);
+	clk_enable(priv->usbclk);
 
-	priv->ahbclk = clk_get(dev, "ahb");
-	if (IS_ERR(priv->ahbclk)) {
-		ret = PTR_ERR(priv->ahbclk);
-		goto err_clk_ahb;
+	if (!cpu_is_mx35() && !cpu_is_mx25()) {
+		priv->ahbclk = clk_get(dev, "usb_ahb");
+		if (IS_ERR(priv->ahbclk)) {
+			ret = PTR_ERR(priv->ahbclk);
+			goto err_clk_ahb;
+		}
+		clk_enable(priv->ahbclk);
 	}
-	clk_prepare_enable(priv->ahbclk);
 
 	/* "dr" device has its own clock on i.MX51 */
-	priv->phyclk = clk_get(dev, "phy");
-	if (IS_ERR(priv->phyclk))
-		priv->phyclk = NULL;
-	if (priv->phyclk)
-		clk_prepare_enable(priv->phyclk);
+	if (cpu_is_mx51() && (pdev->id == 0)) {
+		priv->phy1clk = clk_get(dev, "usb_phy1");
+		if (IS_ERR(priv->phy1clk)) {
+			ret = PTR_ERR(priv->phy1clk);
+			goto err_clk_phy;
+		}
+		clk_enable(priv->phy1clk);
+	}
 
 
 	/* call platform specific init function */
@@ -260,15 +265,17 @@ err_add:
 	if (pdata && pdata->exit)
 		pdata->exit(pdev);
 err_init:
-	if (priv->phyclk) {
-		clk_disable_unprepare(priv->phyclk);
-		clk_put(priv->phyclk);
+	if (priv->phy1clk) {
+		clk_disable(priv->phy1clk);
+		clk_put(priv->phy1clk);
 	}
-
-	clk_disable_unprepare(priv->ahbclk);
-	clk_put(priv->ahbclk);
+err_clk_phy:
+	if (priv->ahbclk) {
+		clk_disable(priv->ahbclk);
+		clk_put(priv->ahbclk);
+	}
 err_clk_ahb:
-	clk_disable_unprepare(priv->usbclk);
+	clk_disable(priv->usbclk);
 	clk_put(priv->usbclk);
 err_clk:
 	iounmap(hcd->regs);
@@ -291,7 +298,7 @@ static int __exit ehci_mxc_drv_remove(struct platform_device *pdev)
 	if (pdata && pdata->exit)
 		pdata->exit(pdev);
 
-	if (pdata->otg)
+	if (pdata && pdata->otg)
 		usb_phy_shutdown(pdata->otg);
 
 	usb_remove_hcd(hcd);
@@ -300,14 +307,15 @@ static int __exit ehci_mxc_drv_remove(struct platform_device *pdev)
 	usb_put_hcd(hcd);
 	platform_set_drvdata(pdev, NULL);
 
-	clk_disable_unprepare(priv->usbclk);
+	clk_disable(priv->usbclk);
 	clk_put(priv->usbclk);
-	clk_disable_unprepare(priv->ahbclk);
-	clk_put(priv->ahbclk);
-
-	if (priv->phyclk) {
-		clk_disable_unprepare(priv->phyclk);
-		clk_put(priv->phyclk);
+	if (priv->ahbclk) {
+		clk_disable(priv->ahbclk);
+		clk_put(priv->ahbclk);
+	}
+	if (priv->phy1clk) {
+		clk_disable(priv->phy1clk);
+		clk_put(priv->phy1clk);
 	}
 
 	kfree(priv);

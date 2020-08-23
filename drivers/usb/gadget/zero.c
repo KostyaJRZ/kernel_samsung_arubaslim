@@ -72,7 +72,7 @@
 
 static const char longname[] = "Gadget Zero";
 
-unsigned buflen = 4096;		/* only used for bulk endpoints */
+unsigned buflen = 4096;
 module_param(buflen, uint, 0);
 
 /*
@@ -170,17 +170,14 @@ static struct usb_gadget_strings *dev_strings[] = {
 
 /*-------------------------------------------------------------------------*/
 
-struct usb_request *alloc_ep_req(struct usb_ep *ep, int len)
+struct usb_request *alloc_ep_req(struct usb_ep *ep)
 {
 	struct usb_request	*req;
 
 	req = usb_ep_alloc_request(ep, GFP_ATOMIC);
 	if (req) {
-		if (len)
-			req->length = len;
-		else
-			req->length = buflen;
-		req->buf = kmalloc(req->length, GFP_ATOMIC);
+		req->length = buflen;
+		req->buf = kmalloc(buflen, GFP_ATOMIC);
 		if (!req->buf) {
 			usb_ep_free_request(ep, req);
 			req = NULL;
@@ -209,15 +206,10 @@ static void disable_ep(struct usb_composite_dev *cdev, struct usb_ep *ep)
 }
 
 void disable_endpoints(struct usb_composite_dev *cdev,
-		struct usb_ep *in, struct usb_ep *out,
-		struct usb_ep *iso_in, struct usb_ep *iso_out)
+		struct usb_ep *in, struct usb_ep *out)
 {
 	disable_ep(cdev, in);
 	disable_ep(cdev, out);
-	if (iso_in)
-		disable_ep(cdev, iso_in);
-	if (iso_out)
-		disable_ep(cdev, iso_out);
 }
 
 /*-------------------------------------------------------------------------*/
@@ -318,6 +310,7 @@ static int __init zero_bind(struct usb_composite_dev *cdev)
 			longname, gadget->name);
 		device_desc.bcdDevice = cpu_to_le16(0x9999);
 	}
+
 
 	INFO(cdev, "%s, version: " DRIVER_VERSION "\n", longname);
 
