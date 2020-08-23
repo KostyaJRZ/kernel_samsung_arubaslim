@@ -84,3 +84,8 @@ GTAGS
 *.orig
 *~
 \#*#
+
+# Tools
+AnyKernel3/
+arm-eabi-4.4.3/
+out/

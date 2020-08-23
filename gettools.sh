@@ -7,3 +7,6 @@ sudo apt install bc bash git-core gnupg build-essential \
 
 # Clone toolchain
 git clone https://github.com/KostyaJRZ/arm-eabi-4.4.3.git
+
+# Clone AnyKernel3
+git clone https://github.com/KostyaJRZ/AnyKernel3.git -b arubaslim_cm-11.0
